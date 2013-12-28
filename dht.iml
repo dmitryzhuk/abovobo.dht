@@ -7,10 +7,8 @@
         <option name="compilerLibraryName" value="Maven: org.scala-lang:scala-compiler-bundle:2.11.0-M7" />
         <option name="compilerOptions" value="-dependencyfile $MODULE_DIR$/target/.scala_dependencies" />
         <option name="deprecationWarnings" value="true" />
-        <option name="explainTypeErrors" value="true" />
         <option name="languageLevel" value="Scala 2.11" />
         <option name="maximumHeapSize" value="128" />
-        <option name="uncheckedWarnings" value="true" />
         <option name="vmOptions" value="-Xms64m" />
       </configuration>
     </facet>
@@ -32,6 +30,12 @@
     <orderEntry type="library" name="Maven: org.slf4j:jul-to-slf4j:1.6.6" level="project" />
     <orderEntry type="library" name="Maven: ch.qos.logback:logback-classic:1.0.9" level="project" />
     <orderEntry type="library" name="Maven: ch.qos.logback:logback-core:1.0.9" level="project" />
+    <orderEntry type="library" name="Maven: org.scalatest:scalatest_2.11.0-M7:2.0.1-SNAP4" level="project" />
+    <orderEntry type="library" name="Maven: org.scala-lang:scala-reflect:2.11.0-M7" level="project" />
+    <orderEntry type="library" name="Maven: org.scala-lang.modules:scala-parser-combinators_2.11.0-M7:1.0.0-RC5" level="project" />
+    <orderEntry type="library" name="Maven: com.typesafe.akka:akka-actor_2.10:2.3-M2" level="project" />
+    <orderEntry type="library" name="Maven: com.typesafe:config:1.0.2" level="project" />
+    <orderEntry type="library" name="Maven: com.h2database:h2:1.3.174" level="project" />
   </component>
 </module>
 
