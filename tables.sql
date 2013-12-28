@@ -1,7 +1,7 @@
 -- ==============================
 -- stores an id of operating node
 -- ==============================
-create table self(id: binary(40) primary key);
+create table self(id binary(40) primary key);
 
 -- ==========================
 -- represents bucket of nodes

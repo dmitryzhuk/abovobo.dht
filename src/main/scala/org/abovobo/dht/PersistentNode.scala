@@ -53,9 +53,4 @@ class PersistentNode(id: Integer160,
   def recentlySeen: Boolean =
     this.replied.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout ||
       this.queried.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout
-
-  /*
-    (this.replied.isDefined && ((System.currentTimeMillis - this.replied.get.getTime).milliseconds < timeout)) ||
-      (this.queried.isDefined && ((System.currentTimeMillis - this.queried.get.getTime).milliseconds < timeout))
-      */
 }

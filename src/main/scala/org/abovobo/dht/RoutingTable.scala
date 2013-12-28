@@ -12,10 +12,11 @@ package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
 import akka.actor.{Props, Actor}
-import java.sql.DriverManager
+import java.sql.{ResultSet, Timestamp, DriverManager}
 import scala.concurrent.duration._
 import org.abovobo.jdbc.Closer._
 import org.abovobo.jdbc.Optional._
+import org.abovobo.jdbc.Transaction._
 import scala.collection.mutable.ArrayBuffer
 
 /**
@@ -141,18 +142,47 @@ class RoutingTable(val id: Integer160,
    * @param node    A node to "touch".
    * @param method  A method of receiving network message from the node.
    */
-  private def touch(node: Node, method: Method) {
+  private def touch(node: Node, method: Method): Result = {
     this.statements.nodeById.setBytes(1, node.id.toArray)
     using(this.statements.nodeById.executeQuery()) { rs =>
-      if (rs.next()) {
-        // update existing node
-      } else {
-        this.insert(node, method)
+      transaction(this.connection) {
+        if (rs.next()) {
+          val pn = this.read(rs)
+          this.update(node, pn, method)
+        } else {
+          // insert new node
+          this.insert(node, method)
+        }
       }
     }
   }
 
-  private def insert(node: Node, method: Method) {
+  private def update(node: Node, pn: PersistentNode, method: Method): Result = {
+    // update node set ipv4u=?, ipv4t=?, ipv6u=?, ipv6t=?, replied=?, queried=?, failcount=? where id=?
+    val s = this.statements.updateNode
+    s.setBytes(1, node.ipv4u.map(_.data).getOrElse(pn.ipv4u.map(_.data).orNull))
+    s.setBytes(2, node.ipv4t.map(_.data).getOrElse(pn.ipv4t.map(_.data).orNull))
+    s.setBytes(3, node.ipv6u.map(_.data).getOrElse(pn.ipv6u.map(_.data).orNull))
+    s.setBytes(4, node.ipv6t.map(_.data).getOrElse(pn.ipv6t.map(_.data).orNull))
+    method match {
+      case Reply =>
+        s.setTimestamp(5, new Timestamp(System.currentTimeMillis))
+        s.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
+        s.setInt(7, pn.failcount)
+      case Query =>
+        s.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
+        s.setTimestamp(6, new Timestamp(System.currentTimeMillis))
+        s.setInt(7, pn.failcount)
+      case Fail =>
+        s.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
+        s.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
+        s.setInt(7, pn.failcount + 1)
+    }
+    s.setBytes(8, pn.id.toArray)
+    Updated
+  }
+
+  private def insert(node: Node, method: Method): Result = {
     val buckets = new ArrayBuffer[Integer160]()
     using(this.statements.allBuckets.executeQuery()) { rs =>
       while (rs.next()) {
@@ -174,20 +204,63 @@ class RoutingTable(val id: Integer160,
     this.statements.nodesByBucket.setBytes(1, bucket.toArray)
     using(this.statements.nodesByBucket.executeQuery()) { rs =>
       while (rs.next()) {
-        nodes += new PersistentNode(
-          new Integer160(rs.getBytes("id")),
-          rs.getBytesOrNone("ipv4u") map { new Endpoint(_) },
-          rs.getBytesOrNone("ipv4t") map { new Endpoint(_) },
-          rs.getBytesOrNone("ipv6u") map { new Endpoint(_) },
-          rs.getBytesOrNone("ipv4t") map { new Endpoint(_) },
-          new Integer160(rs.getBytes("bucket")),
-          rs.getDateOrNone("replied"),
-          rs.getDateOrNone("queried"),
-          rs.getInt("failcount"))
+        nodes += this.read(rs)
       }
     }
-    //val good = nodes.filter()
-    Rejected
+    if (nodes.size == this.K) {
+      val good = nodes.filter(_.good)
+      if (good.size == this.K) {
+        // TODO Split if id of this node is within the bucket range and range is still splittable or reject
+        Rejected
+      } else {
+        val bad = nodes.filter(_.bad)
+        if (bad.size > 0) {
+          this.statements.deleteNode.setBytes(1, bad.head.id.toArray)
+          this.statements.deleteNode.executeUpdate
+          this.insert(node, method, bucket)
+          Replaced
+        } else {
+          val questionnable = nodes.filter(_.questionnable)
+          // TODO Query questionnable nodes and properly defer new node insertion
+          Deferred
+        }
+      }
+    } else {
+      this.insert(node, method, bucket)
+      Inserted
+    }
+  }
+
+  private def read(rs: ResultSet): PersistentNode =
+    new PersistentNode(
+      new Integer160(rs.getBytes("id")),
+      rs.getBytesOrNone("ipv4u") map { new Endpoint(_) },
+      rs.getBytesOrNone("ipv4t") map { new Endpoint(_) },
+      rs.getBytesOrNone("ipv6u") map { new Endpoint(_) },
+      rs.getBytesOrNone("ipv4t") map { new Endpoint(_) },
+      new Integer160(rs.getBytes("bucket")),
+      rs.getDateOrNone("replied"),
+      rs.getDateOrNone("queried"),
+      rs.getInt("failcount"),
+      this.timeout,
+      this.threshold)
+
+  private def insert(node: Node, method: Method, bucket: Integer160): Unit = {
+    val s = this.statements.insertNode
+    s.setBytes(1, node.id.toArray)
+    s.setBytes(2, bucket.toArray)
+    s.setBytes(3, node.ipv4u.map(_.data).orNull)
+    s.setBytes(4, node.ipv4t.map(_.data).orNull)
+    s.setBytes(5, node.ipv6u.map(_.data).orNull)
+    s.setBytes(6, node.ipv6t.map(_.data).orNull)
+    if (method == Reply) {
+      s.setTimestamp(7, new Timestamp(System.currentTimeMillis))
+      s.setNull(8, java.sql.Types.TIMESTAMP)
+    } else if (method == Query) {
+      s.setNull(7, java.sql.Types.TIMESTAMP)
+      s.setTimestamp(8, new Timestamp(System.currentTimeMillis))
+    }
+    s.executeUpdate
   }
 
   /// Initializes actual connection to H2 database in a lazy way
@@ -203,6 +276,13 @@ class RoutingTable(val id: Integer160,
     // Node related queries
     lazy val nodeById = c.prepareStatement("select * from node where id=?")
     lazy val nodesByBucket = c.prepareStatement("select * from node where bucket=?")
+    lazy val insertNode = c.prepareStatement(
+      "insert into node(id, bucket, ipv4u, ipv4t, ipv6u, ipv6t, replied, queried) " +
+        "values(?, ?, ?, ?, ?, ?, ?, ?)")
+    lazy val deleteNode = c.prepareStatement("delete from node where id=?")
+    lazy val updateNode = c.prepareStatement(
+      "update node set ipv4u=?, ipv4t=?, ipv6u=?, ipv6t=?, replied=?, queried=?, failcount=? where id=?")
+    lazy val moveNode = c.prepareStatement("update node set bucket=? where id=?")
 
     // Bucket related queries
     lazy val allBuckets = c.prepareStatement("select * from bucket order by id")
