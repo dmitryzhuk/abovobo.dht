@@ -14,9 +14,6 @@ import org.abovobo.integer.Integer160
 import akka.actor.{Props, Actor}
 import java.sql.{ResultSet, Timestamp, DriverManager}
 import scala.concurrent.duration._
-import org.abovobo.jdbc.Closer._
-import org.abovobo.jdbc.Optional._
-import org.abovobo.jdbc.Transaction._
 import scala.collection.mutable.ArrayBuffer
 
 /**
@@ -93,6 +90,9 @@ import scala.collection.mutable.ArrayBuffer
  * @param K         Max number of entries per bucket.
  * @param timeout   Time interval before node or bucket becomes questionable.
  *                  In documentation above is 15 minutes.
+ * @param delay     A delay before deferred message must be redelivered to self.
+ *                  This duration must normally be a bit longer when waiting node
+ *                  reply timeout.
  * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
  * @param path      File system path to database where routing table state is persisted.
  *
@@ -100,7 +100,8 @@ import scala.collection.mutable.ArrayBuffer
  */
 class RoutingTable(val id: Integer160,
                    val K: Int,
-                   val timeout: Duration,
+                   val timeout: FiniteDuration,
+                   val delay: FiniteDuration,
                    val threshold: Int,
                    val path: String) extends Actor {
 
@@ -127,6 +128,7 @@ class RoutingTable(val id: Integer160,
    * org.abovobo.jdbc.Closer conversions, as it is totally unimportant at this point.
    */
   override def postStop() {
+    import org.abovobo.jdbc.Closer._
     this.statements.all foreach { _.dispose() }
     this.connection.dispose()
   }
@@ -143,12 +145,15 @@ class RoutingTable(val id: Integer160,
    * @param method  A method of receiving network message from the node.
    */
   private def touch(node: Node, method: Method): Result = {
+    import org.abovobo.jdbc.Transaction._
+    import org.abovobo.jdbc.Closer._
     this.statements.nodeById.setBytes(1, node.id.toArray)
     using(this.statements.nodeById.executeQuery()) { rs =>
       transaction(this.connection) {
         if (rs.next()) {
-          val pn = this.read(rs)
-          this.update(node, pn, method)
+          // update existing node
+          this.update(node, this.read(rs), method)
+          Updated
         } else {
           // insert new node
           this.insert(node, method)
@@ -157,7 +162,38 @@ class RoutingTable(val id: Integer160,
     }
   }
 
-  private def update(node: Node, pn: PersistentNode, method: Method): Result = {
+  /**
+   * Reads instance of [[org.abovobo.dht.PersistentNode]] from given [[java.sql.ResultSet]].
+   *
+   * @param rs Valid [[java.sql.ResultSet]] instance.
+   * @return new instance of [[org.abovobo.dht.PersistentNode]] built from read data.
+   */
+  private def read(rs: ResultSet): PersistentNode = {
+    import org.abovobo.jdbc.Optional._
+    new PersistentNode(
+      new Integer160(rs.getBytes("id")),
+      rs.bytes("ipv4u") map { new Endpoint(_) },
+      rs.bytes("ipv4t") map { new Endpoint(_) },
+      rs.bytes("ipv6u") map { new Endpoint(_) },
+      rs.bytes("ipv4t") map { new Endpoint(_) },
+      new Integer160(rs.getBytes("bucket")),
+      rs.date("replied"),
+      rs.date("queried"),
+      rs.getInt("failcount"),
+      this.timeout,
+      this.threshold)
+  }
+
+  /**
+   * Updates existing node by setting new values from the given [[org.abovobo.dht.Node]]
+   * instance while leaving old values for those fields which are None in given node.
+   * This method also updates a time stamp of bucket which owns a node.
+   *
+   * @param node    An instance of [[org.abovobo.dht.Node]] which has just been seen in network.
+   * @param pn      Corresponding intstance of [[org.abovobo.dht.PersistentNode]].
+   * @param method  Actual method how network node acted with us.
+   */
+  private def update(node: Node, pn: PersistentNode, method: Method): Unit = {
     // update node set ipv4u=?, ipv4t=?, ipv6u=?, ipv6t=?, replied=?, queried=?, failcount=? where id=?
     val s = this.statements.updateNode
     s.setBytes(1, node.ipv4u.map(_.data).getOrElse(pn.ipv4u.map(_.data).orNull))
@@ -179,73 +215,141 @@ class RoutingTable(val id: Integer160,
         s.setInt(7, pn.failcount + 1)
     }
     s.setBytes(8, pn.id.toArray)
-    Updated
+    s.executeUpdate()
+
+    // update bucket set seen=now() where id=?
+    this.statements.touchBucket.setBytes(1, pn.bucket.toArray)
+    this.statements.touchBucket.executeUpdate()
   }
 
+  /**
+   * Attempts to insert new node into this table.
+   *
+   * @param node    An instance of [[org.abovobo.dht.Node]] to insert
+   * @param method  A method of receiving network message from node.
+   * @return        Result of operation, as listed in [[org.abovobo.dht.RoutingTable.Result.Result]]
+   *                excluding [[org.abovobo.dht.RoutingTable.Result.Result#Updated]]
+   */
   private def insert(node: Node, method: Method): Result = {
+
+    import context.dispatcher
+    import org.abovobo.jdbc.Closer._
+
+    // read all buckets from storage
     val buckets = new ArrayBuffer[Integer160]()
     using(this.statements.allBuckets.executeQuery()) { rs =>
       while (rs.next()) {
         buckets += new Integer160(rs.getBytes(1))
       }
     }
+
+    // get the bucket which is good for the given node
     val bucket = if (buckets.isEmpty) {
       // if there are no buckets exist we must insert zeroth bucket
       val zero = Integer160.zero
       this.statements.insertBucket.setBytes(1, zero.toArray)
-      zero
+      this.statements.insertBucket.executeUpdate()
+      zero -> Integer160.maxval
     } else {
       // since zeroth element of this collection must be Integer160.zero
       // this always leads to valid index: we never can get -1 here.
+      // so here we are getting last bucket having min bound less or equal to node id.
       val index = buckets.lastIndexWhere(_ <= node.id)
-      buckets(index)
+      buckets(index) -> (if (index == buckets.length - 1) Integer160.maxval else buckets(index + 1))
     }
+
+    // read all nodes from that bucket
     val nodes = new ArrayBuffer[PersistentNode]()
-    this.statements.nodesByBucket.setBytes(1, bucket.toArray)
+    this.statements.nodesByBucket.setBytes(1, bucket._1.toArray)
     using(this.statements.nodesByBucket.executeQuery()) { rs =>
       while (rs.next()) {
         nodes += this.read(rs)
       }
     }
+
+    // go through variants
     if (nodes.size == this.K) {
+      // bucket is full
+      // get list of good nodes in this bucket
       val good = nodes.filter(_.good)
       if (good.size == this.K) {
-        // TODO Split if id of this node is within the bucket range and range is still splittable or reject
-        Rejected
+        // the bucket is full of good nodes
+        // check if this id falls into a bucket range
+        if (bucket._1 <= this.id && this.id < bucket._2) {
+          // check if current bucket is large enough to be split
+          if (bucket._2 - bucket._1 <= this.K * 2) {
+            // current bucket is too small
+            Rejected
+          } else {
+            this.split(nodes, bucket)
+            self ! (if (method == Reply) GotReply(node) else GotQuery(node))
+            Deferred
+          }
+        } else {
+          // own id is outside the bucket, so no more nodes can be inserted
+          Rejected
+        }
       } else {
+        // not every node in this bucket is good
+        // get the list of bad nodes
         val bad = nodes.filter(_.bad)
         if (bad.size > 0) {
+          // there are bad nodes, replacing first of them
           this.statements.deleteNode.setBytes(1, bad.head.id.toArray)
           this.statements.deleteNode.executeUpdate
-          this.insert(node, method, bucket)
+          this.insert(node, method, bucket._1)
           Replaced
         } else {
+          // there are no bad nodes in this bucket
+          // get list of questionnable nodes
           val questionnable = nodes.filter(_.questionnable)
-          // TODO Query questionnable nodes and properly defer new node insertion
+          // request ping operation for every questionnable node
+          questionnable foreach { sender ! RequestPing(_) }
+          // send deferred message to itself
+          this.context.system.scheduler.scheduleOnce(this.delay) {
+            self ! (if (method == Reply) GotReply(node) else GotQuery(node))
+          }
           Deferred
         }
       }
     } else {
-      this.insert(node, method, bucket)
+      // there is a room for new node in this bucket
+      this.insert(node, method, bucket._1)
       Inserted
     }
   }
 
-  private def read(rs: ResultSet): PersistentNode =
-    new PersistentNode(
-      new Integer160(rs.getBytes("id")),
-      rs.getBytesOrNone("ipv4u") map { new Endpoint(_) },
-      rs.getBytesOrNone("ipv4t") map { new Endpoint(_) },
-      rs.getBytesOrNone("ipv6u") map { new Endpoint(_) },
-      rs.getBytesOrNone("ipv4t") map { new Endpoint(_) },
-      new Integer160(rs.getBytes("bucket")),
-      rs.getDateOrNone("replied"),
-      rs.getDateOrNone("queried"),
-      rs.getInt("failcount"),
-      this.timeout,
-      this.threshold)
+  /**
+   * This method splits given bucket onto 2 equal buckets moving nodes belonging
+   * to the new bucket into it.
+   *
+   * @param nodes   Collection of nodes belonging to exsting bucket.
+   * @param bucket  Existing bucket.
+   */
+  private def split(nodes: Traversable[Node], bucket: (Integer160, Integer160)): Unit = {
+    // new bucket edge must split existing buckets onto 2 equals buckets
+    val b = bucket._1 + ((bucket._2 - bucket._1) >> 1)
+    // insert new bucket
+    this.statements.insertBucket.setBytes(1, b.toArray)
+    this.statements.insertBucket.executeUpdate()
+    // move nodes appropriately
+    nodes.filter(_.id >= b).foreach { node =>
+      this.statements.moveNode.setBytes(1, b.toArray)
+      this.statements.moveNode.setBytes(2, node.id.toArray)
+      this.statements.moveNode.executeUpdate()
+    }
+  }
 
+  /**
+   * Actually executes insertion of a node into a storage also updating time stamp of owning bucket.
+   *
+   * @param node    A node being inserted.
+   * @param method  A method of receiving network message from node.
+   * @param bucket  A bucket which owns new node.
+   */
   private def insert(node: Node, method: Method, bucket: Integer160): Unit = {
+
+    // insert into node(id, bucket, ipv4u, ipv4t, ipv6u, ipv6t, replied, queried) values(?, ?, ?, ?, ?, ?, ?, ?)
     val s = this.statements.insertNode
     s.setBytes(1, node.id.toArray)
     s.setBytes(2, bucket.toArray)
@@ -261,6 +365,10 @@ class RoutingTable(val id: Integer160,
       s.setTimestamp(8, new Timestamp(System.currentTimeMillis))
     }
     s.executeUpdate
+
+    // update bucket set seen=now() where id=?
+    this.statements.touchBucket.setBytes(1, bucket.toArray)
+    this.statements.touchBucket.executeUpdate()
   }
 
   /// Initializes actual connection to H2 database in a lazy way
@@ -308,7 +416,7 @@ object RoutingTable {
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(id: Integer160, K: Int, timeout: Duration, path: String) =
+  def props(id: Integer160, K: Int, timeout: Duration, path: String): Props =
     Props(classOf[RoutingTable], id, K, timeout, path)
 
   /**
@@ -320,7 +428,7 @@ object RoutingTable {
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(id: Integer160, path: String) = this.props(id, 8, 15 minutes, path)
+  def props(id: Integer160, path: String): Props = this.props(id, 8, 15.minutes, path)
 
   /**
    * This enumeration defines two possible methods of seeing the node:
@@ -372,4 +480,12 @@ object RoutingTable {
    * @param node A Node instance in subject.
    */
   case class GotFail(node: Node) extends Message
+
+  /**
+   * This class represents a message which can be sent by [[org.abovobo.dht.RoutingTable]]
+   * back to a sender when pinging the questionnable node is needed.
+   *
+   * @param node A [[org.abovobo.dht.Node]] instance of the subject.
+   */
+  case class RequestPing(node: Node) extends Message
 }

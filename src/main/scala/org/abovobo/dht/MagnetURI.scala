@@ -42,9 +42,9 @@ class MagnetURI(private val parameters: Map[String, String]) {
   /// Note that if instance is constructed from string decoding of the whole string
   /// and then decoding back of every separate component will be done thus this
   /// representation may differ from original string passed into constructor.
-  private val _s: String = "magnet:?" + this.parameters.map { p =>
+  private val _s: String = "magnet:?" + this.parameters.map(p =>
       java.net.URLEncoder.encode(p._1, MagnetURI.encoding) + "=" + java.net.URLEncoder.encode(p._2, MagnetURI.encoding)
-  } reduceLeft {
+  ).reduceLeft {
     _ + "&" + _
   }
 
