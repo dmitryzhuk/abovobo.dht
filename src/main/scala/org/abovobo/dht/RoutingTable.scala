@@ -115,9 +115,9 @@ class RoutingTable(val id: Integer160,
    * Handles RoutingTable Actor specific messages.
    */
   override def receive = {
-    case GotQuery(node) => this.touch(node, Query)
-    case GotReply(node) => this.touch(node, Reply)
-    case GotFail(node)  => this.touch(node, Fail)
+    case GotQuery(node) => sender ! Report(node, this.touch(node, Query))
+    case GotReply(node) => sender ! Report(node, this.touch(node, Reply))
+    case GotFail(node)  => sender ! Report(node, this.touch(node, Fail))
   }
 
   /**
@@ -492,4 +492,14 @@ object RoutingTable {
    * @param node A [[org.abovobo.dht.Node]] instance of the subject.
    */
   case class RequestPing(node: Node) extends Message
+
+  /**
+   * This class represents a message which is sent by [[org.abovobo.dht.RoutingTable]]
+   * back to sender reporting incoming message results processing.
+   *
+   * @param result A tuple containing original [[org.abovobo.dht.Node]] and
+   *               [[org.abovobo.dht.RoutingTable.Result.Result]] enumeration
+   *               indicating processing outcome.
+   */
+  case class Report(result: (Node, Result.Result)) extends Message
 }
