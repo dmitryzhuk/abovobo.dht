@@ -154,9 +154,12 @@ class RoutingTable(val id: Integer160,
           // update existing node
           this.update(node, this.read(rs), method)
           Updated
-        } else {
-          // insert new node
+        } else if (method != Fail) {
+          // insert new node if method does not indicate failure
           this.insert(node, method)
+        } else {
+          // reject operation if message indicates failure of non-existent node
+          Rejected
         }
       }
     }
@@ -281,6 +284,7 @@ class RoutingTable(val id: Integer160,
             // current bucket is too small
             Rejected
           } else {
+            // split current bucket and send the message back to self queue
             this.split(nodes, bucket)
             self ! (if (method == Reply) GotReply(node) else GotQuery(node))
             Deferred
