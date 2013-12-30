@@ -86,7 +86,6 @@ import scala.collection.mutable.ArrayBuffer
  *
  * @constructor     Creates new instance of routing table with provided parameters.
  *
- * @param id        Own identifier associated with DHT node maintaining this table.
  * @param K         Max number of entries per bucket.
  * @param timeout   Time interval before node or bucket becomes questionable.
  *                  In documentation above is 15 minutes.
@@ -98,8 +97,7 @@ import scala.collection.mutable.ArrayBuffer
  *
  * @author Dmitry Zhuk
  */
-class RoutingTable(val id: Integer160,
-                   val K: Int,
+class RoutingTable(val K: Int,
                    val timeout: FiniteDuration,
                    val delay: FiniteDuration,
                    val threshold: Int,
@@ -118,6 +116,26 @@ class RoutingTable(val id: Integer160,
     case GotQuery(node) => sender ! Report(node, this.touch(node, Query))
     case GotReply(node) => sender ! Report(node, this.touch(node, Reply))
     case GotFail(node)  => sender ! Report(node, this.touch(node, Fail))
+    case ResetId()      => this.reset()
+    case SetId(id)      => this.set(id)
+    case Purge()        => this.purge()
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * This override checks if there is a stored node id and generates new one if not.
+   */
+  override def preStart() {
+    import org.abovobo.jdbc.Closer._
+    using(this.statements.getId.executeQuery()) { rs =>
+      if (rs.next()) {
+        this.id = new Integer160(rs.getBytes(1))
+      } else {
+        this.id = Integer160.random
+        this.set(this.id)
+      }
+    }
   }
 
   /**
@@ -131,6 +149,53 @@ class RoutingTable(val id: Integer160,
     import org.abovobo.jdbc.Closer._
     this.statements.all foreach { _.dispose() }
     this.connection.dispose()
+  }
+
+  /**
+   * Generates new SHA-1 node id, drops all data and saves new id.
+   */
+  private def reset(): Unit = this.set(Integer160.random)
+
+  /**
+   * Drops all data and saves new id in the storage.
+   *
+   * @param id New SHA-1 node identifier.
+   */
+  private def set(id: Integer160): Unit = {
+    import org.abovobo.jdbc.Transaction._
+    transaction(this.connection) {
+      this.dropData()
+      this.saveId(id)
+    }
+  }
+
+  /**
+   * Deletes all data from database.
+   */
+  private def purge(): Unit = {
+    import org.abovobo.jdbc.Transaction._
+    transaction(this.connection) {
+      this.dropData()
+    }
+  }
+
+  /**
+   * Deletes all data from database out of the transaction.
+   */
+  private def dropData(): Unit = {
+    this.statements.deleteAllNodes.executeUpdate()
+    this.statements.deleteAllNodes.executeUpdate()
+  }
+
+  /**
+   * Deletes existing self id from DB and saves given one out of the transaction.
+   *
+   * @param id New SHA-1 identifier to save.
+   */
+  private def saveId(id: Integer160): Unit = {
+    this.statements.dropId.executeUpdate()
+    this.statements.setId.setBytes(1, id.toArray)
+    this.statements.setId.executeUpdate()
   }
 
   /**
@@ -391,19 +456,31 @@ class RoutingTable(val id: Integer160,
     lazy val insertNode = c.prepareStatement(
       "insert into node(id, bucket, ipv4u, ipv4t, ipv6u, ipv6t, replied, queried) " +
         "values(?, ?, ?, ?, ?, ?, ?, ?)")
-    lazy val deleteNode = c.prepareStatement("delete from node where id=?")
     lazy val updateNode = c.prepareStatement(
       "update node set ipv4u=?, ipv4t=?, ipv6u=?, ipv6t=?, replied=?, queried=?, failcount=? where id=?")
     lazy val moveNode = c.prepareStatement("update node set bucket=? where id=?")
+    lazy val deleteNode = c.prepareStatement("delete from node where id=?")
+    lazy val deleteAllNodes = c.prepareStatement("delete from node")
 
     // Bucket related queries
     lazy val allBuckets = c.prepareStatement("select * from bucket order by id")
     lazy val insertBucket = c.prepareStatement("insert into bucket(id, seen) values(?, now())")
     lazy val touchBucket = c.prepareStatement("update bucket set seen=now() where id=?")
+    lazy val deleteAllBuckets = c.prepareStatement("delete from bucket")
 
-    lazy val all = Array(nodeById, allBuckets, insertBucket, touchBucket)
+    lazy val setId = c.prepareStatement("insert into self(id) values(?)")
+    lazy val dropId = c.prepareStatement("delete from self")
+    lazy val getId = c.prepareStatement("get * from self")
+
+    lazy val all = Array(nodeById, nodesByBucket, insertNode, updateNode, moveNode, deleteNode, deleteAllNodes,
+      allBuckets, insertBucket, touchBucket, deleteAllBuckets,
+      setId, dropId, getId)
   }
 
+  /// This node SHA-1 identifier.
+  /// This is variable which can be replaced by the one read from the storage
+  /// or even set externally
+  private var id: Integer160 = Integer160.random
 }
 
 /** Accompanying object */
@@ -484,6 +561,23 @@ object RoutingTable {
    * @param node A Node instance in subject.
    */
   case class GotFail(node: Node) extends Message
+
+  /**
+   * Instructs routing table to generate new SHA-1 identifier.
+   */
+  case class ResetId() extends Message
+
+  /**
+   * Instructs routing table to set given id as own identifier.
+   *
+   * @param id An id to set.
+   */
+  case class SetId(id: Integer160) extends Message
+
+  /**
+   * Instructs routing table to cleanup all stored data.
+   */
+  case class Purge() extends Message
 
   /**
    * This class represents a message which can be sent by [[org.abovobo.dht.RoutingTable]]
