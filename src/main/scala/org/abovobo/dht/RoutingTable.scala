@@ -116,8 +116,8 @@ class RoutingTable(val K: Int,
     case GotQuery(node) => sender ! Report(node, this.touch(node, Query))
     case GotReply(node) => sender ! Report(node, this.touch(node, Reply))
     case GotFail(node)  => sender ! Report(node, this.touch(node, Fail))
-    case ResetId()      => this.reset()
-    case SetId(_id)     => this.set(_id)
+    case ResetId()      => this.reset(); sender ! Done(this.id)
+    case SetId(_id)     => this.set(_id); sender ! Done(this.id)
     case Purge()        => this.purge()
   }
 
@@ -167,6 +167,7 @@ class RoutingTable(val K: Int,
       this.dropData()
       this.saveId(id)
     }
+    this.id = id
   }
 
   /**
@@ -183,8 +184,7 @@ class RoutingTable(val K: Int,
    * Deletes all data from database out of the transaction.
    */
   private def dropData(): Unit = {
-    this.statements.deleteAllNodes.executeUpdate()
-    this.statements.deleteAllNodes.executeUpdate()
+    this.statements.deleteAllBuckets.executeUpdate()
   }
 
   /**
@@ -606,4 +606,12 @@ object RoutingTable {
    *               indicating processing outcome.
    */
   case class Report(result: (Node, Result.Result)) extends Message
+
+  /**
+   * Represents a message sent by [[org.abovobo.dht.RoutingTable]] back to sender
+   * telling new id set by means of ResetId or SetId messages
+   *
+   * @param id A new table identifier
+   */
+  case class Done(id: Integer160) extends Message
 }
