@@ -117,7 +117,7 @@ class RoutingTable(val K: Int,
     case GotReply(node) => sender ! Report(node, this.touch(node, Reply))
     case GotFail(node)  => sender ! Report(node, this.touch(node, Fail))
     case ResetId()      => this.reset()
-    case SetId(id)      => this.set(id)
+    case SetId(_id)     => this.set(_id)
     case Purge()        => this.purge()
   }
 
@@ -245,8 +245,8 @@ class RoutingTable(val K: Int,
       rs.bytes("ipv6u") map { new Endpoint(_) },
       rs.bytes("ipv4t") map { new Endpoint(_) },
       new Integer160(rs.getBytes("bucket")),
-      rs.date("replied"),
-      rs.date("queried"),
+      rs.timestamp("replied"),
+      rs.timestamp("queried"),
       rs.getInt("failcount"),
       this.timeout,
       this.threshold)
@@ -470,7 +470,7 @@ class RoutingTable(val K: Int,
 
     lazy val setId = c.prepareStatement("insert into self(id) values(?)")
     lazy val dropId = c.prepareStatement("delete from self")
-    lazy val getId = c.prepareStatement("get * from self")
+    lazy val getId = c.prepareStatement("select * from self")
 
     lazy val all = Array(nodeById, nodesByBucket, insertNode, updateNode, moveNode, deleteNode, deleteAllNodes,
       allBuckets, insertBucket, touchBucket, deleteAllBuckets,
@@ -489,27 +489,37 @@ object RoutingTable {
   /**
    * Factory which creates RoutingTable Actor Props instance.
    *
-   * @param id        Own identifier associated with DHT node maintaining this table.
    * @param K         Max number of entries per bucket.
    * @param timeout   Time interval before node or bucket becomes questionable.
    *                  In documentation above is 15 minutes.
+   * @param delay     A delay before deferred message must be redelivered to self.
+   *                  This duration must normally be a bit longer when waiting node
+   *                  reply timeout.
+   * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
    * @param path      File system path to database where routing table state is persisted.
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(id: Integer160, K: Int, timeout: Duration, path: String): Props =
-    Props(classOf[RoutingTable], id, K, timeout, path)
+  def props(K: Int, timeout: Duration, delay: Duration, threshold: Int, path: String): Props =
+    Props(classOf[RoutingTable], K, timeout, delay, threshold, path)
 
   /**
    * Factory which creates RoutingTable Actor Props instance with default values:
-   * K = 8, timeout = 15 minutes.
+   * K = 8, timeout = 15 minutes, delay = 30 seconds, threshold = 3.
    *
-   * @param id        Own identifier associated with DHT node maintaining this table.
    * @param path      File system path to database where routing table state is persisted.
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(id: Integer160, path: String): Props = this.props(id, 8, 15.minutes, path)
+  def props(path: String): Props = this.props(8, 15.minutes, 30.seconds, 3, path)
+
+  /**
+   * Factory which creates RoutingTable Actor Props instance with default values:
+   * K = 8, timeout = 15 minutes, delay = 30 seconds, threshold = 3, path = ~/db/dht.
+   *
+   * @return          Properly configured Actor Props instance.
+   */
+  def props(): Props = this.props("~/db/dht")
 
   /**
    * This enumeration defines two possible methods of seeing the node:
