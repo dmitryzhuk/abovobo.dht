@@ -22,7 +22,7 @@ class RoutingTableTest(system: ActorSystem)
   }
 
   "A RoutingTable Actor" must {
-    val table = this.system.actorOf(RoutingTable.props())
+    val table = this.system.actorOf(RoutingTable.props(), "table")
     val node = new Node(Integer160.zero, Some(new Endpoint(new Array[Byte](6))), None, None, None)
 
     "report Set Done" in {

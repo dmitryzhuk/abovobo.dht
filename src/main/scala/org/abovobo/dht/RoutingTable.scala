@@ -11,10 +11,11 @@
 package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
-import akka.actor.{Props, Actor}
+import akka.actor.{Cancellable, Props, Actor}
 import java.sql.{ResultSet, Timestamp, DriverManager}
 import scala.concurrent.duration._
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable
+import org.abovobo.dht.persistence.PersistentNode
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -87,13 +88,13 @@ import scala.collection.mutable.ArrayBuffer
  * @constructor     Creates new instance of routing table with provided parameters.
  *
  * @param K         Max number of entries per bucket.
- * @param timeout   Time interval before node or bucket becomes questionable.
- *                  In documentation above is 15 minutes.
+ * @param timeout   Time interval before bucket becomes inactive or node becomes questionable.
+ *                  In documentation above it is 15 minutes.
  * @param delay     A delay before deferred message must be redelivered to self.
  *                  This duration must normally be a bit longer when waiting node
  *                  reply timeout.
  * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
- * @param path      File system path to database where routing table state is persisted.
+ * @param db        File system path to database where routing table state is persisted.
  *
  * @author Dmitry Zhuk
  */
@@ -101,10 +102,9 @@ class RoutingTable(val K: Int,
                    val timeout: FiniteDuration,
                    val delay: FiniteDuration,
                    val threshold: Int,
-                   val path: String) extends Actor {
+                   val db: A) extends Actor {
 
   import RoutingTable._
-  import RoutingTable.Method._
   import RoutingTable.Result._
 
   /**
@@ -113,11 +113,10 @@ class RoutingTable(val K: Int,
    * Handles RoutingTable Actor specific messages.
    */
   override def receive = {
-    case GotQuery(node) => sender ! Report(node, this.touch(node, Query))
-    case GotReply(node) => sender ! Report(node, this.touch(node, Reply))
-    case GotFail(node)  => sender ! Report(node, this.touch(node, Fail))
-    case ResetId()      => this.reset(); sender ! Done(this.id)
-    case SetId(_id)     => this.set(_id); sender ! Done(this.id)
+    case GotMessage(node, kind) => sender ! Report(node, this.touch(node, kind))
+    case Refresh(_id)   => this.refresh(_id)
+    case Reset()      => this.reset(); sender ! Done(this.id)
+    case Set(_id)     => this.set(_id); sender ! Done(this.id)
     case Purge()        => this.purge()
   }
 
@@ -128,12 +127,30 @@ class RoutingTable(val K: Int,
    */
   override def preStart() {
     import org.abovobo.jdbc.Closer._
+
+    // upon start attempt to retrieve own id from the storage
     using(this.statements.getId.executeQuery()) { rs =>
       if (rs.next()) {
+        // identifier found in the storage
         this.id = new Integer160(rs.getBytes(1))
       } else {
+        // identifier is missing in the storage, make random one
+        // and call `set` method to save it and purge all the data
         this.id = Integer160.random
         this.set(this.id)
+      }
+    }
+
+    // upon start also perform refresh procedure for every existing bucket
+    // and schedule the next refresh after configured idle timeout
+    implicit val ec = this.context.system.dispatcher
+    using(this.statements.allBuckets.executeQuery()) { rs =>
+      while (rs.next()) {
+        val id = new Integer160(rs.getBytes(1))
+        self ! Refresh(id)
+        this.cancellables.put(id, this.context.system.scheduler.scheduleOnce(this.timeout) {
+          self ! Refresh(id)
+        })
       }
     }
   }
@@ -152,9 +169,60 @@ class RoutingTable(val K: Int,
   }
 
   /**
+   * This method "touches" given node considering given method of
+   * receiving network message from that node. If given node does not
+   * exist in this routing table it will be inserted, otherwise, node data
+   * will be updated. If node is being inserted the buckets may be split
+   * and node insertion still can be rejected if there was no room for
+   * new node in the table.
+   *
+   * @param node    A node to "touch".
+   * @param kind    A kind of network message received from the node.
+   */
+  def touch(node: Node, kind: network.Message.Kind.Kind): Result = {
+
+    import org.abovobo.jdbc.Transaction._
+    import org.abovobo.jdbc.Closer._
+    import network.Message.Kind._
+
+    // try to read node with id of given network node
+    this.statements.nodeById.setBytes(1, node.id.toArray)
+    using(this.statements.nodeById.executeQuery()) { rs =>
+      transaction(this.connection) {
+        if (rs.next()) {
+          // update existing node
+          // note that in case of `Error` reply the node `replied` field
+          // still will be updated in the same way as if it would properly replied.
+          this.update(node, this.read(rs), kind)
+          Updated
+        } else if (kind != Error && kind != Fail) {
+          // insert new node if method does not indicate failure or error
+          // note that we won't insert a node if it has replied with error message
+          this.insert(node, kind)
+        } else {
+          // reject operation if message indicates
+          // failure or error reply of non-existent node
+          Rejected
+        }
+      }
+    }
+  }
+
+  /**
+   * This method initiates bucket refresh sequence by choosing
+   * random number from within the bucket range and sending `find_node`
+   * message to network agent actor.
+   *
+   *@param id An identifier of the bucket to refresh.
+   */
+  def refresh(id: Integer160): Unit {
+    // TODO FindNode must be sent to Newtorking Actor
+  }
+
+  /**
    * Generates new SHA-1 node id, drops all data and saves new id.
    */
-  private def reset(): Unit = this.set(Integer160.random)
+  def reset(): Unit = this.set(Integer160.random)
 
   /**
    * Drops all data and saves new id in the storage.
@@ -166,14 +234,16 @@ class RoutingTable(val K: Int,
     transaction(this.connection) {
       this.dropData()
       this.saveId(id)
+      // actually change own ID only if there was no exceptions
+      // in above manipulations with storage
+      this.id = id
     }
-    this.id = id
   }
 
   /**
    * Deletes all data from database.
    */
-  private def purge(): Unit = {
+  def purge(): Unit = {
     import org.abovobo.jdbc.Transaction._
     transaction(this.connection) {
       this.dropData()
@@ -199,42 +269,26 @@ class RoutingTable(val K: Int,
   }
 
   /**
-   * This method "touches" given node considering given method of
-   * receiving network message from that node. If given node does not
-   * exist in this routing table it will be inserted, otherwise, node data
-   * will be updated. If node is being inserted the buckets may be split
-   * and node insertion still can be rejected if there was no room for
-   * new node in the table.
+   * Touches a bucket with given id resetting its last seen time stamp and scheduling Refresh event.
    *
-   * @param node    A node to "touch".
-   * @param method  A method of receiving network message from the node.
+   * @param bucket A bucket to touch.
    */
-  private def touch(node: Node, method: Method): Result = {
-    import org.abovobo.jdbc.Transaction._
-    import org.abovobo.jdbc.Closer._
-    this.statements.nodeById.setBytes(1, node.id.toArray)
-    using(this.statements.nodeById.executeQuery()) { rs =>
-      transaction(this.connection) {
-        if (rs.next()) {
-          // update existing node
-          this.update(node, this.read(rs), method)
-          Updated
-        } else if (method != Fail) {
-          // insert new node if method does not indicate failure
-          this.insert(node, method)
-        } else {
-          // reject operation if message indicates failure of non-existent node
-          Rejected
-        }
-      }
+  private def touch(bucket: Integer160) = {
+    // update bucket set seen=now() where id=?
+    this.statements.touchBucket.setBytes(1, bucket.toArray)
+    this.statements.touchBucket.executeUpdate()
+    this.cancellables(bucket).cancel()
+    implicit val ec = this.context.system.dispatcher
+    this.cancellables(bucket) = this.context.system.scheduler.scheduleOnce(this.timeout) {
+      self ! Refresh(id)
     }
   }
 
   /**
-   * Reads instance of [[org.abovobo.dht.PersistentNode]] from given [[java.sql.ResultSet]].
+   * Reads instance of [[PersistentNode]] from given [[java.sql.ResultSet]].
    *
    * @param rs Valid [[java.sql.ResultSet]] instance.
-   * @return new instance of [[org.abovobo.dht.PersistentNode]] built from read data.
+   * @return new instance of [[PersistentNode]] built from read data.
    */
   private def read(rs: ResultSet): PersistentNode = {
     import org.abovobo.jdbc.Optional._
@@ -258,7 +312,7 @@ class RoutingTable(val K: Int,
    * This method also updates a time stamp of bucket which owns a node.
    *
    * @param node    An instance of [[org.abovobo.dht.Node]] which has just been seen in network.
-   * @param pn      Corresponding intstance of [[org.abovobo.dht.PersistentNode]].
+   * @param pn      Corresponding intstance of [[PersistentNode]].
    * @param method  Actual method how network node acted with us.
    */
   private def update(node: Node, pn: PersistentNode, method: Method): Unit = {
@@ -285,9 +339,7 @@ class RoutingTable(val K: Int,
     s.setBytes(8, pn.id.toArray)
     s.executeUpdate()
 
-    // update bucket set seen=now() where id=?
-    this.statements.touchBucket.setBytes(1, pn.bucket.toArray)
-    this.statements.touchBucket.executeUpdate()
+    this.touch(pn.bucket)
   }
 
   /**
@@ -304,7 +356,7 @@ class RoutingTable(val K: Int,
     import org.abovobo.jdbc.Closer._
 
     // read all buckets from storage
-    val buckets = new ArrayBuffer[Integer160]()
+    val buckets = new mutable.ArrayBuffer[Integer160]()
     using(this.statements.allBuckets.executeQuery()) { rs =>
       while (rs.next()) {
         buckets += new Integer160(rs.getBytes(1))
@@ -327,7 +379,7 @@ class RoutingTable(val K: Int,
     }
 
     // read all nodes from that bucket
-    val nodes = new ArrayBuffer[PersistentNode]()
+    val nodes = new mutable.ArrayBuffer[PersistentNode]()
     this.statements.nodesByBucket.setBytes(1, bucket._1.toArray)
     using(this.statements.nodesByBucket.executeQuery()) { rs =>
       while (rs.next()) {
@@ -374,6 +426,7 @@ class RoutingTable(val K: Int,
           val questionnable = nodes.filter(_.questionnable)
           // request ping operation for every questionnable node
           questionnable foreach { sender ! RequestPing(_) }
+          // TODO Request must not be sent to sender but rather to Networking Actor
           // send deferred message to itself
           this.context.system.scheduler.scheduleOnce(this.delay) {
             self ! (if (method == Reply) GotReply(node) else GotQuery(node))
@@ -435,15 +488,16 @@ class RoutingTable(val K: Int,
     }
     s.executeUpdate
 
-    // update bucket set seen=now() where id=?
-    this.statements.touchBucket.setBytes(1, bucket.toArray)
-    this.statements.touchBucket.executeUpdate()
+    this.touch(bucket)
   }
+
+  /// Initializes sibling `agent` actor reference
+  private lazy val agent = this.context.actorSelection("../agent")
 
   /// Initializes actual connection to H2 database in a lazy way
   private lazy val connection = {
     Class.forName("org.h2.Driver")
-    DriverManager.getConnection("jdbc:h2:" + path + ";AUTOCOMMIT=OFF")
+    DriverManager.getConnection("jdbc:h2:" + db + ";AUTOCOMMIT=OFF")
   }
 
   /// Collection of all statements used throughout RoutingTable functionality
@@ -481,6 +535,9 @@ class RoutingTable(val K: Int,
   /// This is variable which can be replaced by the one read from the storage
   /// or even set externally
   private var id: Integer160 = Integer160.random
+
+  /// Collection of cancellable deferred tasks for refreshing buckets
+  private val cancellables: mutable.Map[Integer160, Cancellable] = mutable.Map.empty
 }
 
 /** Accompanying object */
@@ -522,18 +579,6 @@ object RoutingTable {
   def props(): Props = this.props("~/db/dht")
 
   /**
-   * This enumeration defines two possible methods of seeing the node:
-   * Query means that method sent us query message, Reply means that node
-   * just replied to our message. We must maintain this difference because
-   * of algorithm of marking node as good or questionable as described
-   * in class documentation.
-   */
-  object Method extends Enumeration {
-    type Method = Value
-    val Query, Reply, Fail = Value
-  }
-
-  /**
    * This enumeration defines three possible outcomes of touching the node:
    * Inserted for new node, Updated if node already existed in the table.
    * Replaced for the case when new node replaced existing bad node.
@@ -547,47 +592,42 @@ object RoutingTable {
   }
 
   /**
-   * Basic trait for all messages supported by Table Actor.
+   * Basic trait for all messages supported by [[org.abovobo.dht.RoutingTable]] actor.
    */
   sealed trait Message
 
   /**
-   * This class represents a case when given node has replied to our query.
+   * This class represents a case when network message has been received
+   * from the given node.
    *
    * @param node A Node instance of the subject.
+   * @param kind A kind of message received from the node.
    */
-  case class GotReply(node: Node) extends Message
-
-  /**
-   * This class represents a case when a query has been received from given node.
-   *
-   * @param node A Node instance of the subject.
-   */
-  case class GotQuery(node: Node) extends Message
-
-  /**
-   * This class represents a case when node failed to respond to our query.
-   *
-   * @param node A Node instance in subject.
-   */
-  case class GotFail(node: Node) extends Message
+  case class GotMessage(node: Node, kind: network.Message.Kind.Kind) extends Message
 
   /**
    * Instructs routing table to generate new SHA-1 identifier.
    */
-  case class ResetId() extends Message
+  case class Reset() extends Message
 
   /**
    * Instructs routing table to set given id as own identifier.
    *
    * @param id An id to set.
    */
-  case class SetId(id: Integer160) extends Message
+  case class Set(id: Integer160) extends Message
 
   /**
    * Instructs routing table to cleanup all stored data.
    */
   case class Purge() extends Message
+
+  /**
+   * Instructs routing table to refresh bucket with given id.
+   *
+   * @param id An id of the bucket to refresh.
+   */
+  case class Refresh(id: Integer160) extends Message
 
   /**
    * This class represents a message which can be sent by [[org.abovobo.dht.RoutingTable]]
