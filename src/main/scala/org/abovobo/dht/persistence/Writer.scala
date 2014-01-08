@@ -26,6 +26,8 @@ import java.sql.{Timestamp, PreparedStatement}
  *
  * None of these methods commit transaction. This must be done outside of the
  * [[org.abovobo.dht.persistence.Writer]].
+ *
+ * @author Dmitry Zhuk
  */
 trait Writer {
 
@@ -254,4 +256,13 @@ trait Writer {
   protected def drop(statement: PreparedStatement): Unit = {
     statement.executeUpdate()
   }
+
+  /**
+   * Allows to execute block of code within transaction.
+   *
+   * @param f   A code block to execute.
+   * @tparam T  Return type of the code block.
+   * @return    A value yielded by code block.
+   */
+  def transaction[T](f: => T): T
 }

@@ -12,10 +12,9 @@ package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
 import akka.actor.{Cancellable, Props, Actor}
-import java.sql.{ResultSet, Timestamp, DriverManager}
 import scala.concurrent.duration._
 import scala.collection.mutable
-import org.abovobo.dht.persistence.PersistentNode
+import org.abovobo.dht.persistence.{Writer, Reader, PersistentNode}
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -94,7 +93,8 @@ import org.abovobo.dht.persistence.PersistentNode
  *                  This duration must normally be a bit longer when waiting node
  *                  reply timeout.
  * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
- * @param db        File system path to database where routing table state is persisted.
+ * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
+ * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
  *
  * @author Dmitry Zhuk
  */
@@ -102,7 +102,8 @@ class RoutingTable(val K: Int,
                    val timeout: FiniteDuration,
                    val delay: FiniteDuration,
                    val threshold: Int,
-                   val db: A) extends Actor {
+                   val reader: Reader,
+                   val writer: Writer) extends Actor {
 
   import RoutingTable._
   import RoutingTable.Result._
@@ -113,11 +114,11 @@ class RoutingTable(val K: Int,
    * Handles RoutingTable Actor specific messages.
    */
   override def receive = {
-    case GotMessage(node, kind) => sender ! Report(node, this.touch(node, kind))
-    case Refresh(_id)   => this.refresh(_id)
-    case Reset()      => this.reset(); sender ! Done(this.id)
-    case Set(_id)     => this.set(_id); sender ! Done(this.id)
-    case Purge()        => this.purge()
+    case Received(node, kind) => this.process(node, kind)
+    case Refresh(min, max)    => this.refresh(min, max)
+    case Reset()              => this.reset()
+    case Set(id)              => this.set(id)
+    case Purge()              => this.purge()
   }
 
   /**
@@ -126,85 +127,61 @@ class RoutingTable(val K: Int,
    * This override checks if there is a stored node id and generates new one if not.
    */
   override def preStart() {
-    import org.abovobo.jdbc.Closer._
 
-    // upon start attempt to retrieve own id from the storage
-    using(this.statements.getId.executeQuery()) { rs =>
-      if (rs.next()) {
-        // identifier found in the storage
-        this.id = new Integer160(rs.getBytes(1))
-      } else {
-        // identifier is missing in the storage, make random one
-        // and call `set` method to save it and purge all the data
-        this.id = Integer160.random
-        this.set(this.id)
-      }
+    // check if the table already has assigned ID
+    this.reader.id() match {
+      case None => this.reset()
     }
 
     // upon start also perform refresh procedure for every existing bucket
     // and schedule the next refresh after configured idle timeout
     implicit val ec = this.context.system.dispatcher
-    using(this.statements.allBuckets.executeQuery()) { rs =>
-      while (rs.next()) {
-        val id = new Integer160(rs.getBytes(1))
-        self ! Refresh(id)
-        this.cancellables.put(id, this.context.system.scheduler.scheduleOnce(this.timeout) {
-          self ! Refresh(id)
+    var prev: Integer160 = null
+    this.reader.buckets() foreach { bucket =>
+      if (prev != null) {
+        self ! Refresh(prev, bucket._1)
+        this.cancellables.put(prev, this.context.system.scheduler.scheduleOnce(this.timeout) {
+          self ! Refresh(prev, bucket._1)
         })
       }
+      prev = bucket._1
     }
+    self ! Refresh(prev, Integer160.maxval)
+    this.cancellables.put(prev, this.context.system.scheduler.scheduleOnce(this.timeout) {
+      self ! Refresh(prev, Integer160.maxval)
+    })
   }
 
   /**
-   * @inheritdoc
+   * This method processes an event of receiving network message from remote node
+   * considering given kind of network message from that node. If given node does not
+   * exist in this routing table there will be attempt to insert it into a table made,
+   * otherwise, node data will be updated. If node is being inserted the buckets may be
+   * split or node insertion still can be rejected if there was no room for the new node
+   * in the table.
    *
-   * This override actually closes all prepared statements and database connection.
-   * The potential [[java.sql.SQLException]] is swallowed by means of
-   * org.abovobo.jdbc.Closer conversions, as it is totally unimportant at this point.
-   */
-  override def postStop() {
-    import org.abovobo.jdbc.Closer._
-    this.statements.all foreach { _.dispose() }
-    this.connection.dispose()
-  }
-
-  /**
-   * This method "touches" given node considering given method of
-   * receiving network message from that node. If given node does not
-   * exist in this routing table it will be inserted, otherwise, node data
-   * will be updated. If node is being inserted the buckets may be split
-   * and node insertion still can be rejected if there was no room for
-   * new node in the table.
-   *
-   * @param node    A node to "touch".
+   * @param node    A node to process network message from.
    * @param kind    A kind of network message received from the node.
    */
-  def touch(node: Node, kind: network.Message.Kind.Kind): Result = {
+  def process(node: Node, kind: network.Message.Kind.Kind): Result = {
 
-    import org.abovobo.jdbc.Transaction._
-    import org.abovobo.jdbc.Closer._
     import network.Message.Kind._
 
-    // try to read node with id of given network node
-    this.statements.nodeById.setBytes(1, node.id.toArray)
-    using(this.statements.nodeById.executeQuery()) { rs =>
-      transaction(this.connection) {
-        if (rs.next()) {
-          // update existing node
-          // note that in case of `Error` reply the node `replied` field
-          // still will be updated in the same way as if it would properly replied.
-          this.update(node, this.read(rs), kind)
-          Updated
-        } else if (kind != Error && kind != Fail) {
-          // insert new node if method does not indicate failure or error
-          // note that we won't insert a node if it has replied with error message
-          this.insert(node, kind)
-        } else {
-          // reject operation if message indicates
-          // failure or error reply of non-existent node
-          Rejected
-        }
+    this.reader.node(node.id) match {
+      case None => if (kind == Query || kind == Reply) {
+        // insert new node only if event does not indicate error or failure
+        this.insert(node, kind)
+      } else {
+        // otherwise reject node
+        Rejected
       }
+      case Some(pn) =>
+        // update existing node
+        this.writer.update(pn, kind)
+        // touch owning bucket
+        this.touch(pn.bucket, this.reader.next(pn.bucket))
+        // respond with Updated Result
+        Updated
     }
   }
 
@@ -213,10 +190,19 @@ class RoutingTable(val K: Int,
    * random number from within the bucket range and sending `find_node`
    * message to network agent actor.
    *
-   *@param id An identifier of the bucket to refresh.
+   * @param min Lower bound of bucket
+   * @param max Upper bound of bucket
    */
-  def refresh(id: Integer160): Unit {
-    // TODO FindNode must be sent to Newtorking Actor
+  def refresh(min: Integer160, max: Integer160): Unit = {
+    this.agent ! FindNode(min + Integer160.random % (max - min))
+    // cancel existing bucket task if exists
+    this.cancellables.get(min) foreach { _.cancel() }
+    // schedule new refresh bucket task
+    this.cancellables.put(
+      min,
+      this.context.system.scheduler.scheduleOnce
+        (this.timeout)(self ! Refresh(min, this.reader.next(min)))(this.context.system.dispatcher)
+    )
   }
 
   /**
@@ -229,163 +215,47 @@ class RoutingTable(val K: Int,
    *
    * @param id New SHA-1 node identifier.
    */
-  private def set(id: Integer160): Unit = {
-    import org.abovobo.jdbc.Transaction._
-    transaction(this.connection) {
-      this.dropData()
-      this.saveId(id)
-      // actually change own ID only if there was no exceptions
-      // in above manipulations with storage
-      this.id = id
-    }
+  private def set(id: Integer160): Unit = this.writer.transaction {
+    this.writer.drop()
+    this.writer.id(id)
   }
 
   /**
    * Deletes all data from database.
    */
-  def purge(): Unit = {
-    import org.abovobo.jdbc.Transaction._
-    transaction(this.connection) {
-      this.dropData()
-    }
+  def purge(): Unit = this.writer.transaction {
+    this.writer.drop()
   }
 
   /**
-   * Deletes all data from database out of the transaction.
-   */
-  private def dropData(): Unit = {
-    this.statements.deleteAllBuckets.executeUpdate()
-  }
-
-  /**
-   * Deletes existing self id from DB and saves given one out of the transaction.
-   *
-   * @param id New SHA-1 identifier to save.
-   */
-  private def saveId(id: Integer160): Unit = {
-    this.statements.dropId.executeUpdate()
-    this.statements.setId.setBytes(1, id.toArray)
-    this.statements.setId.executeUpdate()
-  }
-
-  /**
-   * Touches a bucket with given id resetting its last seen time stamp and scheduling Refresh event.
-   *
-   * @param bucket A bucket to touch.
-   */
-  private def touch(bucket: Integer160) = {
-    // update bucket set seen=now() where id=?
-    this.statements.touchBucket.setBytes(1, bucket.toArray)
-    this.statements.touchBucket.executeUpdate()
-    this.cancellables(bucket).cancel()
-    implicit val ec = this.context.system.dispatcher
-    this.cancellables(bucket) = this.context.system.scheduler.scheduleOnce(this.timeout) {
-      self ! Refresh(id)
-    }
-  }
-
-  /**
-   * Reads instance of [[PersistentNode]] from given [[java.sql.ResultSet]].
-   *
-   * @param rs Valid [[java.sql.ResultSet]] instance.
-   * @return new instance of [[PersistentNode]] built from read data.
-   */
-  private def read(rs: ResultSet): PersistentNode = {
-    import org.abovobo.jdbc.Optional._
-    new PersistentNode(
-      new Integer160(rs.getBytes("id")),
-      rs.bytes("ipv4u") map { new Endpoint(_) },
-      rs.bytes("ipv4t") map { new Endpoint(_) },
-      rs.bytes("ipv6u") map { new Endpoint(_) },
-      rs.bytes("ipv4t") map { new Endpoint(_) },
-      new Integer160(rs.getBytes("bucket")),
-      rs.timestamp("replied"),
-      rs.timestamp("queried"),
-      rs.getInt("failcount"),
-      this.timeout,
-      this.threshold)
-  }
-
-  /**
-   * Updates existing node by setting new values from the given [[org.abovobo.dht.Node]]
-   * instance while leaving old values for those fields which are None in given node.
-   * This method also updates a time stamp of bucket which owns a node.
-   *
-   * @param node    An instance of [[org.abovobo.dht.Node]] which has just been seen in network.
-   * @param pn      Corresponding intstance of [[PersistentNode]].
-   * @param method  Actual method how network node acted with us.
-   */
-  private def update(node: Node, pn: PersistentNode, method: Method): Unit = {
-    // update node set ipv4u=?, ipv4t=?, ipv6u=?, ipv6t=?, replied=?, queried=?, failcount=? where id=?
-    val s = this.statements.updateNode
-    s.setBytes(1, node.ipv4u.map(_.data).getOrElse(pn.ipv4u.map(_.data).orNull))
-    s.setBytes(2, node.ipv4t.map(_.data).getOrElse(pn.ipv4t.map(_.data).orNull))
-    s.setBytes(3, node.ipv6u.map(_.data).getOrElse(pn.ipv6u.map(_.data).orNull))
-    s.setBytes(4, node.ipv6t.map(_.data).getOrElse(pn.ipv6t.map(_.data).orNull))
-    method match {
-      case Reply =>
-        s.setTimestamp(5, new Timestamp(System.currentTimeMillis))
-        s.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
-        s.setInt(7, pn.failcount)
-      case Query =>
-        s.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
-        s.setTimestamp(6, new Timestamp(System.currentTimeMillis))
-        s.setInt(7, pn.failcount)
-      case Fail =>
-        s.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
-        s.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
-        s.setInt(7, pn.failcount + 1)
-    }
-    s.setBytes(8, pn.id.toArray)
-    s.executeUpdate()
-
-    this.touch(pn.bucket)
-  }
-
-  /**
-   * Attempts to insert new node into this table.
+   * Attempts to insert a new node into this table. The whole method is wrapped into
+   * [[org.abovobo.dht.persistence.Writer.transaction()]] block.
    *
    * @param node    An instance of [[org.abovobo.dht.Node]] to insert
-   * @param method  A method of receiving network message from node.
+   * @param kind    A kind network message received from node.
    * @return        Result of operation, as listed in [[org.abovobo.dht.RoutingTable.Result.Result]]
    *                excluding [[org.abovobo.dht.RoutingTable.Result.Result#Updated]]
    */
-  private def insert(node: Node, method: Method): Result = {
+  private def insert(node: Node, kind: network.Message.Kind.Kind): Result = this.writer.transaction {
 
-    import context.dispatcher
-    import org.abovobo.jdbc.Closer._
-
-    // read all buckets from storage
-    val buckets = new mutable.ArrayBuffer[Integer160]()
-    using(this.statements.allBuckets.executeQuery()) { rs =>
-      while (rs.next()) {
-        buckets += new Integer160(rs.getBytes(1))
-      }
-    }
+    val buckets = this.reader.buckets().toArray
 
     // get the bucket which is good for the given node
     val bucket = if (buckets.isEmpty) {
       // if there are no buckets exist we must insert zeroth bucket
       val zero = Integer160.zero
-      this.statements.insertBucket.setBytes(1, zero.toArray)
-      this.statements.insertBucket.executeUpdate()
+      this.writer.insert(zero)
       zero -> Integer160.maxval
     } else {
       // since zeroth element of this collection must be Integer160.zero
       // this always leads to valid index: we never can get -1 here.
       // so here we are getting last bucket having min bound less or equal to node id.
-      val index = buckets.lastIndexWhere(_ <= node.id)
-      buckets(index) -> (if (index == buckets.length - 1) Integer160.maxval else buckets(index + 1))
+      val index = buckets.lastIndexWhere(_._1 <= node.id)
+      buckets(index)._1 -> (if (index == buckets.length - 1) Integer160.maxval else buckets(index + 1)._1)
     }
 
-    // read all nodes from that bucket
-    val nodes = new mutable.ArrayBuffer[PersistentNode]()
-    this.statements.nodesByBucket.setBytes(1, bucket._1.toArray)
-    using(this.statements.nodesByBucket.executeQuery()) { rs =>
-      while (rs.next()) {
-        nodes += this.read(rs)
-      }
-    }
+    val nodes = this.reader.bucket(bucket._1) map { new LiveNode(_, this.timeout, this.threshold) }
+    val id = this.reader.id().get
 
     // go through variants
     if (nodes.size == this.K) {
@@ -395,15 +265,22 @@ class RoutingTable(val K: Int,
       if (good.size == this.K) {
         // the bucket is full of good nodes
         // check if this id falls into a bucket range
-        if (bucket._1 <= this.id && this.id < bucket._2) {
+        if (bucket._1 <= id && id < bucket._2) {
           // check if current bucket is large enough to be split
           if (bucket._2 - bucket._1 <= this.K * 2) {
             // current bucket is too small
             Rejected
           } else {
             // split current bucket and send the message back to self queue
-            this.split(nodes, bucket)
-            self ! (if (method == Reply) GotReply(node) else GotQuery(node))
+            // new bucket edge must split existing buckets onto 2 equals buckets
+            val b = bucket._1 + ((bucket._2 - bucket._1) >> 1)
+            // insert new bucket
+            this.writer.insert(b)
+            // move nodes appropriately
+            nodes.filter(_.node.id >= b) foreach { node => this.writer.move(node.node, b) }
+            // send message to itself
+            self ! Received(node, kind)
+            // notify caller that insertion has been deferred
             Deferred
           }
         } else {
@@ -416,125 +293,51 @@ class RoutingTable(val K: Int,
         val bad = nodes.filter(_.bad)
         if (bad.size > 0) {
           // there are bad nodes, replacing first of them
-          this.statements.deleteNode.setBytes(1, bad.head.id.toArray)
-          this.statements.deleteNode.executeUpdate
-          this.insert(node, method, bucket._1)
+          this.writer.delete(bad.head.node.id)
+          this.writer.insert(node, bucket._1, kind)
+          this.writer.touch(bucket._1)
           Replaced
         } else {
           // there are no bad nodes in this bucket
           // get list of questionnable nodes
           val questionnable = nodes.filter(_.questionnable)
           // request ping operation for every questionnable node
-          questionnable foreach { sender ! RequestPing(_) }
-          // TODO Request must not be sent to sender but rather to Networking Actor
+          questionnable foreach { node => this.agent ! Ping(node.node) }
           // send deferred message to itself
-          this.context.system.scheduler.scheduleOnce(this.delay) {
-            self ! (if (method == Reply) GotReply(node) else GotQuery(node))
-          }
+          this.context.system.scheduler.scheduleOnce(this.delay) { self ! Received(node, kind) }
+          // notify caller that insertion has been deferred
           Deferred
         }
       }
     } else {
       // there is a room for new node in this bucket
-      this.insert(node, method, bucket._1)
+      this.writer.insert(node, bucket._1, kind)
+      this.touch(bucket._1, bucket._2)
       Inserted
     }
   }
 
   /**
-   * This method splits given bucket onto 2 equal buckets moving nodes belonging
-   * to the new bucket into it.
+   * Touches a bucket with given id resetting its last seen time stamp and scheduling Refresh event.
    *
-   * @param nodes   Collection of nodes belonging to exsting bucket.
-   * @param bucket  Existing bucket.
+   * @param bucket A bucket to touch.
+   * @param next   An id of the next bucket.
    */
-  private def split(nodes: Traversable[Node], bucket: (Integer160, Integer160)): Unit = {
-    // new bucket edge must split existing buckets onto 2 equals buckets
-    val b = bucket._1 + ((bucket._2 - bucket._1) >> 1)
-    // insert new bucket
-    this.statements.insertBucket.setBytes(1, b.toArray)
-    this.statements.insertBucket.executeUpdate()
-    // move nodes appropriately
-    nodes.filter(_.id >= b).foreach { node =>
-      this.statements.moveNode.setBytes(1, b.toArray)
-      this.statements.moveNode.setBytes(2, node.id.toArray)
-      this.statements.moveNode.executeUpdate()
-    }
-  }
-
-  /**
-   * Actually executes insertion of a node into a storage also updating time stamp of owning bucket.
-   *
-   * @param node    A node being inserted.
-   * @param method  A method of receiving network message from node.
-   * @param bucket  A bucket which owns new node.
-   */
-  private def insert(node: Node, method: Method, bucket: Integer160): Unit = {
-
-    // insert into node(id, bucket, ipv4u, ipv4t, ipv6u, ipv6t, replied, queried) values(?, ?, ?, ?, ?, ?, ?, ?)
-    val s = this.statements.insertNode
-    s.setBytes(1, node.id.toArray)
-    s.setBytes(2, bucket.toArray)
-    s.setBytes(3, node.ipv4u.map(_.data).orNull)
-    s.setBytes(4, node.ipv4t.map(_.data).orNull)
-    s.setBytes(5, node.ipv6u.map(_.data).orNull)
-    s.setBytes(6, node.ipv6t.map(_.data).orNull)
-    if (method == Reply) {
-      s.setTimestamp(7, new Timestamp(System.currentTimeMillis))
-      s.setNull(8, java.sql.Types.TIMESTAMP)
-    } else if (method == Query) {
-      s.setNull(7, java.sql.Types.TIMESTAMP)
-      s.setTimestamp(8, new Timestamp(System.currentTimeMillis))
-    }
-    s.executeUpdate
-
-    this.touch(bucket)
+  private def touch(bucket: Integer160, next: Integer160) = this.writer.transaction {
+    // actually update bucket last seen property in storage
+    this.writer.touch(bucket)
+    // cancel existing bucket task if exists
+    this.cancellables.get(bucket) foreach { _.cancel() }
+    // schedule new refresh bucket task
+    this.cancellables.put(
+      bucket,
+      this.context.system.scheduler.scheduleOnce
+        (this.timeout)(self ! Refresh(bucket, next))(this.context.system.dispatcher)
+    )
   }
 
   /// Initializes sibling `agent` actor reference
   private lazy val agent = this.context.actorSelection("../agent")
-
-  /// Initializes actual connection to H2 database in a lazy way
-  private lazy val connection = {
-    Class.forName("org.h2.Driver")
-    DriverManager.getConnection("jdbc:h2:" + db + ";AUTOCOMMIT=OFF")
-  }
-
-  /// Collection of all statements used throughout RoutingTable functionality
-  private object statements {
-    private lazy val c = RoutingTable.this.connection
-
-    // Node related queries
-    lazy val nodeById = c.prepareStatement("select * from node where id=?")
-    lazy val nodesByBucket = c.prepareStatement("select * from node where bucket=?")
-    lazy val insertNode = c.prepareStatement(
-      "insert into node(id, bucket, ipv4u, ipv4t, ipv6u, ipv6t, replied, queried) " +
-        "values(?, ?, ?, ?, ?, ?, ?, ?)")
-    lazy val updateNode = c.prepareStatement(
-      "update node set ipv4u=?, ipv4t=?, ipv6u=?, ipv6t=?, replied=?, queried=?, failcount=? where id=?")
-    lazy val moveNode = c.prepareStatement("update node set bucket=? where id=?")
-    lazy val deleteNode = c.prepareStatement("delete from node where id=?")
-    lazy val deleteAllNodes = c.prepareStatement("delete from node")
-
-    // Bucket related queries
-    lazy val allBuckets = c.prepareStatement("select * from bucket order by id")
-    lazy val insertBucket = c.prepareStatement("insert into bucket(id, seen) values(?, now())")
-    lazy val touchBucket = c.prepareStatement("update bucket set seen=now() where id=?")
-    lazy val deleteAllBuckets = c.prepareStatement("delete from bucket")
-
-    lazy val setId = c.prepareStatement("insert into self(id) values(?)")
-    lazy val dropId = c.prepareStatement("delete from self")
-    lazy val getId = c.prepareStatement("select * from self")
-
-    lazy val all = Array(nodeById, nodesByBucket, insertNode, updateNode, moveNode, deleteNode, deleteAllNodes,
-      allBuckets, insertBucket, touchBucket, deleteAllBuckets,
-      setId, dropId, getId)
-  }
-
-  /// This node SHA-1 identifier.
-  /// This is variable which can be replaced by the one read from the storage
-  /// or even set externally
-  private var id: Integer160 = Integer160.random
 
   /// Collection of cancellable deferred tasks for refreshing buckets
   private val cancellables: mutable.Map[Integer160, Cancellable] = mutable.Map.empty
@@ -579,6 +382,34 @@ object RoutingTable {
   def props(): Props = this.props("~/db/dht")
 
   /**
+   * Wraps [[org.abovobo.dht.persistence.PersistentNode]] with utility methods allowing
+   * to obtain actual state of the node in terms of its activity.
+   *
+   * @param node      An instance of [[org.abovobo.dht.persistence.PersistentNode]].
+   * @param timeout   Time interval before node becomes questionable.
+   * @param threshold Number of times a node must fail to respond to become 'bad'.
+   */
+  class LiveNode(val node: PersistentNode,
+                 val timeout: Duration,
+                 val threshold: Int) {
+
+    /** Returns true if this node is "good" */
+    def good: Boolean = !this.bad && !this.questionnable
+
+    /** Returns true if this node is definitely bad */
+    def bad: Boolean = this.threshold <= this.node.failcount
+
+    /** Returns true if this node is not "bad" but has not been recently seen */
+    def questionnable: Boolean =
+      this.threshold > this.node.failcount && this.node.replied.isDefined && !this.recentlySeen
+
+    /** Returns true if this node has been seen recently */
+    def recentlySeen: Boolean =
+      this.node.replied.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < this.timeout ||
+        this.node.queried.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < this.timeout
+  }
+
+  /**
    * This enumeration defines three possible outcomes of touching the node:
    * Inserted for new node, Updated if node already existed in the table.
    * Replaced for the case when new node replaced existing bad node.
@@ -600,10 +431,10 @@ object RoutingTable {
    * This class represents a case when network message has been received
    * from the given node.
    *
-   * @param node A Node instance of the subject.
+   * @param from A Node from which a network message has been received.
    * @param kind A kind of message received from the node.
    */
-  case class GotMessage(node: Node, kind: network.Message.Kind.Kind) extends Message
+  case class Received(from: Node, kind: network.Message.Kind.Kind) extends Message
 
   /**
    * Instructs routing table to generate new SHA-1 identifier.
@@ -623,11 +454,12 @@ object RoutingTable {
   case class Purge() extends Message
 
   /**
-   * Instructs routing table to refresh bucket with given id.
+   * Instructs routing table to refresh bucket with given bounds.
    *
-   * @param id An id of the bucket to refresh.
+   * @param min Lower bound of bucket.
+   * @param max Upper bound of bucket.
    */
-  case class Refresh(id: Integer160) extends Message
+  case class Refresh(min: Integer160, max: Integer160) extends Message
 
   /**
    * This class represents a message which can be sent by [[org.abovobo.dht.RoutingTable]]
@@ -635,23 +467,7 @@ object RoutingTable {
    *
    * @param node A [[org.abovobo.dht.Node]] instance of the subject.
    */
-  case class RequestPing(node: Node) extends Message
+  case class Ping(node: Node) extends Message
 
-  /**
-   * This class represents a message which is sent by [[org.abovobo.dht.RoutingTable]]
-   * back to sender reporting incoming message results processing.
-   *
-   * @param result A tuple containing original [[org.abovobo.dht.Node]] and
-   *               [[org.abovobo.dht.RoutingTable.Result.Result]] enumeration
-   *               indicating processing outcome.
-   */
-  case class Report(result: (Node, Result.Result)) extends Message
-
-  /**
-   * Represents a message sent by [[org.abovobo.dht.RoutingTable]] back to sender
-   * telling new id set by means of ResetId or SetId messages
-   *
-   * @param id A new table identifier
-   */
-  case class Done(id: Integer160) extends Message
+  case class FindNode(id: Integer160) extends Message
 }

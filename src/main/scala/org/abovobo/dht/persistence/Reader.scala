@@ -24,6 +24,8 @@ import org.abovobo.dht.Endpoint
  * all necessary manipulations with it assuming documented layout of that
  * statement. Implementors will override public methods by redirecting execution
  * to protected methods supplying pre-instantiated [[java.sql.PreparedStatement]].
+ *
+ * @author Dmitry Zhuk
  */
 trait Reader {
 
@@ -152,6 +154,20 @@ trait Reader {
     buckets
   }
 
+  /**
+   * Returns an id of bucket following the given one.
+   *
+   * @param id A bucket to find next for.
+   * @return   An id of bucket following the given one.
+   */
+  def next(id: Integer160): Integer160 = {
+    val buckets = this.buckets().toIndexedSeq
+    buckets.indexWhere(_._1 == id) match {
+      case -1 => throw new IllegalArgumentException
+      case n: Int if n < buckets.size - 1 => buckets(n + 1)._1
+      case n: Int if n == buckets.size - 1 => Integer160.maxval
+    }
+  }
 
   /**
    * Reads instance of [[org.abovobo.dht.persistence.PersistentNode]] from given [[java.sql.ResultSet]].
