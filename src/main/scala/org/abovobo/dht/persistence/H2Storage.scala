@@ -13,6 +13,7 @@ package org.abovobo.dht.persistence
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.Node
 import org.abovobo.dht.network.Message.Kind._
+import org.abovobo.jdbc.Transaction
 
 /**
  * Actual implementation of [[org.abovobo.dht.persistence.Storage]] which uses H2.
@@ -21,66 +22,73 @@ import org.abovobo.dht.network.Message.Kind._
  *
  * @author Dmitry Zhuk
  */
-class H2Storage(uri: String) extends Storage("org.h2.Driver", uri) {
+class H2Storage(uri: String) extends Storage("org.h2.Driver", uri) with Reader with Writer {
 
   /////////////////
   // READER METHODS
   /////////////////
 
   /** @inheritdoc */
-  override protected def id() = this.id(this.statements("getId"))
+  override def id() = this.id(this.statements("getId"))
 
   /** @inheritdoc */
-  override protected def nodes() = this.nodes(this.statements("allNodes"))
+  override def nodes() = this.nodes(this.statements("allNodes"))
 
   /** @inheritdoc */
-  override protected def node(id: Integer160) = this.node(this.statements("nodeById"), id)
+  override def node(id: Integer160) = this.node(this.statements("nodeById"), id)
 
   /** @inheritdoc */
-  override protected def bucket(id: Integer160) = this.bucket(this.statements("nodesByBucket"), id)
+  override def bucket(id: Integer160) = this.bucket(this.statements("nodesByBucket"), id)
 
   /** @inheritdoc */
-  override protected def buckets() = this.buckets(this.statements("allBuckets"))
+  override def buckets() = this.buckets(this.statements("allBuckets"))
 
   /////////////////
   // WRITER METHODS
   /////////////////
 
   /** @inheritdoc */
-  override protected def id(id: Integer160) =
+  override def id(id: Integer160) =
     this.id(this.statements("dropId"), this.statements("setId"), id)
 
   /** @inheritdoc */
-  override protected def insert(node: Node, bucket: Integer160, kind: Kind) =
+  override def insert(node: Node, bucket: Integer160, kind: Kind) =
     this.insert(this.statements("insertNode"), node, bucket, kind)
 
   /** @inheritdoc */
-  override protected def update(node: PersistentNode, kind: Kind) =
-    this.update(this.statements("updateNode"), node, kind)
+  override def update(node: Node, pn: PersistentNode, kind: Kind) =
+    this.update(this.statements("updateNode"), node, pn, kind)
 
   /** @inheritdoc */
-  override protected def move(node: PersistentNode, bucket: Integer160) =
+  override def move(node: PersistentNode, bucket: Integer160) =
     this.move(this.statements("moveNode"), node, bucket)
 
   /** @inheritdoc */
-  override protected def delete(id: Integer160) =
+  override def delete(id: Integer160) =
     this.delete(this.statements("deleteNode"), id)
 
   /** @inheritdoc */
-  override protected def insert(id: Integer160) =
+  override def insert(id: Integer160) =
     this.insert(this.statements("insertBucket"), id)
 
   /** @inheritdoc */
-  override protected def touch(id: Integer160) =
-    this.touch(this.statements("touchNode"), id)
+  override def touch(id: Integer160) =
+    this.touch(this.statements("touchBucket"), id)
 
   /** @inheritdoc */
-  override protected def drop() =
+  override def drop() =
     this.drop(this.statements("deleteAllBuckets"))
 
   ///////////////////////////
   // ABSTRACT STORAGE METHODS
   ///////////////////////////
+
+  /**
+   * @inheritdoc
+   *
+   * Delegates execution to [[org.abovobo.jdbc.Transaction.transaction()]]
+   */
+  override def transaction[T](f: => T): T = Transaction.transaction(this.connection)(f)
 
   /** @inheritdoc */
   override protected def prepare() = {

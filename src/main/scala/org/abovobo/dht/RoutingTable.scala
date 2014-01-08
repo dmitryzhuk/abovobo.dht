@@ -131,6 +131,7 @@ class RoutingTable(val K: Int,
     // check if the table already has assigned ID
     this.reader.id() match {
       case None => this.reset()
+      case _ => // do nothin
     }
 
     // upon start also perform refresh procedure for every existing bucket
@@ -177,7 +178,7 @@ class RoutingTable(val K: Int,
       }
       case Some(pn) =>
         // update existing node
-        this.writer.update(pn, kind)
+        this.writer.update(node, pn, kind)
         // touch owning bucket
         this.touch(pn.bucket, this.reader.next(pn.bucket))
         // respond with Updated Result
@@ -304,7 +305,7 @@ class RoutingTable(val K: Int,
           // request ping operation for every questionnable node
           questionnable foreach { node => this.agent ! Ping(node.node) }
           // send deferred message to itself
-          this.context.system.scheduler.scheduleOnce(this.delay) { self ! Received(node, kind) }
+          this.context.system.scheduler.scheduleOnce(this.delay)(self ! Received(node, kind))(this.context.dispatcher)
           // notify caller that insertion has been deferred
           Deferred
         }

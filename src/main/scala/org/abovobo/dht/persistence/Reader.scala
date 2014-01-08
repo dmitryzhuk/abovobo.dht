@@ -182,7 +182,7 @@ trait Reader {
       rs.bytes("ipv4u") map { new Endpoint(_) },
       rs.bytes("ipv4t") map { new Endpoint(_) },
       rs.bytes("ipv6u") map { new Endpoint(_) },
-      rs.bytes("ipv4t") map { new Endpoint(_) },
+      rs.bytes("ipv6t") map { new Endpoint(_) },
       new Integer160(rs.getBytes("bucket")),
       rs.timestamp("replied"),
       rs.timestamp("queried"),

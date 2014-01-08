@@ -104,10 +104,11 @@ trait Writer {
   /**
    * Updates existing node.
    *
-   * @param node    A node to update.
+   * @param node    A node which sent network message.
+   * @param pn      A corresponding persistent node.
    * @param kind    A kind of network message.
    */
-  def update(node: PersistentNode, kind: Kind): Unit
+  def update(node: Node, pn: PersistentNode, kind: Kind): Unit
 
   /**
    * Set statement parameters from given arguments and executes it in update mode.
@@ -131,7 +132,7 @@ trait Writer {
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */
-  protected def update(statement: PreparedStatement, node: PersistentNode, kind: Kind): Unit = {
+  protected def update(statement: PreparedStatement, node: Node, pn: PersistentNode, kind: Kind): Unit = {
     statement.setBytes(1, node.ipv4u.map(_.data).getOrElse(node.ipv4u.map(_.data).orNull))
     statement.setBytes(2, node.ipv4t.map(_.data).getOrElse(node.ipv4t.map(_.data).orNull))
     statement.setBytes(3, node.ipv6u.map(_.data).getOrElse(node.ipv6u.map(_.data).orNull))
@@ -139,16 +140,16 @@ trait Writer {
     kind match {
       case Reply | Error =>
         statement.setTimestamp(5, new Timestamp(System.currentTimeMillis))
-        statement.setTimestamp(6, node.queried.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setInt(7, node.failcount)
+        statement.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setInt(7, pn.failcount)
       case Query =>
-        statement.setTimestamp(5, node.replied.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
         statement.setTimestamp(6, new Timestamp(System.currentTimeMillis))
-        statement.setInt(7, node.failcount)
+        statement.setInt(7, pn.failcount)
       case Fail =>
-        statement.setTimestamp(5, node.replied.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setTimestamp(6, node.queried.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setInt(7, node.failcount + 1)
+        statement.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setInt(7, pn.failcount + 1)
     }
     statement.setBytes(8, node.id.toArray)
     statement.executeUpdate()

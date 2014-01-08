@@ -21,7 +21,7 @@ import org.abovobo.jdbc.Transaction
  *
  * @author Dmitry Zhuk
  */
-abstract class Storage(val driver: String, val uri: String) extends AutoCloseable with Reader with Writer {
+abstract class Storage(val driver: String, val uri: String) extends AutoCloseable {
 
   /**
    * Loads actual [[java.sql.DriverManager]] class and gets connection to db,
@@ -44,12 +44,11 @@ abstract class Storage(val driver: String, val uri: String) extends AutoCloseabl
     this.connection.dispose()
   }
 
-  /**
-   * @inheritdoc
-   *
-   * Delegates execution to [[org.abovobo.jdbc.Transaction.transaction()]]
-   */
-  override def transaction[T](f: => T): T = Transaction.transaction(this.connection)(f)
+  /** Delegates invocation to JDBC [[java.sql.Connection]] instance */
+  def commit() = this.connection.commit()
+
+  /** Delegates invocation to JDBC [[java.sql.Connection]] instance */
+  def rollback() = this.connection.rollback()
 
   /**
    * Prepares all statements which subclass wants to be closed automatically.

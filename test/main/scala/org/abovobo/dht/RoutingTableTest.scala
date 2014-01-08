@@ -21,6 +21,7 @@ class RoutingTableTest(system: ActorSystem)
     TestKit.shutdownActorSystem(this.system)
   }
 
+  /*
   "A RoutingTable Actor" must {
     val table = this.system.actorOf(RoutingTable.props(), "table")
     val node = new Node(Integer160.zero, Some(new Endpoint(new Array[Byte](6))), None, None, None)
@@ -65,4 +66,5 @@ class RoutingTableTest(system: ActorSystem)
       expectMsg(RoutingTable.Report(node, RoutingTable.Result.Rejected))
     }
   }
+  */
 }
