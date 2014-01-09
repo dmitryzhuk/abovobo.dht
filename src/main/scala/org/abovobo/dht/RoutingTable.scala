@@ -15,6 +15,7 @@ import akka.actor.{Cancellable, Props, Actor}
 import scala.concurrent.duration._
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader, PersistentNode}
+import akka.event.Logging
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -139,7 +140,7 @@ class RoutingTable(val K: Int,
     implicit val ec = this.context.system.dispatcher
     var prev: Integer160 = null
     this.reader.buckets() foreach { bucket =>
-      if (prev != null) {
+      if (prev ne null) {
         self ! Refresh(prev, bucket._1)
         this.cancellables.put(prev, this.context.system.scheduler.scheduleOnce(this.timeout) {
           self ! Refresh(prev, bucket._1)
@@ -147,10 +148,21 @@ class RoutingTable(val K: Int,
       }
       prev = bucket._1
     }
+    if (prev eq null) prev = Integer160.zero
     self ! Refresh(prev, Integer160.maxval)
     this.cancellables.put(prev, this.context.system.scheduler.scheduleOnce(this.timeout) {
       self ! Refresh(prev, Integer160.maxval)
     })
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Cancels all scheduled tasks.
+   */
+  override def postStop() {
+    this.cancellables.foreach(_._2.cancel())
+    this.cancellables.clear()
   }
 
   /**
@@ -168,12 +180,17 @@ class RoutingTable(val K: Int,
 
     import network.Message.Kind._
 
+    this.log.info("Processing incoming message about node id {} with kind {} received from {}", node.id, kind, sender)
+
     this.reader.node(node.id) match {
       case None => if (kind == Query || kind == Reply) {
         // insert new node only if event does not indicate error or failure
-        this.insert(node, kind)
+        val result = this.insert(node, kind)
+        this.log.info("Attempted insertion with result {}", result)
+        result
       } else {
         // otherwise reject node
+        this.log.info("Rejected processing")
         Rejected
       }
       case Some(pn) =>
@@ -182,6 +199,7 @@ class RoutingTable(val K: Int,
         // touch owning bucket
         this.touch(pn.bucket, this.reader.next(pn.bucket))
         // respond with Updated Result
+        this.log.info("Updated existing node")
         Updated
     }
   }
@@ -198,6 +216,7 @@ class RoutingTable(val K: Int,
     this.agent ! FindNode(min + Integer160.random % (max - min))
     // cancel existing bucket task if exists
     this.cancellables.get(min) foreach { _.cancel() }
+    this.cancellables.remove(min)
     // schedule new refresh bucket task
     this.cancellables.put(
       min,
@@ -217,14 +236,19 @@ class RoutingTable(val K: Int,
    * @param id New SHA-1 node identifier.
    */
   private def set(id: Integer160): Unit = this.writer.transaction {
+    this.cancellables.foreach(_._2.cancel())
+    this.cancellables.clear()
     this.writer.drop()
     this.writer.id(id)
+    this.agent ! FindNode(id)
   }
 
   /**
    * Deletes all data from database.
    */
   def purge(): Unit = this.writer.transaction {
+    this.cancellables.foreach(_._2.cancel())
+    this.cancellables.clear()
     this.writer.drop()
   }
 
@@ -329,6 +353,7 @@ class RoutingTable(val K: Int,
     this.writer.touch(bucket)
     // cancel existing bucket task if exists
     this.cancellables.get(bucket) foreach { _.cancel() }
+    this.cancellables.remove(bucket)
     // schedule new refresh bucket task
     this.cancellables.put(
       bucket,
@@ -342,6 +367,9 @@ class RoutingTable(val K: Int,
 
   /// Collection of cancellable deferred tasks for refreshing buckets
   private val cancellables: mutable.Map[Integer160, Cancellable] = mutable.Map.empty
+
+  /// Actor's logger
+  private val log = Logging(this.context.system, this)
 }
 
 /** Accompanying object */
@@ -357,30 +385,24 @@ object RoutingTable {
    *                  This duration must normally be a bit longer when waiting node
    *                  reply timeout.
    * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
-   * @param path      File system path to database where routing table state is persisted.
+   * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
+   * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(K: Int, timeout: Duration, delay: Duration, threshold: Int, path: String): Props =
-    Props(classOf[RoutingTable], K, timeout, delay, threshold, path)
+  def props(K: Int, timeout: Duration, delay: Duration, threshold: Int, reader: Reader, writer: Writer): Props =
+    Props(classOf[RoutingTable], K, timeout, delay, threshold, reader, writer)
 
   /**
    * Factory which creates RoutingTable Actor Props instance with default values:
    * K = 8, timeout = 15 minutes, delay = 30 seconds, threshold = 3.
    *
-   * @param path      File system path to database where routing table state is persisted.
+   * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
+   * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(path: String): Props = this.props(8, 15.minutes, 30.seconds, 3, path)
-
-  /**
-   * Factory which creates RoutingTable Actor Props instance with default values:
-   * K = 8, timeout = 15 minutes, delay = 30 seconds, threshold = 3, path = ~/db/dht.
-   *
-   * @return          Properly configured Actor Props instance.
-   */
-  def props(): Props = this.props("~/db/dht")
+  def props(reader: Reader, writer: Writer): Props = this.props(8, 15.minutes, 30.seconds, 3, reader, writer)
 
   /**
    * Wraps [[org.abovobo.dht.persistence.PersistentNode]] with utility methods allowing
