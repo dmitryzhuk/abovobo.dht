@@ -11,11 +11,10 @@
 package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
-import akka.actor.{Cancellable, Props, Actor}
+import akka.actor.{ActorLogging, Cancellable, Props, Actor}
 import scala.concurrent.duration._
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader, PersistentNode}
-import akka.event.Logging
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -104,7 +103,7 @@ class RoutingTable(val K: Int,
                    val delay: FiniteDuration,
                    val threshold: Int,
                    val reader: Reader,
-                   val writer: Writer) extends Actor {
+                   val writer: Writer) extends Actor with ActorLogging {
 
   import RoutingTable._
   import RoutingTable.Result._
@@ -135,24 +134,24 @@ class RoutingTable(val K: Int,
       case _ => // do nothin
     }
 
+    import this.context.system
+
     // upon start also perform refresh procedure for every existing bucket
     // and schedule the next refresh after configured idle timeout
-    implicit val ec = this.context.system.dispatcher
+    //implicit val ec = this.context.system.dispatcher
     var prev: Integer160 = null
     this.reader.buckets() foreach { bucket =>
       if (prev ne null) {
         self ! Refresh(prev, bucket._1)
-        this.cancellables.put(prev, this.context.system.scheduler.scheduleOnce(this.timeout) {
-          self ! Refresh(prev, bucket._1)
-        })
+        this.cancellables.put(prev,
+          system.scheduler.scheduleOnce(this.timeout)(self ! Refresh(prev, bucket._1))(system.dispatcher))
       }
       prev = bucket._1
     }
     if (prev eq null) prev = Integer160.zero
     self ! Refresh(prev, Integer160.maxval)
-    this.cancellables.put(prev, this.context.system.scheduler.scheduleOnce(this.timeout) {
-      self ! Refresh(prev, Integer160.maxval)
-    })
+    this.cancellables.put(prev,
+      system.scheduler.scheduleOnce(this.timeout)(self ! Refresh(prev, Integer160.maxval))(system.dispatcher))
   }
 
   /**
@@ -180,7 +179,9 @@ class RoutingTable(val K: Int,
 
     import network.Message.Kind._
 
-    this.log.info("Processing incoming message about node id {} with kind {} received from {}", node.id, kind, sender)
+    this.log.info(
+      "Processing incoming message with node id {} and kind {} received from {}",
+      node.id, kind, sender)
 
     this.reader.node(node.id) match {
       case None => if (kind == Query || kind == Reply) {
@@ -349,17 +350,15 @@ class RoutingTable(val K: Int,
    * @param next   An id of the next bucket.
    */
   private def touch(bucket: Integer160, next: Integer160) = this.writer.transaction {
+    import this.context.system
     // actually update bucket last seen property in storage
     this.writer.touch(bucket)
     // cancel existing bucket task if exists
     this.cancellables.get(bucket) foreach { _.cancel() }
     this.cancellables.remove(bucket)
     // schedule new refresh bucket task
-    this.cancellables.put(
-      bucket,
-      this.context.system.scheduler.scheduleOnce
-        (this.timeout)(self ! Refresh(bucket, next))(this.context.system.dispatcher)
-    )
+    this.cancellables.put(bucket,
+      system.scheduler.scheduleOnce(this.timeout)(self ! Refresh(bucket, next))(system.dispatcher))
   }
 
   /// Initializes sibling `agent` actor reference
@@ -367,9 +366,6 @@ class RoutingTable(val K: Int,
 
   /// Collection of cancellable deferred tasks for refreshing buckets
   private val cancellables: mutable.Map[Integer160, Cancellable] = mutable.Map.empty
-
-  /// Actor's logger
-  private val log = Logging(this.context.system, this)
 }
 
 /** Accompanying object */
@@ -412,9 +408,7 @@ object RoutingTable {
    * @param timeout   Time interval before node becomes questionable.
    * @param threshold Number of times a node must fail to respond to become 'bad'.
    */
-  class LiveNode(val node: PersistentNode,
-                 val timeout: Duration,
-                 val threshold: Int) {
+  class LiveNode(val node: PersistentNode, val timeout: Duration, val threshold: Int) {
 
     /** Returns true if this node is "good" */
     def good: Boolean = !this.bad && !this.questionnable

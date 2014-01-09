@@ -37,7 +37,7 @@ class RoutingTableBasicTest(system: ActorSystem)
 
   override def afterAll() = {
     // -- this.system.awaitTermination()
-    this.storage.commit()
+    // -- this.storage.commit()
     this.storage.close()
     TestKit.shutdownActorSystem(this.system)
   }
