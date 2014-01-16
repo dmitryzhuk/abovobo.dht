@@ -128,10 +128,12 @@ class RoutingTable(val K: Int,
    */
   override def preStart() {
 
-    // check if the table already has assigned ID
+    // check if the table already has assigned ID and reset if not
+    // in any case initial FindNode will be issued to controller
     this.reader.id() match {
-      case None => this.reset()
-      case _ => // do nothin
+      case None     => this.reset()
+      case Some(id) => this.controller ! FindNode(id)
+
     }
 
     import this.context.system
@@ -214,7 +216,7 @@ class RoutingTable(val K: Int,
    * @param max Upper bound of bucket
    */
   def refresh(min: Integer160, max: Integer160): Unit = {
-    this.agent ! FindNode(min + Integer160.random % (max - min))
+    this.controller ! FindNode(min + Integer160.random % (max - min))
     // cancel existing bucket task if exists
     this.cancellables.get(min) foreach { _.cancel() }
     this.cancellables.remove(min)
@@ -241,7 +243,7 @@ class RoutingTable(val K: Int,
     this.cancellables.clear()
     this.writer.drop()
     this.writer.id(id)
-    this.agent ! FindNode(id)
+    this.controller ! FindNode(id)
   }
 
   /**
@@ -255,12 +257,12 @@ class RoutingTable(val K: Int,
 
   /**
    * Attempts to insert a new node into this table. The whole method is wrapped into
-   * [[org.abovobo.dht.persistence.Writer.transaction()]] block.
+   * [[org.abovobo.dht.persistence.Writer#transaction]] block.
    *
    * @param node    An instance of [[org.abovobo.dht.Node]] to insert
    * @param kind    A kind network message received from node.
-   * @return        Result of operation, as listed in [[org.abovobo.dht.RoutingTable.Result.Result]]
-   *                excluding [[org.abovobo.dht.RoutingTable.Result.Result#Updated]]
+   * @return        Result of operation, as listed in [[org.abovobo.dht.RoutingTable.Result]]
+   *                excluding `Updated` value.
    */
   private def insert(node: Node, kind: network.Message.Kind.Kind): Result = this.writer.transaction {
 
@@ -328,7 +330,7 @@ class RoutingTable(val K: Int,
           // get list of questionnable nodes
           val questionnable = nodes.filter(_.questionnable)
           // request ping operation for every questionnable node
-          questionnable foreach { node => this.agent ! Ping(node.node) }
+          questionnable foreach { node => this.controller ! Ping(node.node) }
           // send deferred message to itself
           this.context.system.scheduler.scheduleOnce(this.delay)(self ! Received(node, kind))(this.context.dispatcher)
           // notify caller that insertion has been deferred
@@ -344,7 +346,8 @@ class RoutingTable(val K: Int,
   }
 
   /**
-   * Touches a bucket with given id resetting its last seen time stamp and scheduling Refresh event.
+   * Touches a bucket with given id resetting its last seen time stamp and scheduling
+   * new `Refresh` command.
    *
    * @param bucket A bucket to touch.
    * @param next   An id of the next bucket.
@@ -361,8 +364,8 @@ class RoutingTable(val K: Int,
       system.scheduler.scheduleOnce(this.timeout)(self ! Refresh(bucket, next))(system.dispatcher))
   }
 
-  /// Initializes sibling `agent` actor reference
-  private lazy val agent = this.context.actorSelection("../agent")
+  /// Initializes sibling `controller` actor reference
+  private lazy val controller = this.context.actorSelection("../controller")
 
   /// Collection of cancellable deferred tasks for refreshing buckets
   private val cancellables: mutable.Map[Integer160, Cancellable] = mutable.Map.empty
@@ -427,12 +430,13 @@ object RoutingTable {
   }
 
   /**
-   * This enumeration defines three possible outcomes of touching the node:
-   * Inserted for new node, Updated if node already existed in the table.
-   * Replaced for the case when new node replaced existing bad node.
-   * Rejected for the new node when there was no room in the table for it.
-   * Deferred for the case when node processing has been deffered until some
-   * checks with existing questionable nodes are done.
+   * This enumeration defines four possible outcomes of touching the node:
+   *
+   * 1. Inserted for new node, Updated if node already existed in the table.
+   * 2. Replaced for the case when new node replaced existing bad node.
+   * 3. Rejected for the new node when there was no room in the table for it.
+   * 4. Deferred for the case when node processing has been deffered until some
+   *    checks with existing questionable nodes are done.
    */
   object Result extends Enumeration {
     type Result = Value
@@ -440,9 +444,9 @@ object RoutingTable {
   }
 
   /**
-   * Basic trait for all messages supported by [[org.abovobo.dht.RoutingTable]] actor.
+   * Basic trait for all commands supported by [[org.abovobo.dht.RoutingTable]] actor.
    */
-  sealed trait Message
+  sealed trait Command
 
   /**
    * This class represents a case when network message has been received
@@ -451,32 +455,32 @@ object RoutingTable {
    * @param from A Node from which a network message has been received.
    * @param kind A kind of message received from the node.
    */
-  case class Received(from: Node, kind: network.Message.Kind.Kind) extends Message
+  case class Received(from: Node, kind: network.Message.Kind.Kind) extends Command
 
   /**
-   * Instructs routing table to generate new SHA-1 identifier.
+   * Instructs routing table to generate new random SHA-1 identifier.
    */
-  case class Reset() extends Message
+  case class Reset() extends Command
 
   /**
    * Instructs routing table to set given id as own identifier.
    *
    * @param id An id to set.
    */
-  case class Set(id: Integer160) extends Message
+  case class Set(id: Integer160) extends Command
 
   /**
    * Instructs routing table to cleanup all stored data.
    */
-  case class Purge() extends Message
+  case class Purge() extends Command
 
   /**
-   * Instructs routing table to refresh bucket with given bounds.
+   * Instructs routing table to refresh the bucket with given bounds.
    *
    * @param min Lower bound of bucket.
    * @param max Upper bound of bucket.
    */
-  case class Refresh(min: Integer160, max: Integer160) extends Message
+  case class Refresh(min: Integer160, max: Integer160) extends Command
 
   /**
    * This class represents a message which can be sent by [[org.abovobo.dht.RoutingTable]]
@@ -484,7 +488,7 @@ object RoutingTable {
    *
    * @param node A [[org.abovobo.dht.Node]] instance of the subject.
    */
-  case class Ping(node: Node) extends Message
+  case class Ping(node: Node) extends Command
 
-  case class FindNode(id: Integer160) extends Message
+  case class FindNode(id: Integer160) extends Command
 }

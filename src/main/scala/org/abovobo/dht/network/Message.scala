@@ -1,3 +1,13 @@
+/**
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
+ */
+
 package org.abovobo.dht.network
 
 /**
@@ -18,4 +28,20 @@ object Message {
     val Query, Reply, Error, Fail = Value
   }
 
+}
+
+sealed trait Message
+
+object Query {
+  case class Ping() extends Message
+  case class FindNode() extends Message
+  case class AnnouncePeer() extends Message
+  case class GetPeers() extends Message
+}
+
+object Response {
+  case class Ping() extends Message
+  case class FindNode() extends Message
+  case class AnnouncePeer() extends Message
+  case class GetPeers() extends Message
 }

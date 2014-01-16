@@ -28,16 +28,11 @@ class RoutingTableBasicTest(system: ActorSystem)
   lazy val table = this.system.actorOf(RoutingTable.props(this.reader, this.writer), "table")
   lazy val node = new Node(Integer160.zero, Some(new Endpoint(new Array[Byte](6))), None, None, None)
 
-  //implicit val timeout = Timeout(2.days)
-  //implicit val ec = this.system.dispatcher
-
   override def beforeAll() = {
     this.storage.open()
   }
 
   override def afterAll() = {
-    // -- this.system.awaitTermination()
-    // -- this.storage.commit()
     this.storage.close()
     TestKit.shutdownActorSystem(this.system)
   }
