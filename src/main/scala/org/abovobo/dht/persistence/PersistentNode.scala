@@ -10,17 +10,18 @@
 
 package org.abovobo.dht.persistence
 
+import java.net.InetSocketAddress
 import java.util.Date
 import org.abovobo.integer.Integer160
-import scala.concurrent.duration._
-import org.abovobo.dht.{Node, Endpoint}
 
 /**
- * This class extends Node adding features for managing the node within a [[org.abovobo.dht.RoutingTable]].
+ * This class represents complete Node information which is kept in persistent storage.
  *
- * @constructor Creates new instance of PersistentNode.
+ * @constructor     Creates new instance of PersistentNode.
  *
- * @param bucket    SHA-1 identifier of the min bound of the bucket this node belongs to.
+ * @param id        SHA-1 identifier of the node.
+ * @param address   Node network address.
+ * @param bucket    SHA-1 identifier of the lower bound of the bucket this node belongs to.
  * @param replied   A time when this node last replied to our query.
  * @param queried   A time when this node last sent us a query.
  * @param failcount A number of times in a row this node failed to respond to our query.
@@ -28,13 +29,9 @@ import org.abovobo.dht.{Node, Endpoint}
  *
  * @author Dmitry Zhuk
  */
-class PersistentNode(id: Integer160,
-                     ipv4u: Option[Endpoint],
-                     ipv4t: Option[Endpoint],
-                     ipv6u: Option[Endpoint],
-                     ipv6t: Option[Endpoint],
+class PersistentNode(val id: Integer160,
+                     val address: InetSocketAddress,
                      val bucket: Integer160,
                      val replied: Option[Date],
                      val queried: Option[Date],
                      val failcount: Int)
-  extends Node(id, ipv4u, ipv4t, ipv6u, ipv6t)

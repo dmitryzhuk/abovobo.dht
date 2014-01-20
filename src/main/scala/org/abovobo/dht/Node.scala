@@ -11,21 +11,15 @@
 package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
+import java.net.InetSocketAddress
 
 /**
- * This class represents DHT node descriptor.
+ * This class represents remote DHT node descriptor.
  *
- * @constructor Creates new instance of Node.
+ * @constructor     Creates new instance of Node.
  *
  * @param id        SHA-1 identifier of the node.
- * @param ipv4u     Optional UDP IPv4 endpoint of the node.
- * @param ipv4t     Optional TCP IPv4 endpoint of the node.
- * @param ipv6u     Optional UDP IPv6 endpoint of the node.
- * @param ipv6t     Optional TCP IPv6 endpoint of the node.
+ * @param address   Network address of remote node.
  */
-class Node(val id: Integer160,
-           val ipv4u: Option[Endpoint],
-           val ipv4t: Option[Endpoint],
-           val ipv6u: Option[Endpoint],
-           val ipv6t: Option[Endpoint])
+class Node(val id: Integer160, val address: InetSocketAddress)
 

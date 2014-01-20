@@ -6,6 +6,7 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.dht.persistence.{Writer, Reader, Storage, H2Storage}
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.network.Message
+import java.net.InetSocketAddress
 
 /**
  * Unit test for RoutingTable Actor
@@ -19,14 +20,14 @@ class RoutingTableBasicTest(system: ActorSystem)
 
   def this() = this(ActorSystem("RoutingTableTest"))
 
-  private val h2 = new H2Storage("jdbc:h2:~/db/dht")
+  private val h2 = new H2Storage("jdbc:h2:~/db/dht;SCHEMA=ipv4")
 
   val storage: Storage = this.h2
   val reader: Reader = this.h2
   val writer: Writer = this.h2
 
   lazy val table = this.system.actorOf(RoutingTable.props(this.reader, this.writer), "table")
-  lazy val node = new Node(Integer160.zero, Some(new Endpoint(new Array[Byte](6))), None, None, None)
+  lazy val node = new Node(Integer160.zero, new InetSocketAddress(0))
 
   override def beforeAll() = {
     this.storage.open()
@@ -144,10 +145,10 @@ class RoutingTableBasicTest(system: ActorSystem)
       "split zero bucket and finally reject extra message" in {
         val start = Integer160.zero + 1
         for (i <- 0 to 6) {
-          val node = new Node(start + i, Some(new Endpoint(new Array[Byte](6))), None, None, None)
+          val node = new Node(start + i, new InetSocketAddress(0))
           table ! RoutingTable.Received(node, Message.Kind.Query)
         }
-        val node = new Node(start + 7, Some(new Endpoint(new Array[Byte](6))), None, None, None)
+        val node = new Node(start + 7, new InetSocketAddress(0))
         table ! RoutingTable.Received(node, Message.Kind.Query)
         Thread.sleep(1000)
         this.reader.buckets() should have size 2

@@ -1,12 +1,24 @@
+create schema ipv4;
+create schema ipv6;
+
 -- ==============================
 -- stores an id of operating node
 -- ==============================
-create table self(id binary(40) primary key);
+create table ipv4.self(id binary(40) primary key);
+create table ipv6.self(id binary(40) primary key);
 
 -- ==========================
 -- represents bucket of nodes
 -- ==========================
-create table bucket(
+create table ipv4.bucket(
+
+    -- starting value of bucket (Integer160)
+    id binary(40) primary key,
+
+    -- a time when the bucket has last been touched
+    seen timestamp not null
+);
+create table ipv6.bucket(
 
     -- starting value of bucket (Integer160)
     id binary(40) primary key,
@@ -18,7 +30,7 @@ create table bucket(
 -- ===========================
 -- represents actual node info
 -- ===========================
-create table node(
+create table ipv4.node(
 
     -- node id (Integer160)
     id binary(40) primary key,
@@ -31,20 +43,36 @@ create table node(
     -- specifies that `bucket` references actual record in corresponding table
     foreign key(bucket) references bucket(id) on delete cascade on update restrict,
 
-    -- IPv4 address of node and port for UDP communications compacted into a byte array
-    ipv4u binary(6),
+    -- address of node and port for UDP communications compacted into a byte array
+    address binary(6) not null,
 
-    -- IPv4 address of node and port for TCP communications compacted into a byte array
-    ipv4t binary(6),
+    -- a time when the node has last replied to our query
+    replied timestamp,
 
-    -- IPv6 address of node and port for UDP communications compacted into a byte array
-    ipv6u binary(8),
+    -- a time when the node has last queried us
+    queried timestamp,
 
-    -- IPv6 address of node and port for TCP communications compacted into a byte array
-    ipv6t binary(8),
+    -- ensure that node at least replied or queried, both cannot be null
+    check replied is not null or queried is not null,
 
-    -- at least one endpoint must be presented
-    check ipv4u is not null or ipv4t is not null or ipv6u is not null or ipv6t is not null,
+    -- number of times node failed to respond to query
+    failcount int not null default 0
+);
+create table ipv6.node(
+
+    -- node id (Integer160)
+    id binary(40) primary key,
+
+    -- bucket id owning this node (Integer160)
+    -- note that `bucket` value must always be less than `id`
+    -- db does not force check constraint as it must be managed by code
+    bucket binary(40) not null,
+
+    -- specifies that `bucket` references actual record in corresponding table
+    foreign key(bucket) references bucket(id) on delete cascade on update restrict,
+
+    -- address of node and port for UDP communications compacted into a byte array
+    address binary(18) not null,
 
     -- a time when the node has last replied to our query
     replied timestamp,

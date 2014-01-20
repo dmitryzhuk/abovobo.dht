@@ -102,9 +102,9 @@ class H2Storage(uri: String) extends Storage("org.h2.Driver", uri) with Reader w
       "nodeById" -> c.prepareStatement("select * from node where id=?"),
       "nodesByBucket" -> c.prepareStatement("select * from node where bucket=?"),
       "insertNode" -> c.prepareStatement(
-        "insert into node(id, bucket, ipv4u, ipv4t, ipv6u, ipv6t, replied, queried) values(?, ?, ?, ?, ?, ?, ?, ?)"),
+        "insert into node(id, bucket, address, replied, queried) values(?, ?, ?, ?, ?)"),
       "updateNode" -> c.prepareStatement(
-        "update node set ipv4u=?, ipv4t=?, ipv6u=?, ipv6t=?, replied=?, queried=?, failcount=? where id=?"),
+        "update node set address=?, replied=?, queried=?, failcount=? where id=?"),
       "moveNode" -> c.prepareStatement("update node set bucket=? where id=?"),
       "deleteNode" -> c.prepareStatement("delete from node where id=?"),
 

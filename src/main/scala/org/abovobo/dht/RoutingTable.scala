@@ -107,6 +107,7 @@ class RoutingTable(val K: Int,
 
   import RoutingTable._
   import RoutingTable.Result._
+  import Controller._
 
   /**
    * @inheritdoc
@@ -330,7 +331,7 @@ class RoutingTable(val K: Int,
           // get list of questionnable nodes
           val questionnable = nodes.filter(_.questionnable)
           // request ping operation for every questionnable node
-          questionnable foreach { node => this.controller ! Ping(node.node) }
+          questionnable foreach { live => this.controller ! Ping(live.node.address) }
           // send deferred message to itself
           this.context.system.scheduler.scheduleOnce(this.delay)(self ! Received(node, kind))(this.context.dispatcher)
           // notify caller that insertion has been deferred
@@ -481,14 +482,4 @@ object RoutingTable {
    * @param max Upper bound of bucket.
    */
   case class Refresh(min: Integer160, max: Integer160) extends Command
-
-  /**
-   * This class represents a message which can be sent by [[org.abovobo.dht.RoutingTable]]
-   * back to a sender when pinging the questionnable node is needed.
-   *
-   * @param node A [[org.abovobo.dht.Node]] instance of the subject.
-   */
-  case class Ping(node: Node) extends Command
-
-  case class FindNode(id: Integer160) extends Command
 }

@@ -11,6 +11,7 @@
 package org.abovobo.dht.persistence
 
 import org.abovobo.dht.Node
+import org.abovobo.dht.Endpoint._
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.network.Message.Kind._
 import java.sql.{Timestamp, PreparedStatement}
@@ -70,12 +71,9 @@ trait Writer {
    * Expected parameter mapping:
    * 1 BINARY     node.id
    * 2 BINARY     bucket
-   * 3 TIMESTAMP  node.ipv4u
-   * 4 TIMESTAMP  node.ipv4t
-   * 5 TIMESTAMP  node.ipv6u
-   * 6 TIMESTAMP  node.ipv6t
-   * 7 TIMESTAMP  System.currentTimeMillis (if kind == Reply)
-   * 8 TIMESTAMP  System.currentTimeMillis (if kind == Query)
+   * 3 BINARY     node.address
+   * 4 TIMESTAMP  System.currentTimeMillis (if kind == Reply)
+   * 5 TIMESTAMP  System.currentTimeMillis (if kind == Query)
    *
    * @param statement A statement to execute.
    * @param node      A node instance to get properties from.
@@ -87,16 +85,13 @@ trait Writer {
   protected def insert(statement: PreparedStatement, node: Node, bucket: Integer160, kind: Kind): Unit = {
     statement.setBytes(1, node.id.toArray)
     statement.setBytes(2, bucket.toArray)
-    statement.setBytes(3, node.ipv4u.map(_.data).orNull)
-    statement.setBytes(4, node.ipv4t.map(_.data).orNull)
-    statement.setBytes(5, node.ipv6u.map(_.data).orNull)
-    statement.setBytes(6, node.ipv6t.map(_.data).orNull)
+    statement.setBytes(3, node.address)
     if (kind == Reply) {
-      statement.setTimestamp(7, new Timestamp(System.currentTimeMillis))
-      statement.setNull(8, java.sql.Types.TIMESTAMP)
+      statement.setTimestamp(4, new Timestamp(System.currentTimeMillis))
+      statement.setNull(5, java.sql.Types.TIMESTAMP)
     } else if (kind == Query) {
-      statement.setNull(7, java.sql.Types.TIMESTAMP)
-      statement.setTimestamp(8, new Timestamp(System.currentTimeMillis))
+      statement.setNull(4, java.sql.Types.TIMESTAMP)
+      statement.setTimestamp(5, new Timestamp(System.currentTimeMillis))
     }
     statement.executeUpdate
   }
@@ -117,14 +112,11 @@ trait Writer {
    * failcount untouched.
    *
    * Expected parameter mapping:
-   * 1 TIMESTAMP  node.ipv4u
-   * 2 TIMESTAMP  node.ipv4t
-   * 3 TIMESTAMP  node.ipv6u
-   * 4 TIMESTAMP  node.ipv6t
-   * 5 TIMESTAMP  System.currentTimeMillis (if kind == Reply or kind == Error)
-   * 6 TIMESTAMP  System.currentTimeMillis (if kind == Query)
-   * 7 INTEGER    node.failcount + 1 (if kind == Fail)
-   * 8 BINARY     node.id
+   * 1 BINARY     node.address
+   * 3 TIMESTAMP  System.currentTimeMillis (if kind == Reply or kind == Error)
+   * 4 TIMESTAMP  System.currentTimeMillis (if kind == Query)
+   * 5 INTEGER    node.failcount + 1 (if kind == Fail)
+   * 6 BINARY     node.id
    *
    * @param statement A statement to execute.
    * @param node      A node instance to get properties from.
@@ -133,25 +125,22 @@ trait Writer {
    *                  kind is Fail or Error
    */
   protected def update(statement: PreparedStatement, node: Node, pn: PersistentNode, kind: Kind): Unit = {
-    statement.setBytes(1, node.ipv4u.map(_.data).getOrElse(node.ipv4u.map(_.data).orNull))
-    statement.setBytes(2, node.ipv4t.map(_.data).getOrElse(node.ipv4t.map(_.data).orNull))
-    statement.setBytes(3, node.ipv6u.map(_.data).getOrElse(node.ipv6u.map(_.data).orNull))
-    statement.setBytes(4, node.ipv6t.map(_.data).getOrElse(node.ipv6t.map(_.data).orNull))
+    statement.setBytes(1, node.address)
     kind match {
       case Reply | Error =>
-        statement.setTimestamp(5, new Timestamp(System.currentTimeMillis))
-        statement.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setInt(7, pn.failcount)
+        statement.setTimestamp(2, new Timestamp(System.currentTimeMillis))
+        statement.setTimestamp(3, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setInt(4, pn.failcount)
       case Query =>
-        statement.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setTimestamp(6, new Timestamp(System.currentTimeMillis))
-        statement.setInt(7, pn.failcount)
+        statement.setTimestamp(2, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setTimestamp(3, new Timestamp(System.currentTimeMillis))
+        statement.setInt(4, pn.failcount)
       case Fail =>
-        statement.setTimestamp(5, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setTimestamp(6, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setInt(7, pn.failcount + 1)
+        statement.setTimestamp(2, pn.replied.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setTimestamp(3, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
+        statement.setInt(4, pn.failcount + 1)
     }
-    statement.setBytes(8, node.id.toArray)
+    statement.setBytes(5, node.id.toArray)
     statement.executeUpdate()
   }
 

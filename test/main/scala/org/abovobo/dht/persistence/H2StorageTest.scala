@@ -1,17 +1,18 @@
 package org.abovobo.dht.persistence
 
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
-import org.abovobo.dht.{Endpoint, Node}
+import org.abovobo.dht.Node
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.network.Message
 import java.sql.SQLException
+import java.net.{InetAddress, InetSocketAddress}
 
 /**
  * Unit test for H2 Storage implementation
  */
 class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
 
-  private val h2 = new H2Storage("jdbc:h2:~/db/dht")
+  private val h2 = new H2Storage("jdbc:h2:~/db/dht;SCHEMA=ipv4")
 
   val storage: Storage = this.h2
   val reader: Reader = this.h2
@@ -38,7 +39,7 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
 
     "node is being inserted in empty storage" must {
       "fail with SQLException" in {
-        val node = new Node(Integer160.random, Some(new Endpoint(Array.empty)), None, None, None)
+        val node = new Node(Integer160.random, new InetSocketAddress(0))
         intercept[SQLException] {
           this.writer.insert(node, Integer160.zero, Message.Kind.Query)
         }
@@ -76,7 +77,7 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
     "node inserted into a bucket" must {
       "have node collection size of 1" in {
         this.writer.insert(
-          new Node(Integer160.maxval, Some(new Endpoint(Array.empty)), None, None, None),
+          new Node(Integer160.maxval, new InetSocketAddress(0)),
           Integer160.zero,
           Message.Kind.Query)
         this.reader.nodes() should have size 1
@@ -106,7 +107,8 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
         Thread.sleep(10)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        this.writer.update(original.get, original.get, Message.Kind.Reply)
+        val node = new Node(original.get.id, original.get.address)
+        this.writer.update(node, original.get, Message.Kind.Reply)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
@@ -116,7 +118,8 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
         Thread.sleep(10)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        this.writer.update(original.get, original.get, Message.Kind.Error)
+        val node = new Node(original.get.id, original.get.address)
+        this.writer.update(node, original.get, Message.Kind.Error)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
@@ -126,7 +129,8 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
         Thread.sleep(10)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        this.writer.update(original.get, original.get, Message.Kind.Query)
+        val node = new Node(original.get.id, original.get.address)
+        this.writer.update(node, original.get, Message.Kind.Query)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
@@ -135,31 +139,23 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
       "increment failcount with Fail message kind" in {
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        this.writer.update(original.get, original.get, Message.Kind.Fail)
+        val node = new Node(original.get.id, original.get.address)
+        this.writer.update(node, original.get, Message.Kind.Fail)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
         (updated.get.failcount - original.get.failcount) should be(1)
       }
-      "update ip addresses" in {
-        val ipv4u = new Endpoint(Array[Byte](1, 0, 0, 0, 0, 0))
-        val ipv4t = new Endpoint(Array[Byte](1, 1, 0, 0, 0, 0))
-        val ipv6u = new Endpoint(Array[Byte](1, 1, 1, 0, 0, 0, 0, 0))
-        val ipv6t = new Endpoint(Array[Byte](1, 1, 1, 1, 0, 0, 0, 0))
-        val node = new Node(Integer160.maxval, Some(ipv4u), Some(ipv4t), Some(ipv6u), Some(ipv6t))
+      "update address" in {
+        val ip = new InetSocketAddress(InetAddress.getByAddress(Array[Byte](1, 0, 0, 0)), 1)
+        val node = new Node(Integer160.maxval, ip)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
         this.writer.update(node, original.get, Message.Kind.Error)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
-        updated.get.ipv4u should be ('defined)
-        updated.get.ipv4u.get.data should equal (ipv4u.data)
-        updated.get.ipv4t should be ('defined)
-        updated.get.ipv4t.get.data should equal (ipv4t.data)
-        updated.get.ipv6u should be ('defined)
-        updated.get.ipv6u.get.data should equal (ipv6u.data)
-        updated.get.ipv6t should be ('defined)
-        updated.get.ipv6t.get.data should equal (ipv6t.data)
+        updated.get.address should equal (ip)
       }
+
     }
 
     "node deleted" must {

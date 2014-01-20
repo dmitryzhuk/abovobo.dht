@@ -14,7 +14,7 @@ import org.abovobo.integer.Integer160
 import java.util.Date
 import java.sql.{ResultSet, PreparedStatement}
 import scala.collection.mutable.ListBuffer
-import org.abovobo.dht.Endpoint
+import org.abovobo.dht.Endpoint._
 
 /**
  * This trait defines read-only methods accessing DHT persistent storage.
@@ -179,10 +179,7 @@ trait Reader {
     import org.abovobo.jdbc.Optional._
     new PersistentNode(
       new Integer160(rs.getBytes("id")),
-      rs.bytes("ipv4u") map { new Endpoint(_) },
-      rs.bytes("ipv4t") map { new Endpoint(_) },
-      rs.bytes("ipv6u") map { new Endpoint(_) },
-      rs.bytes("ipv6t") map { new Endpoint(_) },
+      rs.getBytes("address"),
       new Integer160(rs.getBytes("bucket")),
       rs.timestamp("replied"),
       rs.timestamp("queried"),
