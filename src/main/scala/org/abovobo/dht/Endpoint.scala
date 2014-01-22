@@ -20,6 +20,8 @@ import org.abovobo.conversions.ByteArray
  */
 object Endpoint {
 
+  import scala.language.implicitConversions
+
   /** Size in bytes of IPv4 address */
   val IPV4_ADDR_SIZE = 4
 

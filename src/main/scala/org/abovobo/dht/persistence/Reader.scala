@@ -15,6 +15,7 @@ import java.util.Date
 import java.sql.{ResultSet, PreparedStatement}
 import scala.collection.mutable.ListBuffer
 import org.abovobo.dht.Endpoint._
+import org.abovobo.dht.PersistentNode
 
 /**
  * This trait defines read-only methods accessing DHT persistent storage.
@@ -58,7 +59,7 @@ trait Reader {
 
   /**
    * Executes given query and reads all its rows converting them into instances of
-   * [[org.abovobo.dht.persistence.PersistentNode]].
+   * [[org.abovobo.dht.PersistentNode]].
    *
    * @param statement A statement to execute.
    * @return Traversable collection of all persisted nodes.
@@ -170,10 +171,10 @@ trait Reader {
   }
 
   /**
-   * Reads instance of [[org.abovobo.dht.persistence.PersistentNode]] from given [[java.sql.ResultSet]].
+   * Reads instance of [[org.abovobo.dht.PersistentNode]] from given [[java.sql.ResultSet]].
    *
    * @param rs Valid [[java.sql.ResultSet]] instance.
-   * @return New instance of [[org.abovobo.dht.persistence.PersistentNode]] built from read data.
+   * @return New instance of [[org.abovobo.dht.PersistentNode]] built from read data.
    */
   private def read(rs: ResultSet): PersistentNode = {
     import org.abovobo.jdbc.Optional._

@@ -14,7 +14,7 @@ import org.abovobo.integer.Integer160
 import akka.actor.{ActorLogging, Cancellable, Props, Actor}
 import scala.concurrent.duration._
 import scala.collection.mutable
-import org.abovobo.dht.persistence.{Writer, Reader, PersistentNode}
+import org.abovobo.dht.persistence.{Writer, Reader}
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -178,9 +178,9 @@ class RoutingTable(val K: Int,
    * @param node    A node to process network message from.
    * @param kind    A kind of network message received from the node.
    */
-  def process(node: Node, kind: network.Message.Kind.Kind): Result = {
+  def process(node: Node, kind: Message.Kind.Kind): Result = {
 
-    import network.Message.Kind._
+    import Message.Kind._
 
     this.log.info(
       "Processing incoming message with node id {} and kind {} received from {}",
@@ -265,7 +265,7 @@ class RoutingTable(val K: Int,
    * @return        Result of operation, as listed in [[org.abovobo.dht.RoutingTable.Result]]
    *                excluding `Updated` value.
    */
-  private def insert(node: Node, kind: network.Message.Kind.Kind): Result = this.writer.transaction {
+  private def insert(node: Node, kind: Message.Kind.Kind): Result = this.writer.transaction {
 
     val buckets = this.reader.buckets().toArray
 
@@ -283,8 +283,11 @@ class RoutingTable(val K: Int,
       buckets(index)._1 -> (if (index == buckets.length - 1) Integer160.maxval else buckets(index + 1)._1)
     }
 
-    val nodes = this.reader.bucket(bucket._1) map { new LiveNode(_, this.timeout, this.threshold) }
+    val nodes = this.reader.bucket(bucket._1) //map { new LiveNode(_, this.timeout, this.threshold) }
     val id = this.reader.id().get
+
+    implicit val timeout = this.timeout
+    implicit val threshold = this.threshold
 
     // go through variants
     if (nodes.size == this.K) {
@@ -306,7 +309,7 @@ class RoutingTable(val K: Int,
             // insert new bucket
             this.writer.insert(b)
             // move nodes appropriately
-            nodes.filter(_.node.id >= b) foreach { node => this.writer.move(node.node, b) }
+            nodes.filter(_.id >= b) foreach { node => this.writer.move(node, b) }
             // send message to itself
             self ! Received(node, kind)
             // notify caller that insertion has been deferred
@@ -322,7 +325,7 @@ class RoutingTable(val K: Int,
         val bad = nodes.filter(_.bad)
         if (bad.size > 0) {
           // there are bad nodes, replacing first of them
-          this.writer.delete(bad.head.node.id)
+          this.writer.delete(bad.head.id)
           this.writer.insert(node, bucket._1, kind)
           this.writer.touch(bucket._1)
           Replaced
@@ -331,7 +334,7 @@ class RoutingTable(val K: Int,
           // get list of questionnable nodes
           val questionnable = nodes.filter(_.questionnable)
           // request ping operation for every questionnable node
-          questionnable foreach { live => this.controller ! Ping(live.node.address) }
+          questionnable foreach { node => this.controller ! Ping(node.address) }
           // send deferred message to itself
           this.context.system.scheduler.scheduleOnce(this.delay)(self ! Received(node, kind))(this.context.dispatcher)
           // notify caller that insertion has been deferred
@@ -405,32 +408,6 @@ object RoutingTable {
   def props(reader: Reader, writer: Writer): Props = this.props(8, 15.minutes, 30.seconds, 3, reader, writer)
 
   /**
-   * Wraps [[org.abovobo.dht.persistence.PersistentNode]] with utility methods allowing
-   * to obtain actual state of the node in terms of its activity.
-   *
-   * @param node      An instance of [[org.abovobo.dht.persistence.PersistentNode]].
-   * @param timeout   Time interval before node becomes questionable.
-   * @param threshold Number of times a node must fail to respond to become 'bad'.
-   */
-  class LiveNode(val node: PersistentNode, val timeout: Duration, val threshold: Int) {
-
-    /** Returns true if this node is "good" */
-    def good: Boolean = !this.bad && !this.questionnable
-
-    /** Returns true if this node is definitely bad */
-    def bad: Boolean = this.threshold <= this.node.failcount
-
-    /** Returns true if this node is not "bad" but has not been recently seen */
-    def questionnable: Boolean =
-      this.threshold > this.node.failcount && this.node.replied.isDefined && !this.recentlySeen
-
-    /** Returns true if this node has been seen recently */
-    def recentlySeen: Boolean =
-      this.node.replied.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < this.timeout ||
-        this.node.queried.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < this.timeout
-  }
-
-  /**
    * This enumeration defines four possible outcomes of touching the node:
    *
    * 1. Inserted for new node, Updated if node already existed in the table.
@@ -456,7 +433,7 @@ object RoutingTable {
    * @param from A Node from which a network message has been received.
    * @param kind A kind of message received from the node.
    */
-  case class Received(from: Node, kind: network.Message.Kind.Kind) extends Command
+  case class Received(from: Node, kind: Message.Kind.Kind) extends Command
 
   /**
    * Instructs routing table to generate new random SHA-1 identifier.

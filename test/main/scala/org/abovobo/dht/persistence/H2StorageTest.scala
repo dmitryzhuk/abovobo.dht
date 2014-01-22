@@ -1,9 +1,8 @@
 package org.abovobo.dht.persistence
 
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
-import org.abovobo.dht.Node
+import org.abovobo.dht.{Message, Node}
 import org.abovobo.integer.Integer160
-import org.abovobo.dht.network.Message
 import java.sql.SQLException
 import java.net.{InetAddress, InetSocketAddress}
 

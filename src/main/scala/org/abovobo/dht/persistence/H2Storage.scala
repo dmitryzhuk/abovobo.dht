@@ -11,8 +11,8 @@
 package org.abovobo.dht.persistence
 
 import org.abovobo.integer.Integer160
-import org.abovobo.dht.Node
-import org.abovobo.dht.network.Message.Kind._
+import org.abovobo.dht.{Message, PersistentNode, Node}
+import Message.Kind._
 import org.abovobo.jdbc.Transaction
 
 /**
