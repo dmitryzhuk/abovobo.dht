@@ -40,7 +40,7 @@ abstract class Message(val tid: TID, val y: Char) {
   }
 }
 
-class Error(tid: TID, val code: Int, val message: String) extends Message(tid, 'e')
+class Error(tid: TID, val code: Long, val message: String) extends Message(tid, 'e')
 
 object Error {
   val ERROR_CODE_GENERIC = 201
@@ -89,16 +89,16 @@ object Response {
   class Ping(tid: TID, id: Integer160)
     extends Response(tid, id)
 
-  class FindNode(tid: TID, id: Integer160, val nodes: Array[Node])
+  class FindNode(tid: TID, id: Integer160, val nodes: IndexedSeq[Node])
     extends Response(tid, id)
 
   abstract class GetPeers(tid: TID, id: Integer160, val token: Array[Byte])
     extends Response(tid, id)
 
-  class GetPeersWithNodes(tid: TID, id: Integer160, token: Array[Byte], nodes: Array[Node])
+  class GetPeersWithNodes(tid: TID, id: Integer160, token: Array[Byte], val nodes: IndexedSeq[Node])
     extends GetPeers(tid, id, token)
 
-  class GetPeersWithValues(tid: TID, id: Integer160, token: Array[Byte], values: Array[Byte])
+  class GetPeersWithValues(tid: TID, id: Integer160, token: Array[Byte], val values: IndexedSeq[Peer])
     extends GetPeers(tid, id, token)
 
   class AnnouncePeer(tid: TID, id: Integer160)
