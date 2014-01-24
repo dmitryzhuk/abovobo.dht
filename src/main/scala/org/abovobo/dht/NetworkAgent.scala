@@ -139,17 +139,17 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
 
     def array(event: Bencode.Event): Array[Byte] = event match {
       case Bencode.Bytestring(value) => value
-      case _ => xthrow(203, "Malformed packet")
+      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def integer160(event: Bencode.Event): Integer160 = event match {
       case Bencode.Bytestring(value) => new Integer160(value)
-      case _ => xthrow(203, "Malformed packet")
+      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def string(event: Bencode.Event): String = event match {
       case Bencode.Bytestring(value) => new String(value, "UTF-8")
-      case _ => xthrow(203, "Malformed packet")
+      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def nodes(event: Bencode.Event): IndexedSeq[Node] = event match {
@@ -157,17 +157,17 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
         val sz = Integer160.bytesize
         val n = value.length / (sz + Endpoint.IPV4_ADDR_SIZE + 2)
         for (i <- 0 until n) yield new Node(new Integer160(value.take(sz)), value.drop(sz))
-      case _ => xthrow(203, "Malformed packet")
+      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def peers(events: IndexedSeq[Bencode.Event]): IndexedSeq[Peer] = events map {
       case Bencode.Bytestring(value) => Endpoint.ba2isa(value)
-      case _ => xthrow(203, "Malformed packet")
+      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def integer(event: Bencode.Event): Long = event match {
       case Bencode.Integer(value) => value
-      case _ => xthrow(203, "Malformed packet")
+      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     dump(n - 2) match {
@@ -194,7 +194,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
                 port = integer(dump(n - 11)).toInt,
                 token = array(dump(n - 9)),
                 implied = variables._2)
-            case _ => xthrow(204, "Unknown query")
+            case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown query")
           }
         case 'r' =>
           if (this.transactions.get(tid).isDefined) {
@@ -217,17 +217,17 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
                       id = integer160(dump(4)),
                       token = array(dump(6)),
                       values = peers(dump.slice(9, n - 7)))
-                  case _ => xthrow(203, "Malformed packet")
+                  case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
                 }
               case ap: Query.AnnouncePeer =>
                 new Response.AnnouncePeer(tid, integer160(dump(n - 7)))
-              case _ => xthrow(201, "Unknown corresponding query type")
+              case _ => xthrow(Error.ERROR_CODE_GENERIC, "Unknown corresponding query type")
             }
           } else {
-            xthrow(203, "Invalid transaction id")
+            xthrow(Error.ERROR_CODE_PROTOCOL, "Invalid transaction id")
           }
       }
-      case _ => xthrow(204, "Unknown method")
+      case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown method")
     }
   }
 
@@ -365,9 +365,9 @@ object NetworkAgent {
           buf += 'e'
       }
       buf += '1' += ':' += 't'
-      buf ++= message.tid.value.length.toString.getBytes("UTF-8") += ':' ++= message.tid.value
+      buf ++= message.tid.toArray.length.toString.getBytes("UTF-8") += ':' ++= message.tid.toArray
       buf += '1' += ':' += 'y'
-      buf += '1' += ':' += message.y
+      buf += '1' += ':' += message.y.toByte
 
     buf += 'e'
     buf.result()

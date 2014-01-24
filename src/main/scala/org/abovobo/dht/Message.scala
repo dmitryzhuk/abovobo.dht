@@ -13,25 +13,12 @@ package org.abovobo.dht
 import org.abovobo.integer.Integer160
 
 /**
- * Created by dmitryzhuk on 06.01.14.
+ * Base abstract class defining general contract for any message which
+ * actually represents sendable Kademlia packet.
+ *
+ * @param tid Transaction identifier.
+ * @param y   Message kind: 'e' for error, 'q' for query, 'r' for response.
  */
-object Message {
-
-  /**
-   * This enumeration defines possible kinds of network message:
-   *
-   * Query means that remote node has sent us a query message,
-   * Reply means that remote node has replied with correct message to our query,
-   * Error means that remote node has replied with error message to our query,
-   * Fail  means that remote node failed to reply.
-   */
-  object Kind extends Enumeration {
-    type Kind = Value
-    val Query, Reply, Error, Fail = Value
-  }
-
-}
-
 abstract class Message(val tid: TID, val y: Char) {
   def kind: Message.Kind.Value = this.y match {
     case 'e' => Message.Kind.Error
@@ -40,8 +27,38 @@ abstract class Message(val tid: TID, val y: Char) {
   }
 }
 
+/** Accompanying object */
+object Message {
+
+  /**
+   * This enumeration defines possible kinds of network message:
+   *
+   * Query means that remote node has sent us a query message,
+   * Reply means that remote node has replied with correct message to our query,
+   * Error means that remote node has replied with error message to our query,
+   * Fail  means that remote node failed to reply in timely manner.
+   */
+  object Kind extends Enumeration {
+    type Kind = Value
+    val Query, Reply, Error, Fail = Value
+  }
+
+}
+
+/**
+ * Concrete [[org.abovobo.dht.Message]] implementation, representing error.
+ *
+ * @param tid     Transaction identifier.
+ * @param code    Error code.
+ * @param message Error message.
+ */
 class Error(tid: TID, val code: Long, val message: String) extends Message(tid, 'e')
 
+/**
+ * Accompanying object.
+ *
+ * Defines error constants as they are descibed in [[http://www.bittorrent.org/beps/bep_0005.html#errors]]
+ */
 object Error {
   val ERROR_CODE_GENERIC = 201
   val ERROR_MESSAGE_GENERIC = "Generic Error"
@@ -56,10 +73,25 @@ object Error {
   val ERROR_MESSAGE_UNKNOWN = "Method Unknown"
 }
 
+/**
+ * Abstract class representing normal (in opposite to error) message.
+ *
+ * @param tid Transaction identifier.
+ * @param y   Message kind: 'e' for error, 'q' for query, 'r' for response.
+ * @param id  Sending node identifier.
+ */
 abstract class Normal(tid: TID, y: Char, val id: Integer160) extends Message(tid, y)
 
+/**
+ * Abstract query message.
+ *
+ * @param tid   Transaction identifier.
+ * @param id    Sending node identifier.
+ * @param name  Message name ('ping', 'find_node', 'get_peers', 'announce_peer')
+ */
 abstract class Query(tid: TID, id: Integer160, val name: String) extends Normal(tid, 'q', id)
 
+/** Accompanying object. */
 object Query {
 
   val QUERY_NAME_PING = "ping"

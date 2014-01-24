@@ -21,17 +21,11 @@ class Controller extends Actor with ActorLogging {
 
 object Controller {
 
- // sealed trait Message
-
-  sealed trait Command //extends Message
+  sealed trait Command
 
   case class Fail(query: Query) extends Command
   case class Receive(message: Message) extends Command
 
-  /*
+  case class FindNode(target: Integer160) extends Command
   case class Ping(address: InetSocketAddress) extends Command
-  case class FindNode(id: Integer160) extends Command
-  case class GetPeers(hash: Integer160) extends Command
-  */
-
 }

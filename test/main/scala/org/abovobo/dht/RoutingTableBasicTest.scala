@@ -6,7 +6,6 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.dht.persistence.{Writer, Reader, Storage, H2Storage}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
-import org.abovobo.dht.Message
 
 /**
  * Unit test for RoutingTable Actor

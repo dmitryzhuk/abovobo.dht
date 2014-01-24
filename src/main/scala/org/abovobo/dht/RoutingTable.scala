@@ -133,7 +133,7 @@ class RoutingTable(val K: Int,
     // in any case initial FindNode will be issued to controller
     this.reader.id() match {
       case None     => this.reset()
-      case Some(id) => this.controller ! FindNode(id)
+      case Some(id) => this.controller ! Controller.FindNode(id)
 
     }
 
@@ -180,14 +180,14 @@ class RoutingTable(val K: Int,
    */
   def process(node: Node, kind: Message.Kind.Kind): Result = {
 
-    import Message.Kind._
+    import Message.Kind
 
     this.log.info(
       "Processing incoming message with node id {} and kind {} received from {}",
       node.id, kind, sender)
 
     this.reader.node(node.id) match {
-      case None => if (kind == Query || kind == Reply) {
+      case None => if (kind == Kind.Query || kind == Kind.Reply) {
         // insert new node only if event does not indicate error or failure
         val result = this.insert(node, kind)
         this.log.info("Attempted insertion with result {}", result)
