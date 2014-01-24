@@ -15,6 +15,7 @@ import akka.actor.{ActorLogging, Cancellable, Actor}
 import java.net.InetSocketAddress
 import org.abovobo.integer.Integer160
 import akka.util.ByteString
+import akka.util.ByteStringBuilder
 import org.abovobo.conversions.Bencode
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
@@ -32,36 +33,59 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
 
   import this.context.system
 
+  /**
+   * @inheritdoc
+   *
+   * Sends [[akka.io.Udp.Bind]] message to IO manager.
+   */
   override def preStart() = {
     // initialize UDP bind procedure
     IO(Udp) ! Udp.Bind(self, this.endpoint)
   }
 
+  /**
+   * @inheritdoc
+   *
+   * Sends [[akka.io.Udp.Unbind]] message to IO manager.
+   */
   override def postStop() = {
     // unbind UDP socket listener
     IO(Udp) ! Udp.Unbind
   }
 
+  /**
+   * @inheritdoc
+   *
+   * Actually calls `become(this.ready)` as soon as [[akka.io.Udp.Bound]] message received.
+   */
   override def receive = {
     case Udp.Bound(local) =>
       this.log.info("Bound with local address {}", local)
       this.context.become(this.ready)
   }
 
+  /**
+   * Implements Send/Receive logic. Decodes network package into a [[org.abovobo.dht.Message]]
+   * upon receival and if received message is [[org.abovobo.dht.Response]] checks if it corresponds
+   * to existing transaction.
+   */
   def ready: Actor.Receive = {
 
     // received a packet from UDP socket
-    case Udp.Received(data, remote) =>
+    case Udp.Received(data, remote) => try {
       // parse received ByteString into a message instance
       val message = this.parse(data)
       // check if message completes pending transaction
       message match {
-        case response: Response =>
-          this.transactions.remove(response.tid).foreach { _._2.cancel() }
+        case response: Response => this.transactions.remove(response.tid).foreach { _._2.cancel() }
         case _ => // do nothing
       }
       // forward received message to controller
       this.controller ! Controller.Receive(message)
+    } catch {
+      case e: NetworkAgent.ParsingException =>
+        sender ! e.error
+    }
 
     // `Send` command received
     case NetworkAgent.Send(message, remote) =>
@@ -89,25 +113,43 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
     this.controller ! Controller.Fail(query)
   }
 
+  /**
+   * Parses given [[akka.util.ByteString]] producing instance of corresponding
+   * [[org.abovobo.dht.Message]] type. If something goes wrong, throws
+   * [[org.abovobo.dht.NetworkAgent.ParsingException]] with corresponding
+   * [[org.abovobo.dht.Error]] message which can be sent to remote party.
+   *
+   * @param data [[akka.util.ByteString]] instance representing UDP packet received
+   *             from remote peer.
+   * @return     [[org.abovobo.dht.Message]] instance of proper type.
+   */
   private def parse(data: ByteString): Message = {
 
     import Endpoint._
 
-    def xthrow = throw new IllegalArgumentException("Invalid message")
+    val dump = Bencode.decode(data).toIndexedSeq
+    val n = dump.length
+
+    val tid = dump(n - 4) match {
+      case Bencode.Bytestring(value) => new TID(value)
+      case _ => throw new IllegalArgumentException("Failed to retrieve transaction id")
+    }
+
+    def xthrow(code: Int, message: String) = throw new NetworkAgent.ParsingException(new Error(tid, code, message))
 
     def array(event: Bencode.Event): Array[Byte] = event match {
       case Bencode.Bytestring(value) => value
-      case _ => xthrow
+      case _ => xthrow(203, "Malformed packet")
     }
 
     def integer160(event: Bencode.Event): Integer160 = event match {
       case Bencode.Bytestring(value) => new Integer160(value)
-      case _ => xthrow
+      case _ => xthrow(203, "Malformed packet")
     }
 
     def string(event: Bencode.Event): String = event match {
       case Bencode.Bytestring(value) => new String(value, "UTF-8")
-      case _ => xthrow
+      case _ => xthrow(203, "Malformed packet")
     }
 
     def nodes(event: Bencode.Event): IndexedSeq[Node] = event match {
@@ -115,25 +157,17 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
         val sz = Integer160.bytesize
         val n = value.length / (sz + Endpoint.IPV4_ADDR_SIZE + 2)
         for (i <- 0 until n) yield new Node(new Integer160(value.take(sz)), value.drop(sz))
-      case _ => xthrow
+      case _ => xthrow(203, "Malformed packet")
     }
 
     def peers(events: IndexedSeq[Bencode.Event]): IndexedSeq[Peer] = events map {
       case Bencode.Bytestring(value) => Endpoint.ba2isa(value)
-      case _ => xthrow // todo error 202
+      case _ => xthrow(203, "Malformed packet")
     }
 
     def integer(event: Bencode.Event): Long = event match {
       case Bencode.Integer(value) => value
-      case _ => xthrow
-    }
-
-    val dump = Bencode.decode(data).toIndexedSeq
-    val n = dump.length
-
-    val tid = dump(n - 4) match {
-      case Bencode.Bytestring(value) => new TID(value)
-      case _ => xthrow
+      case _ => xthrow(203, "Malformed packet")
     }
 
     dump(n - 2) match {
@@ -160,7 +194,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
                 port = integer(dump(n - 11)).toInt,
                 token = array(dump(n - 9)),
                 implied = variables._2)
-            case _ => xthrow // todo Produce Error message 204 and send it back to remote peer
+            case _ => xthrow(204, "Unknown query")
           }
         case 'r' =>
           if (this.transactions.get(tid).isDefined) {
@@ -183,17 +217,17 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
                       id = integer160(dump(4)),
                       token = array(dump(6)),
                       values = peers(dump.slice(9, n - 7)))
-                  case _ => xthrow // todo error 202
+                  case _ => xthrow(203, "Malformed packet")
                 }
               case ap: Query.AnnouncePeer =>
                 new Response.AnnouncePeer(tid, integer160(dump(n - 7)))
-              case _ => xthrow // todo Produce Error message 202
+              case _ => xthrow(201, "Unknown corresponding query type")
             }
           } else {
-            xthrow // todo Produce Error message 203 `invalid transaction` and send it back to remote peer
+            xthrow(203, "Invalid transaction id")
           }
       }
-      case _ => xthrow
+      case _ => xthrow(204, "Unknown method")
     }
   }
 
@@ -206,113 +240,136 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
   private lazy val controller = this.context.actorSelection("../controller")
 }
 
+/** Accompanying object */
 object NetworkAgent {
 
+  /** Base trait for all commands natively supported by [[org.abovobo.dht.NetworkAgent]] actor. */
   sealed trait Command
 
+  /**
+   * Command instructing actor to send given message to given remote peer.
+   *
+   * @param message A message to send.
+   * @param remote  An address (IP/Port) to send message to.
+   */
   case class Send(message: Message, remote: InetSocketAddress) extends Command
 
-  /*
-  sealed trait Message
-  sealed trait Query extends Message
-  sealed trait Response extends Message
+  /**
+   * Represents exception which may happen during packet parsing process.
+   * Note that this exception will normally result in sending [[org.abovobo.dht.Error]]
+   * message back to remote peer which sent us a packet. It means, that effectively
+   * this exception will only be thrown after bencoded packet already decoded successfully
+   * and transaction identifier located correctly.
+   *
+   * @param error An error message to send back to remote peer.
+   */
+  private class ParsingException(val error: Error) extends Exception
 
-  case class Error(remote: InetSocketAddress, tid: TID, code: Int, message: String)
-
-  object Query {
-
-    case class         Ping(remote: InetSocketAddress,
-                            tid: TID,
-                            id: Integer160) extends Query
-
-    case class     FindNode(remote: InetSocketAddress,
-                            tid: TID,
-                            id: Integer160,
-                            target: Integer160) extends Query
-
-    case class     GetPeers(remote: InetSocketAddress,
-                            tid: TID,
-                            id: Integer160,
-                            infohash: Integer160) extends Query
-
-    case class AnnouncePeer(remote: InetSocketAddress,
-                            tid: TID,
-                            id: Integer160,
-                            infohash: Integer160,
-                            token: Array[Byte],
-                            port: Int,
-                            implied: Boolean) extends Query
-  }
-
-  object Response {
-
-    case class PingOrAnnouncePeer(remote: InetSocketAddress,
-                                  tid: TID,
-                                  id: Integer160) extends Response
-
-    case class           FindNode(remote: InetSocketAddress,
-                                  tid: TID,
-                                  id: Integer160,
-                                  nodes: Array[InetSocketAddress]) extends Response
-
-    case class GetPeersWithValues(remote: InetSocketAddress,
-                                  tid: TID,
-                                  id: Integer160,
-                                  token: Array[Byte],
-                                  peers: Array[InetSocketAddress]) extends Response
-
-    case class  GetPeersWithNodes(remote: InetSocketAddress,
-                                  tid: TID,
-                                  id: Integer160,
-                                  token: Array[Byte],
-                                  nodes: Array[InetSocketAddress]) extends Response
-  }
-
-  class MessageBuilder {
-    type Dictionary = TreeMap[Bencode.Bytestring, Bencode.Event]
-    var root: Dictionary = null
-    var current: Dictionary = null
-    def startDictionary =
-    if (this.current == null) current = root
-    else {
-      this.root +=
-    }
-    def endDictionary
-    //def set(b: Byte)
-  }
-*/
-
+  /**
+   * Serializes given message into a packet sendable via network.
+   *
+   * @param message A message to serialize
+   * @return [[akka.util.ByteString]] instance which can be sent via network.
+   */
   private def serialize(message: Message): ByteString = {
-    null
-  }
 
-    /*
-    val stack = new mutable.Stack[State.Value]
-    stack.push(State.Begin)
+    val buf = new ByteStringBuilder()
+    buf += 'd'
 
-    while (iterator.hasNext) {
-      val event = iterator.next()
-      stack.top match {
-        case State.Begin => event match {
-          case Bencode.DictionaryBegin =>
-            stack.push(State.Dictionary)
-          case _ => xthrow()
-        }
-        case State.Dictionary => event match {
-          case Bencode.Bytestring(value) =>
-            if (value.length == 1)
-              if (value(0) == 'a') stack.push(State.Query)
-              else if (value(0) == 'r') stack.push(State.Response)
-              else if (value(0) == 'e') stack.push(State.Error)
-              else xthrow()
-            else xthrow()
-          case _ => xthrow()
-        }
-        case State.Query => event match {
+      message match {
+        case error: Error =>
+          // "e" -> list(code, message)
+          buf += '1' += ':' += 'e'
+          buf += 'l'
+            buf += 'i' ++= error.code.toString.getBytes("UTF-8") += 'e'
+            buf ++= error.message.length.toString.getBytes("UTF-8") += ':' ++= error.message.getBytes("UTF-8")
+          buf += 'e'
 
-        }
+        case query: Query =>
+          // "a" -> dictionary(<arguments>)
+          buf += '1' += ':' += 'a'
+          buf += 'd'
+            // "id" -> query.id
+            buf += '2' += ':' += 'i' += 'd'
+            buf += '2' += '0' += ':' ++= query.id.toArray
+          query match {
+            case q: Query.Ping =>
+              // no other arguments
+            case q: Query.FindNode =>
+              // "target" -> query.target
+              buf += '6' += ':' ++= "target".getBytes("UTF-8")
+              buf += '2' += '0' += ':' ++= q.target.toArray
+            case q: Query.GetPeers =>
+              // "info_hash" -> query.infohash
+              buf += '9' += ':' ++= "info_hash".getBytes("UTF-8")
+              buf += '2' += '0' += ':' ++= q.infohash.toArray
+            case q: Query.AnnouncePeer =>
+              // "implied_port" -> query.implied (1 or 0)
+              buf += '1' += '2' += ':' ++= "implied_port".getBytes("UTF-8")
+              buf += 'i' += (if (q.implied) '1' else '0') += 'e'
+              // "info_hash" -> query.infohash
+              buf += '9' += ':' ++= "info_hash".getBytes("UTF-8")
+              buf += '2' += '0' += ':' ++= q.infohash.toArray
+              // "port" -> query.port
+              buf += '4' += ':' += 'p' += 'o' += 'r' += 't'
+              buf += 'i' ++= q.port.toString.getBytes("UTF-8") += 'e'
+              // "token" -> query.token
+              buf += '5' += ':' ++= "token".getBytes("UTF-8")
+              buf ++= q.token.length.toString.getBytes("UTF-8") += ':' ++= q.token
+          }
+          buf += 'e'
+          // "q" -> query.name
+          buf += '1' += ':' += 'q'
+          buf ++= query.name.length.toString.getBytes("UTF-8") += ':' ++= query.name.getBytes("UTF-8")
+
+        case response: Response =>
+          // "r" -> dictionary(<arguments>)
+          buf += '1' += ':' += 'r'
+          buf += 'd'
+            // "id" -> response.id
+            buf += '2' += ':' += 'i' += 'd'
+            buf += '2' += '0' += ':' ++= response.id.toArray
+          response match {
+            case r: Response.Ping =>
+              // no other arguments
+            case r: Response.FindNode =>
+              // "nodes" -> response.nodes
+              buf += '5' += ':' ++= "nodes".getBytes("UTF-8")
+              val nodes = r.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: Node) =>
+                array ++ node.id.toArray ++ Endpoint.isa2ba(node.address)
+              }
+              buf ++= nodes.length.toString.getBytes("UTF-8") += ':' ++= nodes
+            case r: Response.GetPeersWithNodes =>
+              // "nodes" -> response.nodes
+              buf += '5' += ':' ++= "nodes".getBytes("UTF-8")
+              val nodes = r.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: Node) =>
+                array ++ node.id.toArray ++ Endpoint.isa2ba(node.address)
+              }
+              buf ++= nodes.length.toString.getBytes("UTF-8") += ':' ++= nodes
+              // "token" -> response.token
+              buf += '5' += ':' ++= "token".getBytes("UTF-8")
+              buf ++= r.token.length.toString.getBytes("UTF-8") += ':' ++= r.token
+            case r: Response.GetPeersWithValues =>
+              // "token" -> response.token
+              buf += '5' += ':' ++= "token".getBytes("UTF-8")
+              buf ++= r.token.length.toString.getBytes("UTF-8") += ':' ++= r.token
+              // "values" -> list(peers)
+              buf += '6' += ':' ++= "values".getBytes("UTF-8")
+              buf += 'l'
+                r.values foreach { peer =>
+                  val array = Endpoint.isa2ba(peer)
+                  buf ++= array.length.toString.getBytes("UTF-8") += ':' ++= array
+                }
+              buf += 'e'
+          }
+          buf += 'e'
       }
-    }
-    */
-    //null
+      buf += '1' += ':' += 't'
+      buf ++= message.tid.value.length.toString.getBytes("UTF-8") += ':' ++= message.tid.value
+      buf += '1' += ':' += 'y'
+      buf += '1' += ':' += message.y
+
+    buf += 'e'
+    buf.result()
+  }
 }
