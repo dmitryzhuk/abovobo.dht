@@ -176,13 +176,13 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
           new Error(tid, integer(dump(n - 8)), string(dump(n - 7)))
         case 'q' =>
           string(dump(n - 6)) match {
-            case "ping" =>
+            case Query.QUERY_NAME_PING =>
               new Query.Ping(tid, integer160(dump(n - 9)))
-            case "find_node" =>
+            case Query.QUERY_NAME_FIND_NODE =>
               new Query.FindNode(tid, integer160(dump(n - 11)), integer160(dump(n - 9)))
-            case "get_peers" =>
+            case Query.QUERY_NAME_GET_PEERS =>
               new Query.GetPeers(tid, integer160(dump(n - 11)), integer160(dump(n - 9)))
-            case "announce_peer" =>
+            case Query.QUERY_NAME_ANNOUNCE_PEER =>
               val variables = string(dump(n - 16)) match {
                 case "id" => integer160(dump(n - 15)) -> false
                 case "implied_port" => integer160(dump(n - 17)) -> (integer(dump(n - 15)) > 0)
