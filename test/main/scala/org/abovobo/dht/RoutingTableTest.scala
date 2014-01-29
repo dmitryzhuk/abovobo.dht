@@ -1,3 +1,13 @@
+/**
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
+ */
+
 package org.abovobo.dht
 
 import akka.actor.ActorSystem
@@ -10,7 +20,7 @@ import java.net.InetSocketAddress
 /**
  * Unit test for RoutingTable Actor
  */
-class RoutingTableBasicTest(system: ActorSystem)
+class RoutingTableTest(system: ActorSystem)
   extends TestKit(system)
   with ImplicitSender
   with WordSpecLike

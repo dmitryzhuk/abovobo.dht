@@ -19,12 +19,13 @@ class TID(private val value: Array[Byte]) {
 
   /**
    * Returns byte array representation of transaction identifier.
+   *
    * @return byte array representation of transaction identifier.
    */
   def toArray = this.value
 }
 
-/** Accompanying object. */
+/** Factory which creates instances of TID in loop. */
 class TIDFactory {
 
   /// An array of characters which can be used to generate transaction identifiers

@@ -11,7 +11,7 @@
 package org.abovobo.dht
 
 import akka.io.{Udp, IO}
-import akka.actor.{ActorLogging, Cancellable, Actor}
+import akka.actor._
 import java.net.InetSocketAddress
 import org.abovobo.integer.Integer160
 import akka.util.ByteString
@@ -61,15 +61,17 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
   override def receive = {
     case Udp.Bound(local) =>
       this.log.info("Bound with local address {}", local)
-      this.context.become(this.ready)
+      this.context.become(this.ready(this.sender))
   }
 
   /**
    * Implements Send/Receive logic. Decodes network package into a [[org.abovobo.dht.Message]]
    * upon receival and if received message is [[org.abovobo.dht.Response]] checks if it corresponds
    * to existing transaction.
+   *
+   * @param socket Akka.IO socket actor which will be used for sending datagrams
    */
-  def ready: Actor.Receive = {
+  def ready(socket: ActorRef): Actor.Receive = {
 
     // received a packet from UDP socket
     case Udp.Received(data, remote) => try {
@@ -84,7 +86,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
       this.controller ! Controller.Receive(message)
     } catch {
       case e: NetworkAgent.ParsingException =>
-        sender ! e.error
+        socket ! Udp.Send(NetworkAgent.serialize(e.error), remote)
     }
 
     // `Send` command received
@@ -98,7 +100,9 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
         case _ => // do nothing
       }
       // send serialized message to remote address
-      IO(Udp) ! Udp.Send(NetworkAgent.serialize(message), remote)
+      val serialized = NetworkAgent.serialize(message)
+      this.log.info("Sending " + serialized.toString())
+      socket ! Udp.Send(serialized, remote)
   }
 
   /**
@@ -242,6 +246,16 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
 
 /** Accompanying object */
 object NetworkAgent {
+
+  /**
+   * Factory which creates [[org.abovobo.dht.NetworkAgent]] [[akka.actor.Props]] instance.
+   *
+   * @param endpoint An adress/port to bind to to receive incoming packets
+   * @param timeout  A period of time to wait for response from queried remote peer.
+   * @return         Properly configured [[akka.actor.Props]] instance.
+   */
+  def props(endpoint: InetSocketAddress, timeout: FiniteDuration): Props =
+    Props(classOf[NetworkAgent], endpoint, timeout)
 
   /** Base trait for all commands natively supported by [[org.abovobo.dht.NetworkAgent]] actor. */
   sealed trait Command
