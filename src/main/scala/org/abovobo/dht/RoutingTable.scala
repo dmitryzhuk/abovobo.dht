@@ -107,7 +107,6 @@ class RoutingTable(val K: Int,
 
   import RoutingTable._
   import RoutingTable.Result._
-  import Controller._
 
   /**
    * @inheritdoc
@@ -217,7 +216,7 @@ class RoutingTable(val K: Int,
    * @param max Upper bound of bucket
    */
   def refresh(min: Integer160, max: Integer160): Unit = {
-    this.controller ! FindNode(min + Integer160.random % (max - min))
+    this.controller ! Controller.FindNode(min + Integer160.random % (max - min))
     // cancel existing bucket task if exists
     this.cancellables.get(min) foreach { _.cancel() }
     this.cancellables.remove(min)
@@ -244,7 +243,7 @@ class RoutingTable(val K: Int,
     this.cancellables.clear()
     this.writer.drop()
     this.writer.id(id)
-    this.controller ! FindNode(id)
+    this.controller ! Controller.FindNode(id)
   }
 
   /**
@@ -334,7 +333,7 @@ class RoutingTable(val K: Int,
           // get list of questionnable nodes
           val questionnable = nodes.filter(_.questionnable)
           // request ping operation for every questionnable node
-          questionnable foreach { node => this.controller ! Ping(node.address) }
+          questionnable foreach { node => this.controller ! Controller.Ping(node.address) }
           // send deferred message to itself
           this.context.system.scheduler.scheduleOnce(this.delay)(self ! Received(node, kind))(this.context.dispatcher)
           // notify caller that insertion has been deferred

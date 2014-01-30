@@ -46,12 +46,9 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
   /**
    * @inheritdoc
    *
-   * Sends [[akka.io.Udp.Unbind]] message to IO manager.
+   * Cancels pending transactions.
    */
-  override def postStop() = {
-    // unbind UDP socket listener
-    IO(Udp) ! Udp.Unbind
-  }
+  override def postStop() = this.transactions foreach { _._2._2.cancel() }
 
   /**
    * @inheritdoc
@@ -76,14 +73,16 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
     // received a packet from UDP socket
     case Udp.Received(data, remote) => try {
       // parse received ByteString into a message instance
-      val message = this.parse(data)
+      val message = NetworkAgent.parse(data, this.transactions.toMap)
       // check if message completes pending transaction
       message match {
-        case response: Response => this.transactions.remove(response.tid).foreach { _._2.cancel() }
+        case response: Response =>
+          this.log.info("Completing transaction " + response.tid + " by means of received response")
+          this.transactions.remove(response.tid).foreach { _._2.cancel() }
         case _ => // do nothing
       }
       // forward received message to controller
-      this.controller ! Controller.Receive(message)
+      this.controller ! Controller.Received(message)
     } catch {
       case e: NetworkAgent.ParsingException =>
         socket ! Udp.Send(NetworkAgent.serialize(e.error), remote)
@@ -100,9 +99,18 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
         case _ => // do nothing
       }
       // send serialized message to remote address
-      val serialized = NetworkAgent.serialize(message)
-      this.log.info("Sending " + serialized.toString())
-      socket ! Udp.Send(serialized, remote)
+      this.log.info("Sending " + message)
+      socket ! Udp.Send(NetworkAgent.serialize(message), remote)
+
+    // `Udp.Unbind` command requested, forwarding to our socket
+    case Udp.Unbind  =>
+      this.log.info("Unbinding")
+      socket ! Udp.Unbind
+
+    // Our socket has been unbound, no more messages can be sent or received
+    case Udp.Unbound =>
+      this.log.info("Unbound")
+      this.transactions foreach { _._2._2.cancel() }
   }
 
   /**
@@ -113,9 +121,54 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
    * @param query A query which remote party failed to respond to in timely manner.
    */
   private def fail(query: Query) = {
+    this.log.info("Completing transaction " + query.tid + " by means of failure")
     this.transactions.remove(query.tid).foreach { _._2.cancel() }
     this.controller ! Controller.Fail(query)
   }
+
+  /// Instantiates a map of associations between transaction identifiers
+  /// and cancellable tasks which will produce failure command if remote peer
+  /// failed to respond in timely manner.
+  private val transactions = new mutable.HashMap[TID, (Query, Cancellable)]
+
+  /// Initializes sibling `controller` actor reference
+  private lazy val controller = this.context.actorSelection("../controller")
+}
+
+/** Accompanying object */
+object NetworkAgent {
+
+  /**
+   * Factory which creates [[org.abovobo.dht.NetworkAgent]] [[akka.actor.Props]] instance.
+   *
+   * @param endpoint An adress/port to bind to to receive incoming packets
+   * @param timeout  A period of time to wait for response from queried remote peer.
+   * @return         Properly configured [[akka.actor.Props]] instance.
+   */
+  def props(endpoint: InetSocketAddress, timeout: FiniteDuration): Props =
+    Props(classOf[NetworkAgent], endpoint, timeout)
+
+  /** Base trait for all commands natively supported by [[org.abovobo.dht.NetworkAgent]] actor. */
+  sealed trait Command
+
+  /**
+   * Command instructing actor to send given message to given remote peer.
+   *
+   * @param message A message to send.
+   * @param remote  An address (IP/Port) to send message to.
+   */
+  case class Send(message: Message, remote: InetSocketAddress) extends Command
+
+  /**
+   * Represents exception which may happen during packet parsing process.
+   * Note that this exception will normally result in sending [[org.abovobo.dht.Error]]
+   * message back to remote peer which sent us a packet. It means, that effectively
+   * this exception will only be thrown after bencoded packet already decoded successfully
+   * and transaction identifier located correctly.
+   *
+   * @param error An error message to send back to remote peer.
+   */
+  private class ParsingException(val error: Error) extends Exception
 
   /**
    * Parses given [[akka.util.ByteString]] producing instance of corresponding
@@ -127,7 +180,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
    *             from remote peer.
    * @return     [[org.abovobo.dht.Message]] instance of proper type.
    */
-  private def parse(data: ByteString): Message = {
+  def parse(data: ByteString, transactions: Map[TID, (Query, Cancellable)]): Message = {
 
     import Endpoint._
 
@@ -201,83 +254,40 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
             case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown query")
           }
         case 'r' =>
-          if (this.transactions.get(tid).isDefined) {
-            this.transactions(tid)._1 match {
-              case p: Query.Ping =>
-                new Response.Ping(tid, integer160(dump(n - 7)))
-              case fn: Query.FindNode =>
-                new Response.FindNode(tid, integer160(dump(n - 9)), nodes(dump(n - 7)))
-              case gp: Query.GetPeers =>
-                string(dump(5)) match {
-                  case "nodes" =>
-                    new Response.GetPeersWithNodes(
-                      tid = tid,
-                      id = integer160(dump(4)),
-                      token = array(dump(8)),
-                      nodes = nodes(dump(6)))
-                  case "token" =>
-                    new Response.GetPeersWithValues(
-                      tid = tid,
-                      id = integer160(dump(4)),
-                      token = array(dump(6)),
-                      values = peers(dump.slice(9, n - 7)))
-                  case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
-                }
-              case ap: Query.AnnouncePeer =>
-                new Response.AnnouncePeer(tid, integer160(dump(n - 7)))
-              case _ => xthrow(Error.ERROR_CODE_GENERIC, "Unknown corresponding query type")
-            }
-          } else {
-            xthrow(Error.ERROR_CODE_PROTOCOL, "Invalid transaction id")
+          transactions.get(tid) match {
+            case Some(pair) =>
+              pair._1 match {
+                case p: Query.Ping =>
+                  new Response.Ping(tid, integer160(dump(n - 7)))
+                case fn: Query.FindNode =>
+                  new Response.FindNode(tid, integer160(dump(n - 9)), nodes(dump(n - 7)))
+                case gp: Query.GetPeers =>
+                  string(dump(5)) match {
+                    case "nodes" =>
+                      new Response.GetPeersWithNodes(
+                        tid = tid,
+                        id = integer160(dump(4)),
+                        token = array(dump(8)),
+                        nodes = nodes(dump(6)))
+                    case "token" =>
+                      new Response.GetPeersWithValues(
+                        tid = tid,
+                        id = integer160(dump(4)),
+                        token = array(dump(6)),
+                        values = peers(dump.slice(9, n - 7)))
+                    case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+                  }
+                case ap: Query.AnnouncePeer =>
+                  new Response.AnnouncePeer(tid, integer160(dump(n - 7)))
+                case _ => xthrow(Error.ERROR_CODE_GENERIC, "Unknown corresponding query type")
+              }
+            case None =>
+              xthrow(Error.ERROR_CODE_PROTOCOL, "Invalid transaction id")
           }
       }
       case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown method")
     }
   }
-
-  /// Instantiates a map of associations between transaction identifiers
-  /// and cancellable tasks which will produce failure command if remote peer
-  /// failed to respond in timely manner.
-  private val transactions = new mutable.HashMap[TID, (Query, Cancellable)]
-
-  /// Initializes sibling `controller` actor reference
-  private lazy val controller = this.context.actorSelection("../controller")
-}
-
-/** Accompanying object */
-object NetworkAgent {
-
-  /**
-   * Factory which creates [[org.abovobo.dht.NetworkAgent]] [[akka.actor.Props]] instance.
-   *
-   * @param endpoint An adress/port to bind to to receive incoming packets
-   * @param timeout  A period of time to wait for response from queried remote peer.
-   * @return         Properly configured [[akka.actor.Props]] instance.
-   */
-  def props(endpoint: InetSocketAddress, timeout: FiniteDuration): Props =
-    Props(classOf[NetworkAgent], endpoint, timeout)
-
-  /** Base trait for all commands natively supported by [[org.abovobo.dht.NetworkAgent]] actor. */
-  sealed trait Command
-
-  /**
-   * Command instructing actor to send given message to given remote peer.
-   *
-   * @param message A message to send.
-   * @param remote  An address (IP/Port) to send message to.
-   */
-  case class Send(message: Message, remote: InetSocketAddress) extends Command
-
-  /**
-   * Represents exception which may happen during packet parsing process.
-   * Note that this exception will normally result in sending [[org.abovobo.dht.Error]]
-   * message back to remote peer which sent us a packet. It means, that effectively
-   * this exception will only be thrown after bencoded packet already decoded successfully
-   * and transaction identifier located correctly.
-   *
-   * @param error An error message to send back to remote peer.
-   */
-  private class ParsingException(val error: Error) extends Exception
 
   /**
    * Serializes given message into a packet sendable via network.
@@ -285,7 +295,7 @@ object NetworkAgent {
    * @param message A message to serialize
    * @return [[akka.util.ByteString]] instance which can be sent via network.
    */
-  private def serialize(message: Message): ByteString = {
+  def serialize(message: Message): ByteString = {
 
     val buf = new ByteStringBuilder()
     buf += 'd'

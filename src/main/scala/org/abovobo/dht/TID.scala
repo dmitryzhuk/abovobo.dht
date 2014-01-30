@@ -23,6 +23,18 @@ class TID(private val value: Array[Byte]) {
    * @return byte array representation of transaction identifier.
    */
   def toArray = this.value
+
+  /** Returns stringified value of backend bytearray */
+  override def toString: String = new String(this.value, "UTF-8")
+
+  /** Overrides standard Java equals delegating operation to underlying value */
+  override def equals(obj: Any): Boolean = obj match {
+    case tid: TID => this.value.deep == tid.value.deep
+    case _ => false
+  }
+
+  /** Overrides standard Java hashCode delegating operation to underlying value */
+  override def hashCode: Int = this.value.hashCode
 }
 
 /** Factory which creates instances of TID in loop. */
