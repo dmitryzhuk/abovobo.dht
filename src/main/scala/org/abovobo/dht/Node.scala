@@ -54,7 +54,7 @@ class PersistentNode(id: Integer160,
    * @param threshold Number of fails to reply before node becomes bad.
    * @return  true if this node is considered to be good.
    */
-  def good(implicit timeout:Duration, threshold: Int): Boolean = !this.bad && !this.questionnable
+  def good(implicit timeout: Duration, threshold: Int): Boolean = !this.bad && !this.questionnable
 
   /**
    * Returns true if this node is definitely bad
@@ -63,7 +63,7 @@ class PersistentNode(id: Integer160,
    * @param threshold Number of fails to reply before node becomes bad.
    * @return  true if this node is considered to be good.
    */
-  def bad(implicit timeout:Duration, threshold: Int): Boolean = threshold <= this.failcount
+  def bad(implicit timeout: Duration, threshold: Int): Boolean = threshold <= this.failcount
 
   /**
    * Returns true if this node is not "bad" but has not been recently seen
@@ -72,7 +72,7 @@ class PersistentNode(id: Integer160,
    * @param threshold Number of fails to reply before node becomes bad.
    * @return  true if this node is considered to be good.
    */
-  def questionnable(implicit timeout:Duration, threshold: Int): Boolean =
+  def questionnable(implicit timeout: Duration, threshold: Int): Boolean =
     threshold > this.failcount && this.replied.isDefined && !this.recentlySeen
 
   /**
@@ -82,7 +82,7 @@ class PersistentNode(id: Integer160,
    * @param threshold Number of fails to reply before node becomes bad.
    * @return  true if this node is considered to be good.
    */
-  def recentlySeen(implicit timeout:Duration, threshold: Int): Boolean =
+  def recentlySeen(implicit timeout: Duration, threshold: Int): Boolean =
     this.replied.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout ||
       this.queried.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout
 
