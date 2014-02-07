@@ -73,11 +73,13 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
     // received a packet from UDP socket
     case Udp.Received(data, remote) => try {
       // parse received ByteString into a message instance
-      val message = NetworkAgent.parse(data, this.transactions.toMap)
+      val message = NetworkAgent.parse(data, this.transactions.toMap map { pair => pair._1 -> pair._2._1 })
       // check if message completes pending transaction
       message match {
         case response: Response =>
           this.log.info("Completing transaction " + response.tid + " by means of received response")
+          val query = this.transactions(response.tid)._1
+          val cancellable = this.transactions(response.tid)._2
           this.transactions.remove(response.tid).foreach { _._2.cancel() }
         case _ => // do nothing
       }
@@ -93,10 +95,12 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
       // if we are sending query - set up transaction monitor
       message match {
         case query: Query =>
+          this.log.info("Starting transaction " + query.tid)
           this.transactions.put(
             query.tid,
             query -> system.scheduler.scheduleOnce(this.timeout)(this.fail(query))(system.dispatcher))
         case _ => // do nothing
+          this.log.error("Invalid message type " + message.getClass)
       }
       // send serialized message to remote address
       this.log.info("Sending " + message)
@@ -180,7 +184,7 @@ object NetworkAgent {
    *             from remote peer.
    * @return     [[org.abovobo.dht.Message]] instance of proper type.
    */
-  def parse(data: ByteString, transactions: Map[TID, (Query, Cancellable)]): Message = {
+  def parse(data: ByteString, transactions: Map[TID, Query]): Message = {
 
     import Endpoint._
 
@@ -192,7 +196,8 @@ object NetworkAgent {
       case _ => throw new IllegalArgumentException("Failed to retrieve transaction id")
     }
 
-    def xthrow(code: Int, message: String) = throw new NetworkAgent.ParsingException(new Error(tid, code, message))
+    def xthrow(code: Int, message: String) =
+      throw new NetworkAgent.ParsingException(new Error(tid, code, message))
 
     def array(event: Bencode.Event): Array[Byte] = event match {
       case Bencode.Bytestring(value) => value
@@ -255,8 +260,8 @@ object NetworkAgent {
           }
         case 'r' =>
           transactions.get(tid) match {
-            case Some(pair) =>
-              pair._1 match {
+            case Some(query) =>
+              query match {
                 case p: Query.Ping =>
                   new Response.Ping(tid, integer160(dump(n - 7)))
                 case fn: Query.FindNode =>

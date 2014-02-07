@@ -34,7 +34,7 @@ class TID(private val value: Array[Byte]) {
   }
 
   /** Overrides standard Java hashCode delegating operation to underlying value */
-  override def hashCode: Int = this.value.hashCode
+  override def hashCode: Int = this.toString.hashCode
 }
 
 /** Factory which creates instances of TID in loop. */

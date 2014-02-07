@@ -11,12 +11,15 @@
 package org.abovobo.dht
 
 import akka.actor._
-import akka.testkit.{ImplicitSender, TestKit}
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import akka.io.{IO, Udp}
+import akka.testkit.{ImplicitSender, TestKit}
+
 import java.net.{InetAddress, InetSocketAddress}
-import scala.concurrent.duration._
+
+import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
+
+import scala.concurrent.duration._
 
 class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLogging {
 
@@ -37,7 +40,7 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
     case Udp.Received(data, r) =>
       this.log.info("Received from " + r + ": " + data.toString())
       this.context.actorSelection("../../system/testActor*") ! Udp.Received(data, r)
-    case Udp.Unbind  =>
+    case Udp.Unbind =>
       this.log.info("Unbinding")
       socket ! Udp.Unbind
     case Udp.Unbound =>
@@ -90,26 +93,65 @@ class NetworkAgentTest(system: ActorSystem)
 
   "NetworkAgent Actor" when {
 
-    "command Send(Ping) is issued" must {
-      val query = new Query.Ping(factory.next(), Integer160.maxval)
+    "command Send(Query.Ping) is issued" must {
+      val tid = factory.next()
+      val query = new Query.Ping(tid, Integer160.maxval)
+      val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+        "e1:q4:ping1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
+
       "serialize message and send it to remote peer" in {
         na ! NetworkAgent.Send(query, remote)
-        expectMsgClass(classOf[Udp.Received])
+        expectMsgPF() {
+          case Udp.Received(data, address) =>
+            packet should equal(data.toArray)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
       }
+
       "complete transaction and notify Controller after receiving network response" in {
         rp ! Udp.Send(NetworkAgent.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
-        expectMsgClass(classOf[Controller.Received])
+        expectMsgPF() {
+          case Controller.Received(message) =>
+            message match {
+              case ping: Response.Ping =>
+                ping.id should be(Integer160.zero)
+                ping.tid.toArray should equal(tid.toArray)
+              case a: Any =>
+                this.fail("Wrong message type " + a.getClass)
+            }
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
       }
+
     }
 
-    "command Send(FindNode) is issued" must {
-      val query = new Query.FindNode(factory.next(), Integer160.maxval, target=Integer160.random)
+    "command Send(Query.FindNode) is issued" must {
+      val tid = factory.next()
+      val target = Integer160.random
+      val query = new Query.FindNode(tid, id = Integer160.maxval, target = target)
+      val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+        "6:target20:".getBytes("UTF-8") ++ target.toArray ++
+        "e1:q9:find_node1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
+
       "serialize message and send it to remote peer" in {
         na ! NetworkAgent.Send(query, remote)
-        expectMsgClass(classOf[Udp.Received])
+        expectMsgPF() {
+          case Udp.Received(data, address) =>
+            packet should equal(data.toArray)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
       }
+
       "complete transaction and notify Controller after not receiving network response" in {
-        expectMsgClass(12.seconds, classOf[Controller.Fail])
+        expectMsgPF(12.seconds) {
+          case Controller.Fail(q: Query) =>
+            q should be theSameInstanceAs query
+          case a: Any =>
+            fail("Wrong message type " + a.getClass)
+        }
       }
     }
 
