@@ -20,6 +20,7 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
 
 import scala.concurrent.duration._
+import akka.util.ByteString
 
 class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLogging {
 
@@ -155,5 +156,185 @@ class NetworkAgentTest(system: ActorSystem)
       }
     }
 
+    "another command Send(Query.FindNode) is issued" must {
+      val tid = factory.next()
+      val target = Integer160.random
+      val query = new Query.FindNode(tid, id = Integer160.maxval, target = target)
+      val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+        "6:target20:".getBytes("UTF-8") ++ target.toArray ++
+        "e1:q9:find_node1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
+
+      "serialize message and send it to remote peer" in {
+        na ! NetworkAgent.Send(query, remote)
+        expectMsgPF() {
+          case Udp.Received(data, address) =>
+            packet should equal(data.toArray)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+      "complete transaction and notify Controller after receiving network response" in {
+        rp ! Udp.Send(NetworkAgent.serialize(new Response.FindNode(query.tid, Integer160.zero,
+          nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
+        expectMsgPF() {
+          case Controller.Received(message) =>
+            message match {
+              case fn: Response.FindNode =>
+                fn.id should be(Integer160.zero)
+                fn.tid.toArray should equal(tid.toArray)
+                fn.nodes should have size 1
+                fn.nodes(0).id should be(Integer160.zero)
+              case a: Any =>
+                this.fail("Wrong message type " + a.getClass)
+            }
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+    }
+
+    "command Send(Query.GetPeers) is issued" must {
+      val tid = factory.next()
+      val infohash = Integer160.random
+      val query = new Query.GetPeers(tid, id = Integer160.maxval, infohash = infohash)
+      val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+        "9:info_hash20:".getBytes("UTF-8") ++ infohash.toArray ++
+        "e1:q9:get_peers1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
+
+      "serialize message and send it to remote peer" in {
+        na ! NetworkAgent.Send(query, remote)
+        expectMsgPF() {
+          case Udp.Received(data, address) =>
+            packet should equal(data.toArray)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+      "complete transaction and notify Controller after receiving network response" in {
+        rp ! Udp.Send(NetworkAgent.serialize(new Response.GetPeersWithNodes(query.tid, Integer160.zero,
+          token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+          nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
+        expectMsgPF() {
+          case Controller.Received(message) =>
+            message match {
+              case gp: Response.GetPeersWithNodes =>
+                gp.id should be(Integer160.zero)
+                gp.tid.toArray should equal(tid.toArray)
+                gp.nodes should have size 1
+                gp.nodes(0).id should be(Integer160.zero)
+                gp.token should equal(Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9))
+              case a: Any =>
+                this.fail("Wrong message type " + a.getClass)
+            }
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+    }
+
+    "another command Send(Query.GetPeers) is issued" must {
+      val tid = factory.next()
+      val infohash = Integer160.random
+      val query = new Query.GetPeers(tid, id = Integer160.maxval, infohash = infohash)
+      val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+        "9:info_hash20:".getBytes("UTF-8") ++ infohash.toArray ++
+        "e1:q9:get_peers1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
+
+      "serialize message and send it to remote peer" in {
+        na ! NetworkAgent.Send(query, remote)
+        expectMsgPF() {
+          case Udp.Received(data, address) =>
+            packet should equal(data.toArray)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+      "complete transaction and notify Controller after receiving network response" in {
+        rp ! Udp.Send(NetworkAgent.serialize(new Response.GetPeersWithValues(query.tid, Integer160.zero,
+          token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
+          values = Array(new InetSocketAddress(0)))), local)
+        expectMsgPF() {
+          case Controller.Received(message) =>
+            message match {
+              case gp: Response.GetPeersWithValues =>
+                gp.id should be(Integer160.zero)
+                gp.tid.toArray should equal(tid.toArray)
+                gp.values should have size 1
+                gp.values(0) should be(new InetSocketAddress(0))
+                gp.token should equal(Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9))
+              case a: Any =>
+                this.fail("Wrong message type " + a.getClass)
+            }
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+    }
+
+    "command Send(Query.AnnouncePeer) is issued" must {
+      val tid = factory.next()
+      val infohash = Integer160.random
+      val token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
+      val query = new Query.AnnouncePeer(tid, id = Integer160.maxval,
+        infohash = infohash, port = 1000,
+        token = token,
+        implied = true)
+      val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+        "12:implied_porti1e".getBytes("UTF-8") ++
+        "9:info_hash20:".getBytes("UTF-8") ++ infohash.toArray ++
+        "4:porti1000e".getBytes("UTF-8") ++
+        "5:token10:".getBytes("UTF-8") ++ token ++
+        "e1:q13:announce_peer1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
+
+      "serialize message and send it to remote peer" in {
+        na ! NetworkAgent.Send(query, remote)
+        expectMsgPF() {
+          case Udp.Received(data, address) =>
+            packet should equal(data.toArray)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+      "complete transaction and notify Controller after receiving network response" in {
+        rp ! Udp.Send(NetworkAgent.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
+        expectMsgPF() {
+          case Controller.Received(message) =>
+            message match {
+              case ap: Response.AnnouncePeer =>
+                ap.id should be(Integer160.zero)
+                ap.tid.toArray should equal(tid.toArray)
+              case a: Any =>
+                this.fail("Wrong message type " + a.getClass)
+            }
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+
+    }
+
+    "network packet with invalid message structure sent" must {
+      "respond with error message" in {
+        val tid = factory.next()
+        val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+          "e1:q4:ping1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:ze".getBytes("UTF-8")
+        val error: Array[Byte] = "d1:eli204e14:Unknown methode1:t2:".getBytes("UTF-8") ++ tid.toArray ++
+          "1:y1:ee".getBytes("UTF-8")
+        rp ! Udp.Send(ByteString(packet), local)
+        expectMsgPF() {
+          case Udp.Received(dump, address) =>
+            dump.toArray should equal(error)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+    }
   }
 }

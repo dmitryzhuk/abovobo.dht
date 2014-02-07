@@ -78,8 +78,6 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
       message match {
         case response: Response =>
           this.log.info("Completing transaction " + response.tid + " by means of received response")
-          val query = this.transactions(response.tid)._1
-          val cancellable = this.transactions(response.tid)._2
           this.transactions.remove(response.tid).foreach { _._2.cancel() }
         case _ => // do nothing
       }
@@ -289,8 +287,9 @@ object NetworkAgent {
             case None =>
               xthrow(Error.ERROR_CODE_PROTOCOL, "Invalid transaction id")
           }
+        case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown method")
       }
-      case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown method")
+      case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Malformed packet")
     }
   }
 
@@ -390,6 +389,8 @@ object NetworkAgent {
                   buf ++= array.length.toString.getBytes("UTF-8") += ':' ++= array
                 }
               buf += 'e'
+            case r: Response.AnnouncePeer =>
+              // no other arguments
           }
           buf += 'e'
       }

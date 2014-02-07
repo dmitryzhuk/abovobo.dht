@@ -52,7 +52,10 @@ object Message {
  * @param code    Error code.
  * @param message Error message.
  */
-class Error(tid: TID, val code: Long, val message: String) extends Message(tid, 'e')
+class Error(tid: TID, val code: Long, val message: String) extends Message(tid, 'e') {
+  override def toString =
+    "d1:eli" + this.code + "e" + this.message.length + ":" + this.message + "e1:t2:" + this.tid.toString + "1:y1:ee"
+}
 
 /**
  * Accompanying object.
@@ -108,7 +111,11 @@ object Query {
    * @param id    Sending node identifier.
    */
   class Ping(tid: TID, id: Integer160)
-    extends Query(tid, id, QUERY_NAME_PING)
+    extends Query(tid, id, QUERY_NAME_PING) {
+
+    override def toString =
+      "d1:ad2:id20:`" + this.id.toHexString + "`e1:q4:ping1:t2:" + this.tid.toString + "1:y1:qe"
+  }
 
   /**
    * Represents `find_node` query message.
@@ -119,7 +126,13 @@ object Query {
    */
   class FindNode(tid: TID, id: Integer160,
                  val target: Integer160)
-    extends Query(tid, id, QUERY_NAME_FIND_NODE)
+    extends Query(tid, id, QUERY_NAME_FIND_NODE) {
+
+    override def toString =
+      "d1:ad2:id20:`" + this.id.toHexString + "`6:target20:`" + this.target.toHexString +
+        "`e1:q9:find_node1:t2:" + this.tid.toString + "1:y1:qe"
+
+  }
 
   /**
    * Represents `get_peers` query message.
@@ -130,7 +143,13 @@ object Query {
    */
   class GetPeers(tid: TID, id: Integer160,
                  val infohash: Integer160)
-    extends Query(tid, id, QUERY_NAME_GET_PEERS)
+    extends Query(tid, id, QUERY_NAME_GET_PEERS) {
+
+    override def toString =
+      "d1:ad2:id20:`" + this.id.toHexString + "`9:info_hash20:`" + this.infohash.toHexString +
+        "`e1:q9:get_peers1:t2:" + this.tid.toString + "1:y1:qe"
+
+  }
 
   /**
    * Announces own peer as the one which is bound to particular torrent.
@@ -144,7 +163,17 @@ object Query {
    */
   class AnnouncePeer(tid: TID, id: Integer160,
                      val infohash: Integer160, val port: Int, val token: Array[Byte], val implied: Boolean)
-    extends Query(tid, id, QUERY_NAME_ANNOUNCE_PEER)
+    extends Query(tid, id, QUERY_NAME_ANNOUNCE_PEER) {
+
+    override def toString =
+      "d1:ad2:id20:`" + this.id.toHexString + "`" +
+        "12:implied_porti" + (if (implied) 1 else 0) + "e" +
+        "9:info_hash20:`" + this.infohash.toHexString + "`" +
+        "4:porti" + this.port + "e" +
+        "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
+        "e1:q13:announce_peer1:t2:" + this.tid.toString + "1:y1:qe"
+
+  }
 }
 
 /**
@@ -164,7 +193,12 @@ object Response {
    * @param id  Sending node identifier.
    */
   class Ping(tid: TID, id: Integer160)
-    extends Response(tid, id)
+    extends Response(tid, id) {
+
+    override def toString =
+      "[ping] -> d1:rd2:id20:`" + this.id.toHexString + "`e1:t2:" + this.tid.toString + "1:y1:re"
+
+  }
 
   /**
    * Message in response to `find_node` query.
@@ -174,7 +208,18 @@ object Response {
    * @param nodes Collection of nodes with ids closest to requested target.
    */
   class FindNode(tid: TID, id: Integer160, val nodes: IndexedSeq[Node])
-    extends Response(tid, id)
+    extends Response(tid, id) {
+
+    override def toString =
+      "[find_node] -> " +
+      "d1:rd2:id20:`" + this.id.toHexString + "`" +
+        "5:nodes" + (this.nodes.length * 26) + ":`" +
+        org.abovobo.conversions.Hex.ba2hex(this.nodes
+          .map(node => node.id.toArray ++ Endpoint.isa2ba(node.address))
+          .reduceLeft((left, node) => left ++ node)) + "`" +
+        "e1:t2:" + this.tid.toString + "1:y1:re"
+
+  }
 
   /**
    * Abstract class representing message in response to `get_peers` query.
@@ -196,7 +241,19 @@ object Response {
    * @param nodes Collection of nodes with ids closest to requested infohash.
    */
   class GetPeersWithNodes(tid: TID, id: Integer160, token: Array[Byte], val nodes: IndexedSeq[Node])
-    extends GetPeers(tid, id, token)
+    extends GetPeers(tid, id, token) {
+
+    override def toString =
+      "[get_peers] -> " +
+      "d1:rd2:id20:`" + this.id.toHexString + "`" +
+        "5:nodes" + (this.nodes.length * 26) + ":`" +
+        org.abovobo.conversions.Hex.ba2hex(this.nodes
+          .map(node => node.id.toArray ++ Endpoint.isa2ba(node.address))
+          .reduceLeft((left, node) => left ++ node)) + "`" +
+        "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
+        "e1:t2:" + this.tid.toString + "1:y1:re"
+
+  }
 
   /**
    * Concrete variant of [[org.abovobo.dht.Response.GetPeers]] class, representing
@@ -208,7 +265,19 @@ object Response {
    * @param values  Collection of peers at requested torrent.
    */
   class GetPeersWithValues(tid: TID, id: Integer160, token: Array[Byte], val values: IndexedSeq[Peer])
-    extends GetPeers(tid, id, token)
+    extends GetPeers(tid, id, token) {
+
+    override def toString =
+      "[get_peers] -> " +
+      "d1:rd2:id20:`" + this.id.toHexString + "`" +
+        "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
+        "6:values" + (this.values.length * 6) + ":`" +
+        org.abovobo.conversions.Hex.ba2hex(this.values
+          .map(Endpoint.isa2ba)
+          .reduceLeft((left, peer) => left ++ peer)) + "`" +
+        "e1:t2:" + this.tid.toString + "1:y1:re"
+
+  }
 
   /**
    * Message in response to `announce_peer` query.
@@ -217,5 +286,10 @@ object Response {
    * @param id  Sending node identifier.
    */
   class AnnouncePeer(tid: TID, id: Integer160)
-    extends Response(tid, id)
+    extends Response(tid, id) {
+
+    override def toString =
+      "[announce_peer] -> d1:rd2:id20:`" + this.id.toHexString + "`e1:t2:" + this.tid.toString + "1:y1:re"
+
+  }
 }
