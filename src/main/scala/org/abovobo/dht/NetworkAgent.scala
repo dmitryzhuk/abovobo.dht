@@ -24,7 +24,7 @@ import scala.concurrent.duration.FiniteDuration
  * This actor is responsible for sending Kademlia UDP messages and receiving them.
  * It also manages Kademlia transactions: when some sender initiates a query, this actor
  * will keep record about that fact and if remote party failed to respond in timely
- * manner, this actor will produce [[org.abovobo.dht.Controller.Fail]] command.
+ * manner, this actor will produce [[org.abovobo.dht.Controller.Failed]] command.
  *
  * @param endpoint An endpoint at which this agent must listen.
  * @param timeout  A period in time during which the remote party must respond to a query.
@@ -82,7 +82,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
         case _ => // do nothing
       }
       // forward received message to controller
-      this.controller ! Controller.Received(message)
+      this.controller ! Controller.Received(message, remote)
     } catch {
       case e: NetworkAgent.ParsingException =>
         socket ! Udp.Send(NetworkAgent.serialize(e.error), remote)
@@ -98,7 +98,6 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
             query.tid,
             query -> system.scheduler.scheduleOnce(this.timeout)(this.fail(query))(system.dispatcher))
         case _ => // do nothing
-          this.log.error("Invalid message type " + message.getClass)
       }
       // send serialized message to remote address
       this.log.info("Sending " + message)
@@ -117,7 +116,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
 
   /**
    * Implements the case when remote peer has failed to respond to our query
-   * in timely manner. In this case we generate [[org.abovobo.dht.Controller.Fail]]
+   * in timely manner. In this case we generate [[org.abovobo.dht.Controller.Failed]]
    * command to controller actor.
    *
    * @param query A query which remote party failed to respond to in timely manner.
@@ -125,7 +124,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
   private def fail(query: Query) = {
     this.log.info("Completing transaction " + query.tid + " by means of failure")
     this.transactions.remove(query.tid).foreach { _._2.cancel() }
-    this.controller ! Controller.Fail(query)
+    this.controller ! Controller.Failed(query)
   }
 
   /// Instantiates a map of associations between transaction identifiers

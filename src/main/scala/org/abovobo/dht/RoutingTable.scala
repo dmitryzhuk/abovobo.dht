@@ -186,7 +186,7 @@ class RoutingTable(val K: Int,
       node.id, kind, sender)
 
     this.reader.node(node.id) match {
-      case None => if (kind == Kind.Query || kind == Kind.Reply) {
+      case None => if (kind == Kind.Query || kind == Kind.Response) {
         // insert new node only if event does not indicate error or failure
         val result = this.insert(node, kind)
         this.log.info("Attempted insertion with result {}", result)
@@ -411,8 +411,9 @@ object RoutingTable {
    *
    * 1. Inserted for new node, Updated if node already existed in the table.
    * 2. Replaced for the case when new node replaced existing bad node.
-   * 3. Rejected for the new node when there was no room in the table for it.
-   * 4. Deferred for the case when node processing has been deffered until some
+   * 3. Updated for the case when existing node information and time stamp updated.
+   * 4. Rejected for the new node when there was no room in the table for it.
+   * 5. Deferred for the case when node processing has been deffered until some
    *    checks with existing questionable nodes are done.
    */
   object Result extends Enumeration {

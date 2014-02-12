@@ -23,7 +23,7 @@ abstract class Message(val tid: TID, val y: Char) {
   def kind: Message.Kind.Value = this.y match {
     case 'e' => Message.Kind.Error
     case 'q' => Message.Kind.Query
-    case 'r' => Message.Kind.Reply
+    case 'r' => Message.Kind.Response
   }
 }
 
@@ -34,13 +34,13 @@ object Message {
    * This enumeration defines possible kinds of network message:
    *
    * Query means that remote node has sent us a query message,
-   * Reply means that remote node has replied with correct message to our query,
+   * Response means that remote node has replied with correct message to our query,
    * Error means that remote node has replied with error message to our query,
    * Fail  means that remote node failed to reply in timely manner.
    */
   object Kind extends Enumeration {
     type Kind = Value
-    val Query, Reply, Error, Fail = Value
+    val Query, Response, Error, Fail = Value
   }
 
 }
@@ -207,7 +207,7 @@ object Response {
    * @param id    Sending node identifier.
    * @param nodes Collection of nodes with ids closest to requested target.
    */
-  class FindNode(tid: TID, id: Integer160, val nodes: IndexedSeq[Node])
+  class FindNode(tid: TID, id: Integer160, val nodes: Seq[Node])
     extends Response(tid, id) {
 
     override def toString =
@@ -240,7 +240,7 @@ object Response {
    * @param token Special token which then must be used in `announce_peer` query.
    * @param nodes Collection of nodes with ids closest to requested infohash.
    */
-  class GetPeersWithNodes(tid: TID, id: Integer160, token: Array[Byte], val nodes: IndexedSeq[Node])
+  class GetPeersWithNodes(tid: TID, id: Integer160, token: Array[Byte], val nodes: Seq[Node])
     extends GetPeers(tid, id, token) {
 
     override def toString =
@@ -264,7 +264,7 @@ object Response {
    * @param token   Special token which then must be used in `announce_peer` query.
    * @param values  Collection of peers at requested torrent.
    */
-  class GetPeersWithValues(tid: TID, id: Integer160, token: Array[Byte], val values: IndexedSeq[Peer])
+  class GetPeersWithValues(tid: TID, id: Integer160, token: Array[Byte], val values: Seq[Peer])
     extends GetPeers(tid, id, token) {
 
     override def toString =
