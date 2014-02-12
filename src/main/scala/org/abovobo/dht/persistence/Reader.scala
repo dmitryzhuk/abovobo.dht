@@ -15,7 +15,7 @@ import java.util.Date
 import java.sql.{ResultSet, PreparedStatement}
 import scala.collection.mutable.ListBuffer
 import org.abovobo.dht.Endpoint._
-import org.abovobo.dht.PersistentNode
+import org.abovobo.dht.{Peer, PersistentNode}
 
 /**
  * This trait defines read-only methods accessing DHT persistent storage.
@@ -168,6 +168,10 @@ trait Reader {
       case n: Int if n < buckets.size - 1 => buckets(n + 1)._1
       case n: Int if n == buckets.size - 1 => Integer160.maxval
     }
+  }
+
+  def peers(infohash: Integer160): Traversable[Peer] = {
+    Nil
   }
 
   /**
