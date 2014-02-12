@@ -162,7 +162,7 @@ object Query {
    * @param implied   Flag, indicating if given port must be taken into account.
    */
   class AnnouncePeer(tid: TID, id: Integer160,
-                     val infohash: Integer160, val port: Int, val token: Array[Byte], val implied: Boolean)
+                     val infohash: Integer160, val port: Int, val token: Token, val implied: Boolean)
     extends Query(tid, id, QUERY_NAME_ANNOUNCE_PEER) {
 
     override def toString =
@@ -228,7 +228,7 @@ object Response {
    * @param id    Sending node identifier.
    * @param token Special token which then must be used in `announce_peer` query.
    */
-  abstract class GetPeers(tid: TID, id: Integer160, val token: Array[Byte])
+  abstract class GetPeers(tid: TID, id: Integer160, val token: Token)
     extends Response(tid, id)
 
   /**
@@ -240,7 +240,7 @@ object Response {
    * @param token Special token which then must be used in `announce_peer` query.
    * @param nodes Collection of nodes with ids closest to requested infohash.
    */
-  class GetPeersWithNodes(tid: TID, id: Integer160, token: Array[Byte], val nodes: Seq[Node])
+  class GetPeersWithNodes(tid: TID, id: Integer160, token: Token, val nodes: Seq[Node])
     extends GetPeers(tid, id, token) {
 
     override def toString =
@@ -264,7 +264,7 @@ object Response {
    * @param token   Special token which then must be used in `announce_peer` query.
    * @param values  Collection of peers at requested torrent.
    */
-  class GetPeersWithValues(tid: TID, id: Integer160, token: Array[Byte], val values: Seq[Peer])
+  class GetPeersWithValues(tid: TID, id: Integer160, token: Token, val values: Seq[Peer])
     extends GetPeers(tid, id, token) {
 
     override def toString =

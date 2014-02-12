@@ -1,3 +1,13 @@
+/**
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
+ */
+
 package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
@@ -110,7 +120,9 @@ class Controller(val K: Int, val reader: Reader, val writer: Writer) extends Act
 
       case ap: Query.AnnouncePeer =>
         // store announced pair infohash->peer
-        this.peers ! PeerManager.Store(ap.infohash, new Peer(remote.getAddress, ap.port))
+        this.peers ! PeerManager.Store(ap.infohash, ap.token,
+          // use port of the sending address if implied flag is on
+          new Peer(remote.getAddress, if (ap.implied) remote.getPort else ap.port))
         // send response `announce_peer` message
         this.agent ! NetworkAgent.Send(new Response.AnnouncePeer(query.tid, id), remote)
     }

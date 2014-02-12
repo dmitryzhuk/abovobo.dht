@@ -22,11 +22,11 @@ class PeerManager extends Actor with ActorLogging  {
   import PeerManager._
 
   override def receive = {
-    case Store(infohash, peer) =>
+    case Store(infohash, token, peer) =>
   }
 }
 
 object PeerManager {
   sealed trait Command
-  case class Store(infohash: Integer160, peer: Peer)
+  case class Store(infohash: Integer160, token: Array[Byte], peer: Peer)
 }

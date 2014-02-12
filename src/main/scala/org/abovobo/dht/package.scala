@@ -18,4 +18,7 @@ package object dht {
   /** Peer information is just an internet address (IP/Port pair) of remote node */
   type Peer = InetSocketAddress
 
+  /** Defines type of token used in peer management procedures */
+  type Token = Array[Byte]
+
 }
