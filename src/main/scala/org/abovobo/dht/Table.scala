@@ -98,15 +98,16 @@ import org.abovobo.dht.persistence.{Writer, Reader}
  *
  * @author Dmitry Zhuk
  */
-class RoutingTable(val K: Int,
-                   val timeout: FiniteDuration,
-                   val delay: FiniteDuration,
-                   val threshold: Int,
-                   val reader: Reader,
-                   val writer: Writer) extends Actor with ActorLogging {
+class Table(val K: Int,
+            val timeout: FiniteDuration,
+            val delay: FiniteDuration,
+            val threshold: Int,
+            val reader: Reader,
+            val writer: Writer)
+  extends Actor with ActorLogging {
 
-  import RoutingTable._
-  import RoutingTable.Result._
+  import Table._
+  import Table.Result._
 
   /**
    * @inheritdoc
@@ -261,7 +262,7 @@ class RoutingTable(val K: Int,
    *
    * @param node    An instance of [[org.abovobo.dht.Node]] to insert
    * @param kind    A kind network message received from node.
-   * @return        Result of operation, as listed in [[org.abovobo.dht.RoutingTable.Result]]
+   * @return        Result of operation, as listed in [[org.abovobo.dht.Table.Result]]
    *                excluding `Updated` value.
    */
   private def insert(node: Node, kind: Message.Kind.Kind): Result = this.writer.transaction {
@@ -375,7 +376,7 @@ class RoutingTable(val K: Int,
 }
 
 /** Accompanying object */
-object RoutingTable {
+object Table {
 
   /**
    * Factory which creates RoutingTable Actor Props instance.
@@ -393,7 +394,7 @@ object RoutingTable {
    * @return          Properly configured Actor Props instance.
    */
   def props(K: Int, timeout: Duration, delay: Duration, threshold: Int, reader: Reader, writer: Writer): Props =
-    Props(classOf[RoutingTable], K, timeout, delay, threshold, reader, writer)
+    Props(classOf[Table], K, timeout, delay, threshold, reader, writer)
 
   /**
    * Factory which creates RoutingTable Actor Props instance with default values:
@@ -422,7 +423,7 @@ object RoutingTable {
   }
 
   /**
-   * Basic trait for all commands supported by [[org.abovobo.dht.RoutingTable]] actor.
+   * Basic trait for all commands supported by [[org.abovobo.dht.Table]] actor.
    */
   sealed trait Command
 

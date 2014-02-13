@@ -85,7 +85,7 @@ class Controller(val K: Int,
       this.transactions.get(query.tid) match {
         case Some(pair) =>
           this.transactions.remove(query.tid)
-          this.table ! RoutingTable.Received(new Node(query.id, pair._2), Message.Kind.Fail)
+          this.table ! Table.Received(new Node(query.id, pair._2), Message.Kind.Fail)
         case None => // Error: invalid transaction
           this.log.error("Failed event with invalid transaction: " + query)
       }
@@ -100,7 +100,7 @@ class Controller(val K: Int,
           this.transactions.get(response.tid) match {
             case Some(pair) =>
               this.transactions.remove(response.tid)
-              this.table ! RoutingTable.Received(new Node(pair._1.id, pair._2), Message.Kind.Response)
+              this.table ! Table.Received(new Node(pair._1.id, pair._2), Message.Kind.Response)
               this.process(response, pair._1, pair._2)
             case None => // Error: invalid transaction
               this.log.error("Response message with invalid transaction: " + response)
@@ -109,7 +109,7 @@ class Controller(val K: Int,
         case query: Query =>
           // if query has been received
           // notify routing table and then delegate execution to private `respond` method
-          this.table ! RoutingTable.Received(new Node(query.id, remote), Message.Kind.Query)
+          this.table ! Table.Received(new Node(query.id, remote), Message.Kind.Query)
           this.respond(query, remote)
 
         case error: Error =>
@@ -118,7 +118,7 @@ class Controller(val K: Int,
           this.transactions.get(error.tid) match {
             case Some(pair) =>
               this.transactions.remove(error.tid)
-              this.table ! RoutingTable.Received(new Node(pair._1.id, pair._2), Message.Kind.Error)
+              this.table ! Table.Received(new Node(pair._1.id, pair._2), Message.Kind.Error)
             case None => // Error: invalid transaction
               this.log.error("Error message with invalid transaction: " + error)
           }
