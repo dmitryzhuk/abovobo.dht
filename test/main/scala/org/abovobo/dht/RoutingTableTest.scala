@@ -122,7 +122,7 @@ class RoutingTableTest(system: ActorSystem)
     "message Received is received on table with existing nodes" must {
       "update node's replied property if message kind is Reply" in {
         println("Sending same node with Reply kind")
-        this.table ! RoutingTable.Received(this.node, Message.Kind.Reply)
+        this.table ! RoutingTable.Received(this.node, Message.Kind.Response)
         Thread.sleep(1000)
         this.reader.buckets() should have size 1
         this.reader.buckets().head._1 should be(Integer160.zero)

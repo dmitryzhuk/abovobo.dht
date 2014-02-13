@@ -10,11 +10,12 @@
 
 package org.abovobo.dht.persistence
 
-import org.abovobo.dht.{Message, PersistentNode, Node}
+import org.abovobo.dht.{Peer, Message, PersistentNode, Node}
 import org.abovobo.dht.Endpoint._
 import org.abovobo.integer.Integer160
 import Message.Kind._
 import java.sql.{Timestamp, PreparedStatement}
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * This trait defines method which modify the state of DHT persistent storage.
@@ -78,7 +79,7 @@ trait Writer {
    * @param statement A statement to execute.
    * @param node      A node instance to get properties from.
    * @param bucket    A bucket to which this node will be inserted.
-   * @param kind      A [[Message.Kind.Kind]] represending
+   * @param kind      A [[org.abovobo.dht.Message.Kind.Kind]] represending
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */
@@ -86,7 +87,7 @@ trait Writer {
     statement.setBytes(1, node.id.toArray)
     statement.setBytes(2, bucket.toArray)
     statement.setBytes(3, node.address)
-    if (kind == Reply) {
+    if (kind == Response) {
       statement.setTimestamp(4, new Timestamp(System.currentTimeMillis))
       statement.setNull(5, java.sql.Types.TIMESTAMP)
     } else if (kind == Query) {
@@ -120,14 +121,14 @@ trait Writer {
    *
    * @param statement A statement to execute.
    * @param node      A node instance to get properties from.
-   * @param kind      A [[Message.Kind.Kind]] represending
+   * @param kind      A [[org.abovobo.dht.Message.Kind.Kind]] represending
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */
   protected def update(statement: PreparedStatement, node: Node, pn: PersistentNode, kind: Kind): Unit = {
     statement.setBytes(1, node.address)
     kind match {
-      case Reply | Error =>
+      case Response | Error =>
         statement.setTimestamp(2, new Timestamp(System.currentTimeMillis))
         statement.setTimestamp(3, pn.queried.map(d => new Timestamp(d.getTime)).orNull)
         statement.setInt(4, pn.failcount)
@@ -244,6 +245,53 @@ trait Writer {
    * @param statement A statement to execute.
    */
   protected def drop(statement: PreparedStatement): Unit = {
+    statement.executeUpdate()
+  }
+
+  /**
+   * Stores association between particular infohash and peer info.
+   *
+   * @param infohash  An infohash to associate peer info with.
+   * @param peer      A peer info to associated with given infohash.
+   */
+  def announce(infohash: Integer160, peer: Peer): Unit
+
+  /**
+   * Sets statement parameters and executes it in update mode.
+   *
+   * Expected parameter mapping:
+   * 1 BINARY     infohash
+   * 2 BINARY     peer
+   *
+   * @param statement A statement to execute.
+   * @param infohash  An infohash to set as parameter 1
+   * @param peer      A peer info to set as parameter 2
+   */
+  protected def announce(statement: PreparedStatement, infohash: Integer160, peer: Peer): Unit = {
+    statement.setBytes(1, infohash.toArray)
+    statement.setBytes(2, peer)
+    statement.executeUpdate()
+  }
+
+  /**
+   * Removes all infohash->peer associations older than provided lifetime duration.
+   *
+   * @param lifetime  A lifetime duration - all entries older than this will be removed.
+   */
+  def cleanup(lifetime: FiniteDuration): Unit
+
+  /**
+   * Sets statement parameters and executes it in update mode.
+   *
+   * Expected parameter mapping:
+   *
+   * 1 LONG     lifetime (in seconds)
+   *
+   * @param statement A statement to execute.
+   * @param lifetime  Lifetime duration.
+   */
+  protected def cleanup(statement: PreparedStatement, lifetime: FiniteDuration): Unit = {
+    statement.setLong(1, lifetime.toSeconds)
     statement.executeUpdate()
   }
 

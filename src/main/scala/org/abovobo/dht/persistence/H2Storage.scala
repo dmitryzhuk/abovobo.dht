@@ -11,9 +11,10 @@
 package org.abovobo.dht.persistence
 
 import org.abovobo.integer.Integer160
-import org.abovobo.dht.{Message, PersistentNode, Node}
+import org.abovobo.dht.{Peer, Message, PersistentNode, Node}
 import Message.Kind._
 import org.abovobo.jdbc.Transaction
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Actual implementation of [[org.abovobo.dht.persistence.Storage]] which uses H2.
@@ -42,6 +43,9 @@ class H2Storage(uri: String) extends Storage("org.h2.Driver", uri) with Reader w
 
   /** @inheritdoc */
   override def buckets() = this.buckets(this.statements("allBuckets"))
+
+  /** @inheritdoc */
+  override def peers(infohash: Integer160) = this.peers(this.statements("peers"), infohash)
 
   /////////////////
   // WRITER METHODS
@@ -79,6 +83,14 @@ class H2Storage(uri: String) extends Storage("org.h2.Driver", uri) with Reader w
   override def drop() =
     this.drop(this.statements("deleteAllBuckets"))
 
+  /** @inheritdoc */
+  override def announce(infohash: Integer160, peer: Peer) =
+    this.announce(this.statements("announcePeer"), infohash, peer)
+
+  /** @inheritdoc */
+  override def cleanup(lifetime: FiniteDuration) =
+    this.cleanup(this.statements("cleanupPeers"), lifetime)
+
   ///////////////////////////
   // ABSTRACT STORAGE METHODS
   ///////////////////////////
@@ -111,6 +123,11 @@ class H2Storage(uri: String) extends Storage("org.h2.Driver", uri) with Reader w
       "allBuckets" -> c.prepareStatement("select * from bucket order by id"),
       "insertBucket" -> c.prepareStatement("insert into bucket(id, seen) values(?, now())"),
       "touchBucket" -> c.prepareStatement("update bucket set seen=now() where id=?"),
-      "deleteAllBuckets" -> c.prepareStatement("delete from bucket"))
+      "deleteAllBuckets" -> c.prepareStatement("delete from bucket"),
+
+      "peers" -> c.prepareStatement("select * from peer where infohash=?"),
+      "announcePeer" -> c.prepareStatement("merge into peer(infohash, address, announced) values(?, ?, now())"),
+      "deletePeer" -> c.prepareStatement("delete from peer where infohash=? and address=?"),
+      "cleanupPeers" -> c.prepareStatement("delete from peer where dateadd('SECOND', ?, announced) < now()"))
   }
 }

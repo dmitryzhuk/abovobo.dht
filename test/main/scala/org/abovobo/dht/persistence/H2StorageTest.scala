@@ -107,7 +107,7 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new Node(original.get.id, original.get.address)
-        this.writer.update(node, original.get, Message.Kind.Reply)
+        this.writer.update(node, original.get, Message.Kind.Response)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)

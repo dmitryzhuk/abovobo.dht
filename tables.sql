@@ -86,3 +86,35 @@ create table ipv6.node(
     -- number of times node failed to respond to query
     failcount int not null default 0
 );
+
+-- ====================
+-- represents peer info
+-- ====================
+create table ipv4.peer(
+
+    -- an infohash of the content this peer is on
+    infohash binary(40) not null,
+
+    -- an actual address (IP/port) of the peer
+    address binary(6) not null,
+
+    -- the combination of infohash and address is a primary key of this record
+    primary key (infohash, address),
+
+    -- a time when this peer has been announced last
+    announced timestamp not null
+);
+create table ipv6.peer(
+
+    -- an infohash of the content this peer is on
+    infohash binary(40) not null,
+
+    -- an actual address (IP/port) of the peer
+    address binary(18) not null,
+
+    -- the combination of infohash and address is a primary key of this record
+    primary key (infohash, address),
+
+    -- a time when this peer has been announced last
+    announced timestamp not null
+);

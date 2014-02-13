@@ -22,33 +22,31 @@ import scala.concurrent.duration.FiniteDuration
 
 /**
  * This actor is responsible for sending Kademlia UDP messages and receiving them.
- * It also manages Kademlia transactions: when some sender initiates a query, this actor
+ * It also manages Kademlia queries: when some sender initiates a query, this actor
  * will keep record about that fact and if remote party failed to respond in timely
  * manner, this actor will produce [[org.abovobo.dht.Controller.Failed]] command.
  *
  * @param endpoint An endpoint at which this agent must listen.
  * @param timeout  A period in time during which the remote party must respond to a query.
  */
-class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extends Actor with ActorLogging {
+class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extends Actor with ActorLogging {
 
   import this.context.system
+  import this.context.dispatcher
 
   /**
    * @inheritdoc
    *
    * Sends [[akka.io.Udp.Bind]] message to IO manager.
    */
-  override def preStart() = {
-    // initialize UDP bind procedure
-    IO(Udp) ! Udp.Bind(self, this.endpoint)
-  }
+  override def preStart() = IO(Udp) ! Udp.Bind(self, this.endpoint)
 
   /**
    * @inheritdoc
    *
-   * Cancels pending transactions.
+   * Cancels pending queries.
    */
-  override def postStop() = this.transactions foreach { _._2._2.cancel() }
+  override def postStop() = this.queries foreach { _._2._2.cancel() }
 
   /**
    * @inheritdoc
@@ -57,7 +55,7 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
    */
   override def receive = {
     case Udp.Bound(local) =>
-      this.log.info("Bound with local address {}", local)
+      this.log.debug("Bound with local address {}", local)
       this.context.become(this.ready(this.sender))
   }
 
@@ -73,45 +71,40 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
     // received a packet from UDP socket
     case Udp.Received(data, remote) => try {
       // parse received ByteString into a message instance
-      val message = NetworkAgent.parse(data, this.transactions.toMap map { pair => pair._1 -> pair._2._1 })
+      val message = Agent.parse(data, this.queries.toMap map { pair => pair._1 -> pair._2._1 })
       // check if message completes pending transaction
       message match {
         case response: Response =>
           this.log.info("Completing transaction " + response.tid + " by means of received response")
-          this.transactions.remove(response.tid).foreach { _._2.cancel() }
+          this.queries.remove(response.tid).foreach { _._2.cancel() }
         case _ => // do nothing
       }
       // forward received message to controller
       this.controller ! Controller.Received(message, remote)
     } catch {
-      case e: NetworkAgent.ParsingException =>
-        socket ! Udp.Send(NetworkAgent.serialize(e.error), remote)
+      case e: Agent.ParsingException =>
+        socket ! Udp.Send(Agent.serialize(e.error), remote)
     }
 
     // `Send` command received
-    case NetworkAgent.Send(message, remote) =>
+    case Agent.Send(message, remote) =>
       // if we are sending query - set up transaction monitor
       message match {
         case query: Query =>
           this.log.info("Starting transaction " + query.tid)
-          this.transactions.put(
+          this.queries.put(
             query.tid,
-            query -> system.scheduler.scheduleOnce(this.timeout)(this.fail(query))(system.dispatcher))
+            query -> system.scheduler.scheduleOnce(this.timeout)(this.fail(query)))
         case _ => // do nothing
       }
       // send serialized message to remote address
       this.log.info("Sending " + message)
-      socket ! Udp.Send(NetworkAgent.serialize(message), remote)
+      socket ! Udp.Send(Agent.serialize(message), remote)
 
     // `Udp.Unbind` command requested, forwarding to our socket
     case Udp.Unbind  =>
       this.log.info("Unbinding")
       socket ! Udp.Unbind
-
-    // Our socket has been unbound, no more messages can be sent or received
-    case Udp.Unbound =>
-      this.log.info("Unbound")
-      this.transactions foreach { _._2._2.cancel() }
   }
 
   /**
@@ -123,33 +116,33 @@ class NetworkAgent(val endpoint: InetSocketAddress, val timeout: FiniteDuration)
    */
   private def fail(query: Query) = {
     this.log.info("Completing transaction " + query.tid + " by means of failure")
-    this.transactions.remove(query.tid).foreach { _._2.cancel() }
+    this.queries.remove(query.tid).foreach { _._2.cancel() }
     this.controller ! Controller.Failed(query)
   }
 
   /// Instantiates a map of associations between transaction identifiers
   /// and cancellable tasks which will produce failure command if remote peer
   /// failed to respond in timely manner.
-  private val transactions = new mutable.HashMap[TID, (Query, Cancellable)]
+  private val queries = new mutable.HashMap[TID, (Query, Cancellable)]
 
   /// Initializes sibling `controller` actor reference
   private lazy val controller = this.context.actorSelection("../controller")
 }
 
 /** Accompanying object */
-object NetworkAgent {
+object Agent {
 
   /**
-   * Factory which creates [[org.abovobo.dht.NetworkAgent]] [[akka.actor.Props]] instance.
+   * Factory which creates [[org.abovobo.dht.Agent]] [[akka.actor.Props]] instance.
    *
    * @param endpoint An adress/port to bind to to receive incoming packets
    * @param timeout  A period of time to wait for response from queried remote peer.
    * @return         Properly configured [[akka.actor.Props]] instance.
    */
   def props(endpoint: InetSocketAddress, timeout: FiniteDuration): Props =
-    Props(classOf[NetworkAgent], endpoint, timeout)
+    Props(classOf[Agent], endpoint, timeout)
 
-  /** Base trait for all commands natively supported by [[org.abovobo.dht.NetworkAgent]] actor. */
+  /** Base trait for all commands natively supported by [[org.abovobo.dht.Agent]] actor. */
   sealed trait Command
 
   /**
@@ -174,14 +167,14 @@ object NetworkAgent {
   /**
    * Parses given [[akka.util.ByteString]] producing instance of corresponding
    * [[org.abovobo.dht.Message]] type. If something goes wrong, throws
-   * [[org.abovobo.dht.NetworkAgent.ParsingException]] with corresponding
+   * [[org.abovobo.dht.Agent.ParsingException]] with corresponding
    * [[org.abovobo.dht.Error]] message which can be sent to remote party.
    *
    * @param data [[akka.util.ByteString]] instance representing UDP packet received
    *             from remote peer.
    * @return     [[org.abovobo.dht.Message]] instance of proper type.
    */
-  def parse(data: ByteString, transactions: Map[TID, Query]): Message = {
+  def parse(data: ByteString, queries: Map[TID, Query]): Message = {
 
     import Endpoint._
 
@@ -194,7 +187,7 @@ object NetworkAgent {
     }
 
     def xthrow(code: Int, message: String) =
-      throw new NetworkAgent.ParsingException(new Error(tid, code, message))
+      throw new Agent.ParsingException(new Error(tid, code, message))
 
     def array(event: Bencode.Event): Array[Byte] = event match {
       case Bencode.Bytestring(value) => value
@@ -256,7 +249,7 @@ object NetworkAgent {
             case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown query")
           }
         case 'r' =>
-          transactions.get(tid) match {
+          queries.get(tid) match {
             case Some(query) =>
               query match {
                 case p: Query.Ping =>
