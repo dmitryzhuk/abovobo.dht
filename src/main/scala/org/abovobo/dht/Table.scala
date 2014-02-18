@@ -107,7 +107,9 @@ class Table(val K: Int,
   extends Actor with ActorLogging {
 
   import Table._
-  import Table.Result._
+
+  import this.context.system
+  import this.context.dispatcher
 
   /**
    * @inheritdoc
@@ -115,11 +117,12 @@ class Table(val K: Int,
    * Handles RoutingTable Actor specific messages.
    */
   override def receive = {
-    case Received(node, kind) => this.process(node, kind)
-    case Refresh(min, max)    => this.refresh(min, max)
-    case Reset()              => this.reset()
-    case Set(id)              => this.set(id)
-    case Purge()              => this.purge()
+    case Refresh(min, max)    =>          this.refresh(min, max)
+    case Reset()              => sender ! this.reset()
+    case Set(id)              => sender ! this.set(id)
+    case Purge()              => sender ! this.purge()
+    case Received(node, kind) => sender ! this.process(node, kind)
+    case Failed(node)         => sender ! this.process(node, Message.Kind.Fail)
   }
 
   /**
@@ -137,24 +140,20 @@ class Table(val K: Int,
 
     }
 
-    import this.context.system
-
     // upon start also perform refresh procedure for every existing bucket
     // and schedule the next refresh after configured idle timeout
-    //implicit val ec = this.context.system.dispatcher
     var prev: Integer160 = null
     this.reader.buckets() foreach { bucket =>
       if (prev ne null) {
         self ! Refresh(prev, bucket._1)
-        this.cancellables.put(prev,
-          system.scheduler.scheduleOnce(this.timeout)(self ! Refresh(prev, bucket._1))(system.dispatcher))
+        this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, bucket._1)))
       }
       prev = bucket._1
     }
-    if (prev eq null) prev = Integer160.zero
-    self ! Refresh(prev, Integer160.maxval)
-    this.cancellables.put(prev,
-      system.scheduler.scheduleOnce(this.timeout)(self ! Refresh(prev, Integer160.maxval))(system.dispatcher))
+    if (prev ne null) {
+      self ! Refresh(prev, Integer160.maxval)
+      this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, Integer160.maxval)))
+    }
   }
 
   /**
@@ -165,6 +164,52 @@ class Table(val K: Int,
   override def postStop() {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
+  }
+
+  /**
+   * This method initiates bucket refresh sequence by choosing
+   * random number from within the bucket range and sending `find_node`
+   * message to network agent actor.
+   *
+   * @param min Lower bound of bucket
+   * @param max Upper bound of bucket
+   */
+  def refresh(min: Integer160, max: Integer160): Unit = {
+    // request refreshing `find_node` by means of `Controller`
+    this.controller ! Controller.FindNode(min + Integer160.random % (max - min))
+    // cancel existing bucket task if exists
+    this.cancellables.remove(min) foreach { _.cancel() }
+    // schedule new refresh bucket task
+    this.cancellables.put(min, system.scheduler.scheduleOnce(this.timeout, self, Refresh(min, this.reader.next(min))))
+  }
+
+  /**
+   * Generates new SHA-1 node id, drops all data and saves new id.
+   */
+  def reset(): Result = this.set(Integer160.random)
+
+  /**
+   * Drops all data and saves new id in the storage.
+   *
+   * @param id New SHA-1 node identifier.
+   */
+  private def set(id: Integer160): Result = this.writer.transaction {
+    this.cancellables.foreach(_._2.cancel())
+    this.cancellables.clear()
+    this.writer.drop()
+    this.writer.id(id)
+    this.controller ! Controller.FindNode(id)
+    Id(id)
+  }
+
+  /**
+   * Deletes all data from database.
+   */
+  def purge(): Result = this.writer.transaction {
+    this.cancellables.foreach(_._2.cancel())
+    this.cancellables.clear()
+    this.writer.drop()
+    Purged()
   }
 
   /**
@@ -182,78 +227,32 @@ class Table(val K: Int,
 
     import Message.Kind
 
-    this.log.info(
+    this.log.debug(
       "Processing incoming message with node id {} and kind {} received from {}",
       node.id, kind, sender)
 
     this.reader.node(node.id) match {
-      case None => if (kind == Kind.Query || kind == Kind.Response) {
-        // insert new node only if event does not indicate error or failure
-        val result = this.insert(node, kind)
-        this.log.info("Attempted insertion with result {}", result)
-        result
-      } else {
-        // otherwise reject node
-        this.log.info("Rejected processing")
-        Rejected
-      }
+      case None =>
+        if (kind == Kind.Query || kind == Kind.Response) {
+          // insert new node only if event does not indicate error or failure
+          val result = this.insert(node, kind)
+          this.log.info("Attempted insertion with result {}", result)
+          result
+        } else {
+          // otherwise reject node
+          this.log.info("Rejected processing")
+          Rejected()
+        }
       case Some(pn) =>
         // update existing node
-        this.writer.update(node, pn, kind)
+        this.writer.transaction {
+          this.writer.update(node, pn, kind)
+        }
         // touch owning bucket
         this.touch(pn.bucket, this.reader.next(pn.bucket))
         // respond with Updated Result
-        this.log.info("Updated existing node")
-        Updated
+        Updated()
     }
-  }
-
-  /**
-   * This method initiates bucket refresh sequence by choosing
-   * random number from within the bucket range and sending `find_node`
-   * message to network agent actor.
-   *
-   * @param min Lower bound of bucket
-   * @param max Upper bound of bucket
-   */
-  def refresh(min: Integer160, max: Integer160): Unit = {
-    this.controller ! Controller.FindNode(min + Integer160.random % (max - min))
-    // cancel existing bucket task if exists
-    this.cancellables.get(min) foreach { _.cancel() }
-    this.cancellables.remove(min)
-    // schedule new refresh bucket task
-    this.cancellables.put(
-      min,
-      this.context.system.scheduler.scheduleOnce
-        (this.timeout)(self ! Refresh(min, this.reader.next(min)))(this.context.system.dispatcher)
-    )
-  }
-
-  /**
-   * Generates new SHA-1 node id, drops all data and saves new id.
-   */
-  def reset(): Unit = this.set(Integer160.random)
-
-  /**
-   * Drops all data and saves new id in the storage.
-   *
-   * @param id New SHA-1 node identifier.
-   */
-  private def set(id: Integer160): Unit = this.writer.transaction {
-    this.cancellables.foreach(_._2.cancel())
-    this.cancellables.clear()
-    this.writer.drop()
-    this.writer.id(id)
-    this.controller ! Controller.FindNode(id)
-  }
-
-  /**
-   * Deletes all data from database.
-   */
-  def purge(): Unit = this.writer.transaction {
-    this.cancellables.foreach(_._2.cancel())
-    this.cancellables.clear()
-    this.writer.drop()
   }
 
   /**
@@ -283,7 +282,7 @@ class Table(val K: Int,
       buckets(index)._1 -> (if (index == buckets.length - 1) Integer160.maxval else buckets(index + 1)._1)
     }
 
-    val nodes = this.reader.bucket(bucket._1) //map { new LiveNode(_, this.timeout, this.threshold) }
+    val nodes = this.reader.bucket(bucket._1)
     val id = this.reader.id().get
 
     implicit val timeout = this.timeout
@@ -301,7 +300,7 @@ class Table(val K: Int,
           // check if current bucket is large enough to be split
           if (bucket._2 - bucket._1 <= this.K * 2) {
             // current bucket is too small
-            Rejected
+            Rejected()
           } else {
             // split current bucket and send the message back to self queue
             // new bucket edge must split existing buckets onto 2 equals buckets
@@ -311,13 +310,13 @@ class Table(val K: Int,
             // move nodes appropriately
             nodes.filter(_.id >= b) foreach { node => this.writer.move(node, b) }
             // send message to itself
-            self ! Received(node, kind)
+            self.!(Received(node, kind))(this.sender)
             // notify caller that insertion has been deferred
-            Deferred
+            Split(bucket._1, b)
           }
         } else {
           // own id is outside the bucket, so no more nodes can be inserted
-          Rejected
+          Rejected()
         }
       } else {
         // not every node in this bucket is good
@@ -328,7 +327,7 @@ class Table(val K: Int,
           this.writer.delete(bad.head.id)
           this.writer.insert(node, bucket._1, kind)
           this.writer.touch(bucket._1)
-          Replaced
+          Replaced(bad.head)
         } else {
           // there are no bad nodes in this bucket
           // get list of questionnable nodes
@@ -336,16 +335,16 @@ class Table(val K: Int,
           // request ping operation for every questionnable node
           questionnable foreach { node => this.controller ! Controller.Ping(node.address) }
           // send deferred message to itself
-          this.context.system.scheduler.scheduleOnce(this.delay)(self ! Received(node, kind))(this.context.dispatcher)
+          system.scheduler.scheduleOnce(this.delay)(self.!(Received(node, kind))(this.sender))
           // notify caller that insertion has been deferred
-          Deferred
+          Deferred()
         }
       }
     } else {
       // there is a room for new node in this bucket
       this.writer.insert(node, bucket._1, kind)
       this.touch(bucket._1, bucket._2)
-      Inserted
+      Inserted(bucket._1)
     }
   }
 
@@ -357,15 +356,12 @@ class Table(val K: Int,
    * @param next   An id of the next bucket.
    */
   private def touch(bucket: Integer160, next: Integer160) = this.writer.transaction {
-    import this.context.system
     // actually update bucket last seen property in storage
     this.writer.touch(bucket)
     // cancel existing bucket task if exists
-    this.cancellables.get(bucket) foreach { _.cancel() }
-    this.cancellables.remove(bucket)
+    this.cancellables.remove(bucket) foreach { _.cancel() }
     // schedule new refresh bucket task
-    this.cancellables.put(bucket,
-      system.scheduler.scheduleOnce(this.timeout)(self ! Refresh(bucket, next))(system.dispatcher))
+    this.cancellables.put(bucket, system.scheduler.scheduleOnce(this.timeout, self, Refresh(bucket, next)))
   }
 
   /// Initializes sibling `controller` actor reference
@@ -417,28 +413,91 @@ object Table {
    * 5. Deferred for the case when node processing has been deffered until some
    *    checks with existing questionable nodes are done.
    */
-  object Result extends Enumeration {
+  /*object Result extends Enumeration {
     type Result = Value
     val Inserted, Replaced, Updated, Rejected, Deferred = Value
-  }
+  }*/
 
   /**
-   * Basic trait for all commands supported by [[org.abovobo.dht.Table]] actor.
+   * Basic trait for all possible outcomes of Table operation.
+   *
+   * Concrete case classess extending this trait will be sent back to sender
+   * when the result of processing the command or handling the event is
+   * known.
    */
-  sealed trait Command
+  sealed trait Result
+
+  /**
+   * Means that some bucket was split while handling [[org.abovobo.dht.Table.Received]] event.
+   * It may be sent multiple times during processing single event.
+   *
+   * @param was Lower bound of the bucket which has been split.
+   * @param now Lower bound of the new bucket after split.
+   */
+  case class Split(was: Integer160, now: Integer160) extends Result
+
+  /**
+   * Indicates that new Node has been inserted into a table.
+   *
+   * @param bucket Lower bound of the bucket in which new Node has been inserted.
+   */
+  case class Inserted(bucket: Integer160) extends Result
+
+  /**
+   * Indicates that existing (bad) Node has been replaced with new Node.
+   *
+   * @param old An old node instance which has been replaced with the new one.
+   */
+  case class Replaced(old: PersistentNode) extends Result
+
+  /** Indicates that Node has already been in the table, so its info has just been updated. */
+  case class Updated() extends Result
+
+  /** Indicates that there was no room for the new Node in the table. */
+  case class Rejected() extends Result
+
+  /**
+   * Indicates that further processing of the node has been deferred until some additional
+   * information is received. This normally happens when there are questionnable nodes
+   * and table must check if they are good or bad before deciding what to do next.
+   */
+  case class Deferred() extends Result
+
+  /** Successfull result of processing [[org.abovobo.dht.Table.Purge]] command. */
+  case class Purged() extends Result
+
+  /**
+   * Sent back to sender of [[org.abovobo.dht.Table.Set]] or [[org.abovobo.dht.Table.Reset]]
+   * commands.
+   *
+   * @param id An identifier of this table after `Set` or `Reset` command is executed.
+   */
+  case class Id(id: Integer160) extends Result
+
+  /** Basic trait for all events fired by other actors which can be handled by Table. */
+  sealed trait Event
 
   /**
    * This class represents a case when network message has been received
    * from the given node.
    *
-   * @param from A Node from which a network message has been received.
+   * @param node A Node from which a network message has been received.
    * @param kind A kind of message received from the node.
    */
-  case class Received(from: Node, kind: Message.Kind.Kind) extends Command
+  case class Received(node: Node, kind: Message.Kind.Kind) extends Event
 
   /**
-   * Instructs routing table to generate new random SHA-1 identifier.
+   * This class represents a case when remote peer represented by node has failed
+   * to respond to our request in timely manner.
+   *
+   * @param node A Node which has failed to respond to our query.
    */
+  case class Failed(node: Node) extends Event
+
+  /** Basic trait for all commands supported by [[org.abovobo.dht.Table]] actor. */
+  sealed trait Command
+
+  /** Instructs routing table to generate new random SHA-1 identifier. */
   case class Reset() extends Command
 
   /**
@@ -448,9 +507,7 @@ object Table {
    */
   case class Set(id: Integer160) extends Command
 
-  /**
-   * Instructs routing table to cleanup all stored data.
-   */
+  /** Instructs routing table to cleanup all stored data. */
   case class Purge() extends Command
 
   /**

@@ -163,11 +163,14 @@ trait Reader {
    */
   def next(id: Integer160): Integer160 = {
     val buckets = this.buckets().toIndexedSeq
-    buckets.indexWhere(_._1 == id) match {
-      case -1 => throw new IllegalArgumentException
-      case n: Int if n < buckets.size - 1 => buckets(n + 1)._1
-      case n: Int if n == buckets.size - 1 => Integer160.maxval
-    }
+    if (buckets.size == 0)
+      Integer160.maxval
+    else
+      buckets.indexWhere(_._1 == id) match {
+        case -1 => throw new IllegalArgumentException(id.toHexString)
+        case n: Int if n < buckets.size - 1 => buckets(n + 1)._1
+        case n: Int if n == buckets.size - 1 => Integer160.maxval
+      }
   }
 
   /**

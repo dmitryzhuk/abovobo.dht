@@ -51,62 +51,53 @@ class TableTest(system: ActorSystem)
 
     "message Set is received" must {
       "set provided ID and purge routing table storage" in {
-        println("Setting zero ID")
         this.table ! Table.Set(Integer160.zero)
-        Thread.sleep(1000)
+        expectMsg(Table.Id(Integer160.zero))
         this.reader.id() should be('defined)
         this.reader.id().get should be(Integer160.zero)
         this.reader.buckets() should have size 0
         this.reader.nodes() should have size 0
-        println("Done.")
       }
     }
 
     "message Reset is received" must {
       "generate random id and purge routing table storage" in {
-        println("Resetting ID")
         this.table ! Table.Reset()
-        Thread.sleep(1000)
+        expectMsgClass(classOf[Table.Id])
         this.reader.id() should be('defined)
         this.reader.id().get should not be Integer160.zero
         this.reader.buckets() should have size 0
         this.reader.nodes() should have size 0
-        println("Done.")
       }
     }
 
     "message Set is received again" must {
       "set provided ID and purge routing table storage" in {
-        println("Setting ID = maxval - 1")
         this.table ! Table.Set(Integer160.maxval - 1)
-        Thread.sleep(1000)
+        expectMsg(Table.Id(Integer160.maxval - 1))
         this.reader.id() should be('defined)
         this.reader.id().get should be(Integer160.maxval - 1)
         this.reader.buckets() should have size 0
         this.reader.nodes() should have size 0
-        println("Done.")
       }
     }
 
     "message Received is received on empty table" must {
-      "do nothing if network message kind was Fail or Error" in {
-        println("Sending node with Error kind")
+      "do nothing if network message kind was Error" in {
         this.table ! Table.Received(this.node, Message.Kind.Error)
-        Thread.sleep(1000)
+        expectMsg(Table.Rejected())
         this.reader.buckets() should have size 0
         this.reader.nodes() should have size 0
-        println("Done.")
-        println("Sending node with Fail kind")
+      }
+      "do nothing if network message kind was Fail" in {
         this.table ! Table.Received(this.node, Message.Kind.Fail)
-        Thread.sleep(1000)
+        expectMsg(Table.Rejected())
         this.reader.buckets() should have size 0
         this.reader.nodes() should have size 0
-        println("Done.")
       }
       "insert zero bucket and then insert received node" in {
-        println("Sending node with Query kind")
         this.table ! Table.Received(this.node, Message.Kind.Query)
-        Thread.sleep(1000)
+        expectMsg(Table.Inserted(Integer160.zero))
         this.reader.buckets() should have size 1
         this.reader.buckets().head._1 should be(Integer160.zero)
         this.reader.nodes() should have size 1
@@ -115,15 +106,13 @@ class TableTest(system: ActorSystem)
         node.queried should be('defined)
         node.replied should not be 'defined
         node.failcount should be(0)
-        println("Done.")
       }
     }
 
     "message Received is received on table with existing nodes" must {
-      "update node's replied property if message kind is Reply" in {
-        println("Sending same node with Reply kind")
+      "update node's replied property if message kind is Response" in {
         this.table ! Table.Received(this.node, Message.Kind.Response)
-        Thread.sleep(1000)
+        expectMsg(Table.Updated())
         this.reader.buckets() should have size 1
         this.reader.buckets().head._1 should be(Integer160.zero)
         this.reader.nodes() should have size 1
@@ -132,12 +121,10 @@ class TableTest(system: ActorSystem)
         node.queried should be('defined)
         node.replied should be('defined)
         node.failcount should be(0)
-        println("Done.")
       }
       "update node's failcount property if message kind is Fail" in {
-        println("Sending same node with Reply kind")
         this.table ! Table.Received(this.node, Message.Kind.Fail)
-        Thread.sleep(1000)
+        expectMsg(Table.Updated())
         this.reader.buckets() should have size 1
         this.reader.buckets().head._1 should be(Integer160.zero)
         this.reader.nodes() should have size 1
@@ -146,7 +133,6 @@ class TableTest(system: ActorSystem)
         node.queried should be('defined)
         node.replied should be('defined)
         node.failcount should be(1)
-        println("Done.")
       }
     }
 
@@ -156,10 +142,12 @@ class TableTest(system: ActorSystem)
         for (i <- 0 to 6) {
           val node = new Node(start + i, new InetSocketAddress(0))
           table ! Table.Received(node, Message.Kind.Query)
+          expectMsg(Table.Inserted(Integer160.zero))
         }
         val node = new Node(start + 7, new InetSocketAddress(0))
         table ! Table.Received(node, Message.Kind.Query)
-        Thread.sleep(1000)
+        expectMsg(Table.Split(Integer160.zero, Integer160.maxval >> 1))
+        expectMsg(Table.Rejected())
         this.reader.buckets() should have size 2
         this.reader.nodes() should have size 8
         this.reader.bucket(Integer160.zero) should have size 8
