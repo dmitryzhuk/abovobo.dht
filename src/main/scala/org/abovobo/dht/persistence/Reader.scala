@@ -219,4 +219,18 @@ trait Reader {
       rs.timestamp("queried"),
       rs.getInt("failcount"))
   }
+
+  /**
+   * Returns sequence of maximum length K of stored nodes which ids are
+   * by means of XOR operation closest to the given target 160-bit integer.
+   *
+   * @param K       Maximum number of nodes to return.
+   * @param target  Target number to get closest nodes to.
+   * @return sequence of stored nodes.
+   */
+  def klosest(K: Int, target: Integer160): Seq[PersistentNode] = this.nodes()
+    .map(node => node -> (node.id ^ target)).toSeq
+    .sortWith(_._2 < _._2)
+    .take(K)
+    .map(_._1)
 }

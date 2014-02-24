@@ -75,7 +75,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
       // check if message completes pending transaction
       message match {
         case response: Response =>
-          this.log.info("Completing transaction " + response.tid + " by means of received response")
+          this.log.debug("Completing transaction " + response.tid + " by means of received response")
           this.queries.remove(response.tid).foreach { _._2.cancel() }
         case _ => // do nothing
       }
@@ -91,19 +91,19 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
       // if we are sending query - set up transaction monitor
       message match {
         case query: Query =>
-          this.log.info("Starting transaction " + query.tid)
+          this.log.debug("Starting transaction " + query.tid)
           this.queries.put(
             query.tid,
             query -> system.scheduler.scheduleOnce(this.timeout)(this.fail(query)))
         case _ => // do nothing
       }
       // send serialized message to remote address
-      this.log.info("Sending " + message)
+      this.log.debug("Sending " + message)
       socket ! Udp.Send(Agent.serialize(message), remote)
 
     // `Udp.Unbind` command requested, forwarding to our socket
     case Udp.Unbind  =>
-      this.log.info("Unbinding")
+      this.log.debug("Unbinding")
       socket ! Udp.Unbind
   }
 
@@ -115,7 +115,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
    * @param query A query which remote party failed to respond to in timely manner.
    */
   private def fail(query: Query) = {
-    this.log.info("Completing transaction " + query.tid + " by means of failure")
+    this.log.debug("Completing transaction " + query.tid + " by means of failure")
     this.queries.remove(query.tid).foreach { _._2.cancel() }
     this.controller ! Controller.Failed(query)
   }

@@ -113,7 +113,7 @@ class AgentTest(system: ActorSystem)
       "complete transaction and notify Controller after receiving network response" in {
         rp ! Udp.Send(Agent.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
         expectMsgPF() {
-          case Controller.Received(message, remote) =>
+          case Controller.Received(message, address) =>
             message match {
               case ping: Response.Ping =>
                 ping.id should be(Integer160.zero)
@@ -178,7 +178,7 @@ class AgentTest(system: ActorSystem)
         rp ! Udp.Send(Agent.serialize(new Response.FindNode(query.tid, Integer160.zero,
           nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
         expectMsgPF() {
-          case Controller.Received(message, remote) =>
+          case Controller.Received(message, address) =>
             message match {
               case fn: Response.FindNode =>
                 fn.id should be(Integer160.zero)
@@ -218,7 +218,7 @@ class AgentTest(system: ActorSystem)
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
         expectMsgPF() {
-          case Controller.Received(message, remote) =>
+          case Controller.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithNodes =>
                 gp.id should be(Integer160.zero)
@@ -259,7 +259,7 @@ class AgentTest(system: ActorSystem)
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           values = Array(new InetSocketAddress(0)))), local)
         expectMsgPF() {
-          case Controller.Received(message, remote) =>
+          case Controller.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithValues =>
                 gp.id should be(Integer160.zero)
@@ -305,7 +305,7 @@ class AgentTest(system: ActorSystem)
       "complete transaction and notify Controller after receiving network response" in {
         rp ! Udp.Send(Agent.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
         expectMsgPF() {
-          case Controller.Received(message, remote) =>
+          case Controller.Received(message, address) =>
             message match {
               case ap: Response.AnnouncePeer =>
                 ap.id should be(Integer160.zero)
