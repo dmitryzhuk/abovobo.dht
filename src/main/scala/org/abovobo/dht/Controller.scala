@@ -16,7 +16,6 @@ import akka.actor.{ActorRef, ActorLogging, Actor}
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader}
 import scala.concurrent.duration.FiniteDuration
-import scala.collection.mutable.ListBuffer
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -107,9 +106,15 @@ class Controller(val K: Int,
           this.table ! Table.Failed(transaction.remote)
           transaction.query match {
             case q: Query.FindNode =>
-              this.recursions.get(q.target).foreach(_.finder.fail(transaction.remote))
+              this.recursions.get(q.target).foreach { r =>
+                r.finder.fail(transaction.remote)
+                this.iterate(r)
+              }
             case q: Query.GetPeers =>
-              this.recursions.get(q.infohash).foreach(_.finder.fail(transaction.remote))
+              this.recursions.get(q.infohash).foreach { r =>
+                r.finder.fail(transaction.remote)
+                this.iterate(r)
+              }
             case _ => // do nothing for other queries
           }
         case None => // Error: invalid transaction
@@ -133,7 +138,7 @@ class Controller(val K: Int,
           this.transactions.remove(response.tid) match {
             case Some(transaction) =>
               this.table ! Table.Received(transaction.remote, Message.Kind.Response)
-              // todo this.process(response, pair._1, pair._2)
+              this.process(response, transaction)
             case None => // Error: invalid transaction
               this.log.error("Response message with invalid transaction: " + response)
           }
@@ -146,9 +151,15 @@ class Controller(val K: Int,
               this.table ! Table.Received(transaction.remote, Message.Kind.Error)
               transaction.query match {
                 case q: Query.FindNode =>
-                  this.recursions.get(q.target).foreach(_.finder.fail(transaction.remote))
+                  this.recursions.get(q.target).foreach { r =>
+                    r.finder.fail(transaction.remote)
+                    this.iterate(r)
+                  }
                 case q: Query.GetPeers =>
-                  this.recursions.get(q.infohash).foreach(_.finder.fail(transaction.remote))
+                  this.recursions.get(q.infohash).foreach { r =>
+                    r.finder.fail(transaction.remote)
+                    this.iterate(r)
+                  }
                 case _ => // do nothing for other queries
               }
             case None => // Error: invalid transaction
@@ -157,10 +168,66 @@ class Controller(val K: Int,
       }
   }
 
-  private def process(response: Response, query: Query, remote: InetSocketAddress) = {
-    query match {
-      case ping: Query.Ping =>
-        // nothing to do
+  /**
+   * Processes given response for given transaction.
+   *
+   * @param response    A [[org.abovobo.dht.Response]] message from remote peer.
+   * @param transaction A transaction instance that response was received for.
+   */
+  private def process(response: Response, transaction: Transaction) = {
+    response match {
+      case ping: Response.Ping =>
+        transaction.requester ! Pinged()
+      case fn: Response.FindNode =>
+        this.recursions.get(transaction.query.asInstanceOf[Query.FindNode].target) match {
+          case Some(r) =>
+            r.finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
+            this.iterate(r)
+          case None =>
+            this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
+        }
+      case gp: Response.GetPeersWithNodes =>
+        this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
+          case Some(r) =>
+            r.finder.report(transaction.remote, gp.nodes, Nil, gp.token)
+            this.iterate(r)
+          case None =>
+            this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
+        }
+      case gp: Response.GetPeersWithValues =>
+        this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
+          case Some(r) =>
+            r.finder.report(transaction.remote, Nil, gp.values, gp.token)
+            this.iterate(r)
+          case None =>
+            this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
+        }
+      case ap: Response.AnnouncePeer =>
+        transaction.requester ! PeerAnnounced()
+    }
+  }
+
+  /**
+   * Checks current state of the [[org.abovobo.dht.Finder]] associated with given recursion
+   * and makes the next move depending on the state value.
+   *
+   * @param r Recursion instance to interate.
+   */
+  private def iterate(r: Recursion) = {
+    r.finder.state match {
+      case Finder.State.Failed =>
+        r.requester ! NotFound()
+        this.recursions -= r.finder.target
+      case Finder.State.Succeeded =>
+        r.requester ! Found(r.finder.nodes, r.finder.peers, r.finder.tokens)
+        this.recursions -= r.finder.target
+      case Finder.State.Continue =>
+        val id = this.reader.id().get
+        r.finder.take(this.alpha).foreach { node =>
+          val query = new Query.FindNode(this.factory.next(), id, r.finder.target)
+          this.transactions.put(query.tid, new Transaction(query, node, r.requester))
+          this.agent ! Agent.Send(query, node.address)
+        }
     }
   }
 
@@ -211,7 +278,7 @@ object Controller {
    */
   class Recursion(val finder: Finder, val requester: ActorRef)
 
-  /** Base trait for all events fired by other actors */
+  /** Base trait for all events handled or initiated by this actor */
   sealed trait Event
 
   /**
@@ -229,6 +296,24 @@ object Controller {
    * @param remote  An address of the remote peer which sent us that message.
    */
   case class Received(message: Message, remote: InetSocketAddress) extends Event
+
+  /** Indicates that node has been successfully pinged */
+  case class Pinged() extends Event
+
+  /** Indicates that peer has been successfully announced */
+  case class PeerAnnounced() extends Event
+
+  /**
+   * Indicates that recursive `find_node` or `get_peers` operation has been successfully completed.
+   *
+   * @param nodes   Collected nodes (only closest maximum K nodes provided).
+   * @param peers   Collected peers (only for `get_peers` operation).
+   * @param tokens  Collection of node id -> token associations (only for `get_peers` operation).
+   */
+  case class Found(nodes: Traversable[Node], peers: Traversable[Peer], tokens: Map[Integer160, Token]) extends Event
+
+  /** Indicates that recursive `find_node` or `get_peers` operation has failed. */
+  case class NotFound() extends Event
 
   /** Base trait for all commands supported by this actor */
   sealed trait Command

@@ -52,10 +52,10 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
     this.succeeded += reporter
 
     // store node->token association
-    if (!token.isEmpty) this.tokens += reporter.id -> token
+    if (!token.isEmpty) this._tokens += reporter.id -> token
 
     // add reported peers to internal collection
-    this.peers ++= peers
+    this._peers ++= peers
 
     // add all unseen nodes in both `seen` and `untaken` collections
     nodes foreach { node =>
@@ -109,6 +109,22 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
     more
   }
 
+  /** Returns maxium K succeeded nodes */
+  def nodes = this.succeeded.take(this.K)
+
+  /**
+   * Returns token ([[scala.Option]]) for given node id.
+   * @param id Node id to return token for.
+   * @return   token for given node id.
+   */
+  def token(id: Integer160) = this._tokens.get(id)
+
+  /** Returns map of tokens */
+  def tokens = this._tokens.toMap
+
+  /** Returns collection of peers */
+  def peers: scala.collection.Traversable[Peer] = this._peers
+
   /// Collection of all nodes which were seen by means of node information sent with responses
   private val seen = new mutable.TreeSet[Node]
 
@@ -122,10 +138,10 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
   private val succeeded = new mutable.TreeSet[Node]
 
   /// Collection of node id -> token associations
-  private val tokens = new mutable.HashMap[Integer160, Token]
+  private val _tokens = new mutable.HashMap[Integer160, Token]
 
   /// Collection of peers reported by queried nodes
-  private val peers = new mutable.HashSet[Peer]
+  private val _peers = new mutable.HashSet[Peer]
 }
 
 /** Accompanying object */
