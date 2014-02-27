@@ -16,6 +16,7 @@ import akka.actor.{ActorRef, ActorLogging, Actor}
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader}
 import scala.concurrent.duration.FiniteDuration
+import scala.collection.mutable.ListBuffer
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -58,6 +59,7 @@ class Controller(val K: Int,
    * Implements handling of [[org.abovobo.dht.Controller]]-specific events and commands.
    */
   override def receive = {
+
     // -- HANDLE COMMANDS
     // -- ---------------
     case Ping(node: Node) =>
@@ -67,10 +69,28 @@ class Controller(val K: Int,
       this.agent ! Agent.Send(query, node.address)
 
     case FindNode(target: Integer160) =>
-      val query = new Query.FindNode(this.factory.next(), this.reader.id().get, target)
-      // -- this.transactions.put(query.tid, new Transaction(query, address, sender))
-      // --
-      this.find(target)
+      if (!this.recursions.contains(target)) {
+        this.recursions += target -> new Recursion(new Finder(target, this.K, this.routers), sender)
+      }
+      val recursion = this.recursions(target)
+      val id = this.reader.id().get
+      recursion.finder.take(this.alpha).foreach { node =>
+        val query = new Query.FindNode(this.factory.next(), id, target)
+        this.transactions.put(query.tid, new Transaction(query, node, sender))
+        this.agent ! Agent.Send(query, node.address)
+      }
+
+    case GetPeers(infohash: Integer160) =>
+      if (!this.recursions.contains(infohash)) {
+        this.recursions += infohash -> new Recursion(new Finder(infohash, this.K, this.routers), sender)
+      }
+      val recursion = this.recursions(infohash)
+      val id = this.reader.id().get
+      recursion.finder.take(this.alpha).foreach { node =>
+        val query = new Query.GetPeers(this.factory.next(), id, infohash)
+        this.transactions.put(query.tid, new Transaction(query, node, sender))
+        this.agent ! Agent.Send(query, node.address)
+      }
 
     case AnnouncePeer(node, token, infohash, port, implied) =>
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
@@ -85,6 +105,13 @@ class Controller(val K: Int,
       this.transactions.remove(query.tid) match {
         case Some(transaction) =>
           this.table ! Table.Failed(transaction.remote)
+          transaction.query match {
+            case q: Query.FindNode =>
+              this.recursions.get(q.target).foreach(_.finder.fail(transaction.remote))
+            case q: Query.GetPeers =>
+              this.recursions.get(q.infohash).foreach(_.finder.fail(transaction.remote))
+            case _ => // do nothing for other queries
+          }
         case None => // Error: invalid transaction
           this.log.error("Failed event with invalid transaction: " + query)
       }
@@ -117,14 +144,17 @@ class Controller(val K: Int,
           this.transactions.remove(error.tid) match {
             case Some(transaction) =>
               this.table ! Table.Received(transaction.remote, Message.Kind.Error)
+              transaction.query match {
+                case q: Query.FindNode =>
+                  this.recursions.get(q.target).foreach(_.finder.fail(transaction.remote))
+                case q: Query.GetPeers =>
+                  this.recursions.get(q.infohash).foreach(_.finder.fail(transaction.remote))
+                case _ => // do nothing for other queries
+              }
             case None => // Error: invalid transaction
               this.log.error("Error message with invalid transaction: " + error)
           }
       }
-  }
-
-  private def find(target: Integer160) = {
-    //val nodes = this.klosest(target)
   }
 
   private def process(response: Response, query: Query, remote: InetSocketAddress) = {
@@ -154,8 +184,11 @@ class Controller(val K: Int,
   /// Instantiate transaction ID factory
   private val factory = new TIDFactory
 
-  /// Instance of tracked queries
+  /// Collection of pending transactions
   private val transactions = new mutable.HashMap[TID, Transaction]
+
+  /// Collection of pending recursive procedures
+  private val recursions = new mutable.HashMap[Integer160, Recursion]
 }
 
 /** Accompanying object */
@@ -169,6 +202,14 @@ object Controller {
    * @param requester An actor which has requested this transaction to begin.
    */
   class Transaction(val query: Query, val remote: Node, val requester: ActorRef)
+
+  /**
+   * This class defines data associated with `find_node` or `get_peers` recursive procedure.
+   *
+   * @param finder    An instance of [[org.abovobo.dht.Finder]] which collects data.
+   * @param requester An original requester of this operation.
+   */
+  class Recursion(val finder: Finder, val requester: ActorRef)
 
   /** Base trait for all events fired by other actors */
   sealed trait Event

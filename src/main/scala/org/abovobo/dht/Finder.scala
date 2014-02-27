@@ -10,15 +10,22 @@
 
 package org.abovobo.dht
 
-import java.net.InetSocketAddress
 import org.abovobo.integer.Integer160
 import scala.collection.mutable
+import java.net.InetSocketAddress
 
 /**
- * Created by dmitryzhuk on 26.02.14.
+ * This class collects data during recursive `find_node` or `get_peers` operations.
+ *
+ * @param target  A target 160-bit integer against which the find procedure is being ran.
+ * @param K       A size of K-bucket used to calculate current state of finder.
  */
-class Finder(K: Int, target: Integer160) {
+class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddress]) {
 
+  /// Dump all seeds into collection of untaken nodes with zero id
+  this.seeds.foreach(this.untaken += new Node(Integer160.zero, _))
+
+  /** Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances */
   implicit val ordering = new scala.math.Ordering[Node] {
     override def compare(x: Node, y: Node): Int = {
       val x1 = Finder.this.target ^ x.id
@@ -27,6 +34,14 @@ class Finder(K: Int, target: Integer160) {
     }
   }
 
+  /**
+   * Reports transaction completion bringing nodes, peers and token from response.
+   *
+   * @param reporter  A node which has sent a [[org.abovobo.dht.Response]].
+   * @param nodes     A collection of nodes reported by queried node.
+   * @param peers     A collection of peers reported by queried node.
+   * @param token     A token distributed by queried node.
+   */
   def report(reporter: Node, nodes: Traversable[Node], peers: Traversable[Peer], token: Token) = {
 
     // remove reporter from the collection of pending nodes
@@ -37,7 +52,7 @@ class Finder(K: Int, target: Integer160) {
     this.succeeded += reporter
 
     // store node->token association
-    this.tokens += reporter.id -> token
+    if (!token.isEmpty) this.tokens += reporter.id -> token
 
     // add reported peers to internal collection
     this.peers ++= peers
@@ -49,6 +64,15 @@ class Finder(K: Int, target: Integer160) {
         this.untaken += node
       }
     }
+  }
+
+  /**
+   * Indicates that given node failed to respond in timely manner.
+   *
+   * @param node  A node which failed to respond in timely manner.
+   */
+  def fail(node: Node) = {
+    this.pending -= node
   }
 
   /**
@@ -85,16 +109,31 @@ class Finder(K: Int, target: Integer160) {
     more
   }
 
-  private val pending = new mutable.TreeSet[Node]
+  /// Collection of all nodes which were seen by means of node information sent with responses
   private val seen = new mutable.TreeSet[Node]
+
+  /// Collection of nodes which has been taken but not reported yet
+  private val pending = new mutable.TreeSet[Node]
+
+  /// Collection of nodes which were seen but not yet taken to be queried
   private val untaken = new mutable.TreeSet[Node]
+
+  /// Collection of nodes which reported successfully
   private val succeeded = new mutable.TreeSet[Node]
+
+  /// Collection of node id -> token associations
   private val tokens = new mutable.HashMap[Integer160, Token]
+
+  /// Collection of peers reported by queried nodes
   private val peers = new mutable.HashSet[Peer]
 }
 
+/** Accompanying object */
 object Finder {
+
+  /** Defines enumeration of possible [[org.abovobo.dht.Finder]] states */
   object State extends Enumeration {
     val Continue, Succeeded, Failed = Value
   }
+
 }
