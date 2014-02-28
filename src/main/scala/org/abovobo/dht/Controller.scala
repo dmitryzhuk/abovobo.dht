@@ -12,10 +12,10 @@ package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
-import akka.actor.{ActorRef, ActorLogging, Actor}
+import akka.actor.{Props, ActorRef, ActorLogging, Actor}
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader}
-import scala.concurrent.duration.FiniteDuration
+import scala.concurrent.duration._
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -260,6 +260,20 @@ class Controller(val K: Int,
 
 /** Accompanying object */
 object Controller {
+
+  /** Generates [[akka.actor.Props]] instance with supplied parameters */
+  def props(K: Int,
+            alpha: Int,
+            period: FiniteDuration,
+            lifetime: FiniteDuration,
+            routers: Traversable[InetSocketAddress],
+            reader: Reader,
+            writer: Writer) =
+    Props(classOf[Controller], K, alpha, period, lifetime, routers, reader, writer)
+
+  /** Generates [[akka.actor.Props]] instance with most parameters set to their default values */
+  def props(routers: Traversable[InetSocketAddress], reader: Reader, writer: Writer): Props =
+    this.props(8, 3, 5.minutes, 30.minutes, routers, reader, writer)
 
   /**
    * This class defines transaction data.
