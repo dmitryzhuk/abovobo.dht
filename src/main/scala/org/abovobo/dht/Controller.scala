@@ -64,36 +64,36 @@ class Controller(val K: Int,
     case Ping(node: Node) =>
       // Simply send Query.Ping to remote peer
       val query = new Query.Ping(this.factory.next(), this.reader.id().get)
-      this.transactions.put(query.tid, new Transaction(query, node, sender))
+      this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
 
     case FindNode(target: Integer160) =>
       if (!this.recursions.contains(target)) {
-        this.recursions += target -> new Recursion(new Finder(target, this.K, this.routers), sender)
+        this.recursions += target -> new Recursion(new Finder(target, this.K, this.routers), this.sender())
       }
       val recursion = this.recursions(target)
       val id = this.reader.id().get
       recursion.finder.take(this.alpha).foreach { node =>
         val query = new Query.FindNode(this.factory.next(), id, target)
-        this.transactions.put(query.tid, new Transaction(query, node, sender))
+        this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
         this.agent ! Agent.Send(query, node.address)
       }
 
     case GetPeers(infohash: Integer160) =>
       if (!this.recursions.contains(infohash)) {
-        this.recursions += infohash -> new Recursion(new Finder(infohash, this.K, this.routers), sender)
+        this.recursions += infohash -> new Recursion(new Finder(infohash, this.K, this.routers), this.sender())
       }
       val recursion = this.recursions(infohash)
       val id = this.reader.id().get
       recursion.finder.take(this.alpha).foreach { node =>
         val query = new Query.GetPeers(this.factory.next(), id, infohash)
-        this.transactions.put(query.tid, new Transaction(query, node, sender))
+        this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
         this.agent ! Agent.Send(query, node.address)
       }
 
     case AnnouncePeer(node, token, infohash, port, implied) =>
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
-      this.transactions.put(query.tid, new Transaction(query, node, sender))
+      this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
       
       

@@ -229,7 +229,7 @@ class Table(val K: Int,
 
     this.log.debug(
       "Processing incoming message with node id {} and kind {} received from {}",
-      node.id, kind, sender)
+      node.id, kind, this.sender())
 
     this.reader.node(node.id) match {
       case None =>
@@ -310,7 +310,7 @@ class Table(val K: Int,
             // move nodes appropriately
             nodes.filter(_.id >= b) foreach { node => this.writer.move(node, b) }
             // send message to itself
-            self.!(Received(node, kind))(this.sender)
+            self.!(Received(node, kind))(this.sender())
             // notify caller that insertion has been deferred
             Split(bucket._1, b)
           }
@@ -335,7 +335,7 @@ class Table(val K: Int,
           // request ping operation for every questionnable node
           questionnable foreach { node => this.controller ! Controller.Ping(node) }
           // send deferred message to itself
-          system.scheduler.scheduleOnce(this.delay)(self.!(Received(node, kind))(this.sender))
+          system.scheduler.scheduleOnce(this.delay)(self.!(Received(node, kind))(this.sender()))
           // notify caller that insertion has been deferred
           Deferred()
         }

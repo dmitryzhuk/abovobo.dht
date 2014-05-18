@@ -56,7 +56,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
   override def receive = {
     case Udp.Bound(local) =>
       this.log.debug("Bound with local address {}", local)
-      this.context.become(this.ready(this.sender))
+      this.context.become(this.ready(this.sender()))
   }
 
   /**
