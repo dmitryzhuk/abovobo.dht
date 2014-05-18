@@ -59,6 +59,7 @@ object Endpoint {
         InetAddress.getByAddress(ba.take(IPV6_ADDR_SIZE)),
         ByteArray.ba2short(ba.drop(IPV6_ADDR_SIZE)))
     } else {
+      // 58 bytes?
       throw new IllegalArgumentException("Invalid length of a byte array: " + ba.length)
     }
 

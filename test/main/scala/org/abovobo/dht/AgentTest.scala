@@ -301,7 +301,7 @@ class AgentTest(system: ActorSystem)
             this.fail("Wrong message type " + a.getClass)
         }
       }
-
+      
       "complete transaction and notify Controller after receiving network response" in {
         rp ! Udp.Send(Agent.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
         expectMsgPF() {
@@ -319,6 +319,39 @@ class AgentTest(system: ActorSystem)
       }
 
     }
+    
+    "command Send(PluginMessage) is issued" must {
+    	
+    	  def benc2str(data: Array[Byte]): String = new String(data)
+      
+	      val tid = factory.next()
+	      val target = Integer160.random
+	      val message = new PluginMessage(tid, id = Integer160.maxval, pluginId = new Plugin.PID(0), payloadBytes = Array( '0', '1', '2', '3', '4' )) {}
+	      //new Query.FindNode(tid, id = Integer160.maxval, target = target)
+	      val packet: Array[Byte] = "d1:pl20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++ "i0e".getBytes("UTF-8") ++
+	    		  "5:01234e".getBytes("UTF-8") ++ "1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:pe".getBytes("UTF-8") 
+	
+	      "serialize message and send it to remote peer" in {
+	        na ! Agent.Send(message, remote)
+	        expectMsgPF() {
+	          case Udp.Received(data, address) =>
+	            packet should equal(data.toArray)
+	          case a: Any =>
+	            this.fail("Wrong message type " + a.getClass)
+	        }
+	      }
+	
+	      "complete transaction and notify Controller after not receiving network response" in {
+	        expectMsgPF(12.seconds) {
+	          case Controller.Failed(p: PluginMessage) =>
+	            p should be theSameInstanceAs message
+	          case a: Any =>
+	            fail("Wrong message type " + a.getClass)
+	        }
+	      }
+        
+      }
+
 
     "network packet with invalid message structure sent" must {
       "respond with error message" in {

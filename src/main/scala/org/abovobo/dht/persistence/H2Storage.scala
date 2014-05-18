@@ -15,6 +15,42 @@ import org.abovobo.dht.{Peer, Message, PersistentNode, Node}
 import Message.Kind._
 import org.abovobo.jdbc.Transaction
 import scala.concurrent.duration.FiniteDuration
+import java.io.File
+import java.sql.DriverManager
+import org.h2.tools.RunScript
+import java.io.InputStreamReader
+import org.abovobo.arm._
+
+object H2Storage {
+  
+  def create(fsLocation: String): H2Storage = {
+  	Class.forName("org.h2.Driver")
+  
+  	val dbFile = location2file(fsLocation)
+      
+  	if (dbFile.exists) throw new IllegalArgumentException("File arlready exists")
+  	
+  	val connection = DriverManager.getConnection("jdbc:h2:" + fsLocation)
+  
+  	arm.using(this.getClass.getResourceAsStream("tables.sql")) { tablesDef => 
+  		RunScript.execute(connection, new InputStreamReader(tablesDef))    	
+  	}
+  	
+  	H2Storage(fsLocation)
+  }
+  
+  def apply(fsLocation: String): H2Storage = {
+    new H2Storage("jdbc:h2:" + fsLocation + ";SCHEMA=ipv4")
+  }
+  
+  def open(fsLocation: String, createIfNotExists: Boolean = false): H2Storage = {    
+    val s = if (!location2file(fsLocation).exists && createIfNotExists) create(fsLocation) else H2Storage(fsLocation) 
+    s.open()
+    s
+  }
+  
+  private def location2file(location: String) = new File((if (location.startsWith("~")) System.getProperty("user.home") + location.substring(1) else location) + ".h2.db")
+}
 
 /**
  * Actual implementation of [[org.abovobo.dht.persistence.Storage]] which uses H2.

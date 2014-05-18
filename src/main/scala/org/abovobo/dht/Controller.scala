@@ -95,6 +95,19 @@ class Controller(val K: Int,
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
       this.transactions.put(query.tid, new Transaction(query, node, sender))
       this.agent ! Agent.Send(query, node.address)
+      
+      
+    case SendPluginMessage(message, node) =>
+      // just forward message to agent for now.
+      // maybe its possible to reuse plugins query->response style traffic for DHT state update
+      // then, tid field and timeouts should be managed by this DHT Controller and Agent
+      this.agent ! Agent.Send(message, node.address)
+      
+    case PutPlugin(pid, plugin) => 
+      this.plugins.put(pid.number, plugin)
+    
+    case RemovePlugin(pid) => 
+      this.plugins.remove(pid.number)
 
     // -- HANDLE EVENTS
     // -- -------------
@@ -164,6 +177,14 @@ class Controller(val K: Int,
               }
             case None => // Error: invalid transaction
               this.log.error("Error message with invalid transaction: " + error)
+          }
+        case pm: PluginMessage =>
+          this.plugins.get(pm.pluginId.number) match {
+            case Some(plugin) => plugin ! Received(pm, remote)
+            case None => {
+              this.log.error("Error, message to non-existing plugin.")
+              this.agent ! Agent.Send(new Error(pm.tid, Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
+            }
           }
       }
   }
@@ -237,6 +258,9 @@ class Controller(val K: Int,
   /// Initializes sibling `table` actor reference
   private lazy val table = this.context.actorSelection("../table")
 
+  
+  agent.resolveOne(10 seconds)
+  
   /// An instance of Responder to handle incoming queries
   private lazy val responder =
     new Responder(
@@ -256,6 +280,9 @@ class Controller(val K: Int,
 
   /// Collection of pending recursive procedures
   private val recursions = new mutable.HashMap[Integer160, Recursion]
+  
+  /// Active plugins
+  private val plugins = new mutable.HashMap[Long, ActorRef]
 }
 
 /** Accompanying object */
@@ -374,4 +401,9 @@ object Controller {
                           port: Int,
                           implied: Boolean)
     extends Command
+    
+  case class SendPluginMessage(message: PluginMessage, node: Node) extends Command
+    
+  case class PutPlugin(pid: Plugin.PID, plugin: ActorRef) extends Command
+  case class RemovePlugin(pid: Plugin.PID) extends Command
 }

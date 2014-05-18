@@ -21,10 +21,7 @@ import java.net.InetSocketAddress
  * @param K       A size of K-bucket used to calculate current state of finder.
  */
 class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddress]) {
-
-  /// Dump all seeds into collection of untaken nodes with zero id
-  this.seeds.foreach(this.untaken += new Node(Integer160.zero, _))
-
+  
   /** Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances */
   implicit val ordering = new scala.math.Ordering[Node] {
     override def compare(x: Node, y: Node): Int = {
@@ -33,6 +30,33 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
       if (x1 < y1) -1 else if (x1 > y1) 1 else 0
     }
   }
+
+  /// Collection of all nodes which were seen by means of node information sent with responses
+  private val seen = new mutable.TreeSet[Node]
+
+  /// Collection of nodes which has been taken but not reported yet
+  private val pending = new mutable.TreeSet[Node]
+
+  /// Collection of nodes which were seen but not yet taken to be queried
+  private val untaken = new mutable.TreeSet[Node]
+
+  /// Collection of nodes which reported successfully
+  private val succeeded = new mutable.TreeSet[Node]
+
+  /// Collection of node id -> token associations
+  private val _tokens = new mutable.HashMap[Integer160, Token]
+
+  /// Collection of peers reported by queried nodes
+  private val _peers = new mutable.HashSet[Peer]
+
+  // ctor
+  
+  if (this.seeds == null) {
+    throw new IllegalStateException()
+  }
+  
+  /// Dump all seeds into collection of untaken nodes with zero id
+  this.seeds.foreach(this.untaken += new Node(Integer160.zero, _))
 
   /**
    * Reports transaction completion bringing nodes, peers and token from response.
@@ -125,23 +149,23 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
   /** Returns collection of peers */
   def peers: scala.collection.Traversable[Peer] = this._peers
 
-  /// Collection of all nodes which were seen by means of node information sent with responses
-  private val seen = new mutable.TreeSet[Node]
-
-  /// Collection of nodes which has been taken but not reported yet
-  private val pending = new mutable.TreeSet[Node]
-
-  /// Collection of nodes which were seen but not yet taken to be queried
-  private val untaken = new mutable.TreeSet[Node]
-
-  /// Collection of nodes which reported successfully
-  private val succeeded = new mutable.TreeSet[Node]
-
-  /// Collection of node id -> token associations
-  private val _tokens = new mutable.HashMap[Integer160, Token]
-
-  /// Collection of peers reported by queried nodes
-  private val _peers = new mutable.HashSet[Peer]
+//  /// Collection of all nodes which were seen by means of node information sent with responses
+//  private val seen = new mutable.TreeSet[Node]
+//
+//  /// Collection of nodes which has been taken but not reported yet
+//  private val pending = new mutable.TreeSet[Node]
+//
+//  /// Collection of nodes which were seen but not yet taken to be queried
+//  private val untaken = new mutable.TreeSet[Node]
+//
+//  /// Collection of nodes which reported successfully
+//  private val succeeded = new mutable.TreeSet[Node]
+//
+//  /// Collection of node id -> token associations
+//  private val _tokens = new mutable.HashMap[Integer160, Token]
+//
+//  /// Collection of peers reported by queried nodes
+//  private val _peers = new mutable.HashSet[Peer]
 }
 
 /** Accompanying object */

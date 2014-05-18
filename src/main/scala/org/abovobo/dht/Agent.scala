@@ -279,6 +279,12 @@ object Agent {
             case None =>
               xthrow(Error.ERROR_CODE_PROTOCOL, "Invalid transaction id")
           }
+        case 'p' =>
+          val id = integer160(dump(n - 9))
+          val pid = new Plugin.PID(integer(dump(n - 8)))
+          val payload = array(dump(n - 7))
+          new PluginMessage(tid, id, pid, payload) {}
+          
         case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown method")
       }
       case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Malformed packet")
@@ -385,6 +391,16 @@ object Agent {
               // no other arguments
           }
           buf += 'e'
+            
+        case pluginMessage: PluginMessage =>
+          // 'p' -> list(nodeId, pluginId, message)
+          buf += '1' += ':' += 'p'
+          buf += 'l'
+            buf += '2' += '0' += ':' ++= pluginMessage.id.toArray
+            buf += 'i' ++= pluginMessage.pluginId.toString.getBytes("UTF-8") += 'e'
+            buf ++= pluginMessage.payloadBytes.length.toString.getBytes("UTF-8") += ':' ++= pluginMessage.payloadBytes
+          buf += 'e'
+          
       }
       buf += '1' += ':' += 't'
       buf ++= message.tid.toArray.length.toString.getBytes("UTF-8") += ':' ++= message.tid.toArray

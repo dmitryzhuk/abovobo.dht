@@ -11,6 +11,7 @@
 package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
+import org.abovobo.conversions.Bencode
 
 /**
  * Base abstract class defining general contract for any message which
@@ -21,9 +22,10 @@ import org.abovobo.integer.Integer160
  */
 abstract class Message(val tid: TID, val y: Char) {
   def kind: Message.Kind.Value = this.y match {
-    case 'e' => Message.Kind.Error
     case 'q' => Message.Kind.Query
     case 'r' => Message.Kind.Response
+    case 'p' => Message.Kind.PluginMessage
+    case 'e' => Message.Kind.Error
   }
 }
 
@@ -40,7 +42,7 @@ object Message {
    */
   object Kind extends Enumeration {
     type Kind = Value
-    val Query, Response, Error, Fail = Value
+    val Query, Response, PluginMessage, Error, Fail = Value
   }
 
 }
@@ -293,3 +295,8 @@ object Response {
 
   }
 }
+
+abstract class PluginMessage(tid: TID, id: Integer160, val pluginId: Plugin.PID, val payloadBytes: Array[Byte]) extends Normal(tid, 'p', id) {
+
+}
+
