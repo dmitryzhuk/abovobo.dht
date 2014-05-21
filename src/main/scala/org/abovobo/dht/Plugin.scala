@@ -13,4 +13,6 @@ object Plugin {
     
     override def toString = number.toString
   }  
+  
+  val SearchPluginId = new PID(1)
 }
