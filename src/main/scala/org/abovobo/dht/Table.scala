@@ -209,7 +209,7 @@ class Table(val K: Int,
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
     this.writer.drop()
-    Purged()
+    Purged
   }
 
   /**
@@ -241,7 +241,7 @@ class Table(val K: Int,
         } else {
           // otherwise reject node
           this.log.info("Rejected processing")
-          Rejected()
+          Rejected
         }
       case Some(pn) =>
         // update existing node
@@ -251,7 +251,7 @@ class Table(val K: Int,
         // touch owning bucket
         this.touch(pn.bucket, this.reader.next(pn.bucket))
         // respond with Updated Result
-        Updated()
+        Updated
     }
   }
 
@@ -300,7 +300,7 @@ class Table(val K: Int,
           // check if current bucket is large enough to be split
           if (bucket._2 - bucket._1 <= this.K * 2) {
             // current bucket is too small
-            Rejected()
+            Rejected
           } else {
             // split current bucket and send the message back to self queue
             // new bucket edge must split existing buckets onto 2 equals buckets
@@ -316,7 +316,7 @@ class Table(val K: Int,
           }
         } else {
           // own id is outside the bucket, so no more nodes can be inserted
-          Rejected()
+          Rejected
         }
       } else {
         // not every node in this bucket is good
@@ -337,7 +337,7 @@ class Table(val K: Int,
           // send deferred message to itself
           system.scheduler.scheduleOnce(this.delay)(self.!(Received(node, kind))(this.sender()))
           // notify caller that insertion has been deferred
-          Deferred()
+          Deferred
         }
       }
     } else {
@@ -451,20 +451,20 @@ object Table {
   case class Replaced(old: PersistentNode) extends Result
 
   /** Indicates that Node has already been in the table, so its info has just been updated. */
-  case class Updated() extends Result
+  case object Updated extends Result
 
   /** Indicates that there was no room for the new Node in the table. */
-  case class Rejected() extends Result
+  case object Rejected extends Result
 
   /**
    * Indicates that further processing of the node has been deferred until some additional
    * information is received. This normally happens when there are questionnable nodes
    * and table must check if they are good or bad before deciding what to do next.
    */
-  case class Deferred() extends Result
+  case object Deferred extends Result
 
   /** Successfull result of processing [[org.abovobo.dht.Table.Purge]] command. */
-  case class Purged() extends Result
+  case object Purged extends Result
 
   /**
    * Sent back to sender of [[org.abovobo.dht.Table.Set]] or [[org.abovobo.dht.Table.Reset]]

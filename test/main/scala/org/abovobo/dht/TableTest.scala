@@ -85,13 +85,13 @@ class TableTest(system: ActorSystem)
     "message Received is received on empty table" must {
       "do nothing if network message kind was Error" in {
         this.table ! Table.Received(this.node, Message.Kind.Error)
-        expectMsg(Table.Rejected())
+        expectMsg(Table.Rejected)
         this.reader.buckets() should have size 0
         this.reader.nodes() should have size 0
       }
       "do nothing if network message kind was Fail" in {
         this.table ! Table.Received(this.node, Message.Kind.Fail)
-        expectMsg(Table.Rejected())
+        expectMsg(Table.Rejected)
         this.reader.buckets() should have size 0
         this.reader.nodes() should have size 0
       }
@@ -112,7 +112,7 @@ class TableTest(system: ActorSystem)
     "message Received is received on table with existing nodes" must {
       "update node's replied property if message kind is Response" in {
         this.table ! Table.Received(this.node, Message.Kind.Response)
-        expectMsg(Table.Updated())
+        expectMsg(Table.Updated)
         this.reader.buckets() should have size 1
         this.reader.buckets().head._1 should be(Integer160.zero)
         this.reader.nodes() should have size 1
@@ -124,7 +124,7 @@ class TableTest(system: ActorSystem)
       }
       "update node's failcount property if message kind is Fail" in {
         this.table ! Table.Received(this.node, Message.Kind.Fail)
-        expectMsg(Table.Updated())
+        expectMsg(Table.Updated)
         this.reader.buckets() should have size 1
         this.reader.buckets().head._1 should be(Integer160.zero)
         this.reader.nodes() should have size 1
@@ -147,7 +147,7 @@ class TableTest(system: ActorSystem)
         val node = new Node(start + 7, new InetSocketAddress(0))
         table ! Table.Received(node, Message.Kind.Query)
         expectMsg(Table.Split(Integer160.zero, Integer160.maxval >> 1))
-        expectMsg(Table.Rejected())
+        expectMsg(Table.Rejected)
         this.reader.buckets() should have size 2
         this.reader.nodes() should have size 8
         this.reader.bucket(Integer160.zero) should have size 8

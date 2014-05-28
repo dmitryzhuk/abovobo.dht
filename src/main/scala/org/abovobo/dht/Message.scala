@@ -218,9 +218,8 @@ object Response {
         "5:nodes" + (this.nodes.length * 26) + ":`" +
         org.abovobo.conversions.Hex.ba2hex(this.nodes
           .map(node => node.id.toArray ++ Endpoint.isa2ba(node.address))
-          .reduceLeft((left, node) => left ++ node)) + "`" +
+            .foldLeft(Array[Byte]()){ (a, node) => a ++ node }) + "`" +
         "e1:t2:" + this.tid.toString + "1:y1:re"
-
   }
 
   /**

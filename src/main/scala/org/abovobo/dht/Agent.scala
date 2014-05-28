@@ -19,6 +19,7 @@ import akka.util.ByteStringBuilder
 import org.abovobo.conversions.Bencode
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
+import java.nio.charset.Charset
 
 /**
  * This actor is responsible for sending Kademlia UDP messages and receiving them.
@@ -105,6 +106,10 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
     case Udp.Unbind  =>
       this.log.debug("Unbinding")
       socket ! Udp.Unbind
+      
+      
+    case x: Any => 
+      println("!!! UNHANDLED MESASGE \n" + x)
   }
 
   /**
@@ -207,8 +212,9 @@ object Agent {
     def nodes(event: Bencode.Event): IndexedSeq[Node] = event match {
       case Bencode.Bytestring(value) =>
         val sz = Integer160.bytesize
-        val n = value.length / (sz + Endpoint.IPV4_ADDR_SIZE + 2)
-        for (i <- 0 until n) yield new Node(new Integer160(value.take(sz)), value.drop(sz))
+        val ez = sz + Endpoint.IPV4_ADDR_SIZE + 2
+        val n = value.length / ez
+        for (i <- 0 until n) yield new Node(new Integer160(value.drop(i * ez).take(sz)), value.drop(i * ez).drop(sz).take(Endpoint.IPV4_ADDR_SIZE + 2))
       case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 

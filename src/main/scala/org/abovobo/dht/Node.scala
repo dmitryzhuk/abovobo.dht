@@ -86,4 +86,5 @@ class PersistentNode(id: Integer160,
     this.replied.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout ||
       this.queried.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout
 
+  override def toString = "Node [#" + id + "@" + address + "]" 
 }

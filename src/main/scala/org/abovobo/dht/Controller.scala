@@ -16,6 +16,8 @@ import akka.actor.{Props, ActorRef, ActorLogging, Actor}
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader}
 import scala.concurrent.duration._
+import org.abovobo.dht.Table.Updated
+import org.abovobo.dht.Table.Inserted
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -58,6 +60,16 @@ class Controller(val K: Int,
    * Implements handling of [[org.abovobo.dht.Controller]]-specific events and commands.
    */
   override def receive = {
+    
+    // To avoid "unhandled message" logging. TODO: do we need to process these messages:
+    
+    
+    case Updated =>
+      log.debug("table: updated")
+
+    case Inserted(id) =>
+      log.debug("table: inserted: " + id)
+    
 
     // -- HANDLE COMMANDS
     // -- ---------------
