@@ -150,24 +150,6 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
 
   /** Returns collection of peers */
   def peers: scala.collection.Traversable[Peer] = this._peers
-
-//  /// Collection of all nodes which were seen by means of node information sent with responses
-//  private val seen = new mutable.TreeSet[Node]
-//
-//  /// Collection of nodes which has been taken but not reported yet
-//  private val pending = new mutable.TreeSet[Node]
-//
-//  /// Collection of nodes which were seen but not yet taken to be queried
-//  private val untaken = new mutable.TreeSet[Node]
-//
-//  /// Collection of nodes which reported successfully
-//  private val succeeded = new mutable.TreeSet[Node]
-//
-//  /// Collection of node id -> token associations
-//  private val _tokens = new mutable.HashMap[Integer160, Token]
-//
-//  /// Collection of peers reported by queried nodes
-//  private val _peers = new mutable.HashSet[Peer]
 }
 
 /** Accompanying object */

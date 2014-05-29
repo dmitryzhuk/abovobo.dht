@@ -38,10 +38,12 @@ import org.abovobo.dht.Controller.PutPlugin
 object DhtBuildingSmokeTest extends App {
   val systemConfig = ConfigFactory.parseMap(Map(
       "akka.log-dead-letters" -> "true", 
-      "akka.actor.debug.lifecycle" -> true,
+      "akka.actor.debug.lifecycle" -> false,
       "akka.loglevel" -> "debug",
       
     "akka.actor.debug.receive" -> true,
+    "akka.actor.debug.send" -> true,
+
     "akka.actor.debug.unhandled" -> true))
     
     
@@ -67,6 +69,9 @@ object DhtBuildingSmokeTest extends App {
     val system = ActorSystem("TestSystem-" + ordinal, systemConfig)
 
     val agent = system.actorOf(Props(classOf[Agent], localEndpoint(ordinal), 10 seconds), "agent")
+    
+    Thread.sleep(500) // Agent needs time to bind a socket and become an agent
+    
     val controller = system.actorOf(Controller.props(routers, reader, writer), "controller")
     val table = system.actorOf(Table.props(reader, writer), "table")    
   
@@ -75,9 +80,6 @@ object DhtBuildingSmokeTest extends App {
 
   val router = createNode(1)
 
-  //var nodes = List(router)
-
- 
   val nodes = List(router) ++ (for (i <- 2 to 4) yield {
     Thread.sleep(3 * 1000)
     createNode(i, List(router.endpoint))
@@ -87,15 +89,19 @@ object DhtBuildingSmokeTest extends App {
 
   Thread.sleep(7 * 1000)
 
-  println("---------- tables -------- ")
 
-  nodes.foreach { node =>
-    println("dht table for: " + node.storage.id + "@" + node.endpoint)
-    node.storage.nodes.foreach { entry => println("\t" + entry)}
+  for (i <- 1 to 20) {
+    println("---------- tables -------- ")
+    nodes.foreach { node =>
+      println("dht table for: " + node.storage.id + "@" + node.endpoint)
+      node.storage.nodes.foreach { entry => println("\t" + entry)}
+    }    
+
+    Thread.sleep(60 * 1000)
   }
   
 
   nodes.foreach(_.dispose)
   
-  Thread.sleep(1000 * 1000)
+  Thread.sleep(5 * 1000)
 }
