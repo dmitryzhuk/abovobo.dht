@@ -72,7 +72,10 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
     // received a packet from UDP socket
     case Udp.Received(data, remote) => try {
       // parse received ByteString into a message instance
-      val message = Agent.parse(data, this.queries.toMap map { pair => pair._1 -> pair._2._1 })
+      val message = Agent.parse(data, this.queries.toMap map { pair => pair._1 -> pair._2._1 }) // XXX: pass a getter-function instead of new collection
+      
+      log.debug("Agent <== received " + message)
+      
       // check if message completes pending transaction
       message match {
         case response: Response =>
@@ -84,11 +87,17 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
       this.controller ! Controller.Received(message, remote)
     } catch {
       case e: Agent.ParsingException =>
-        socket ! Udp.Send(Agent.serialize(e.error), remote)
+        self ! Agent.Send(e.error, remote)
+        //socket ! Udp.Send(Agent.serialize(e.error), remote)
     }
 
     // `Send` command received
-    case Agent.Send(message, remote) =>
+    case Agent.Send(message, remote) => {
+      
+      message match {
+        case m: Normal => if (m.id == Integer160.zero) throw new IllegalArgumentException
+      }
+      
       // if we are sending query - set up transaction monitor
       message match {
         case query: Query =>
@@ -99,14 +108,15 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
         case _ => // do nothing
       }
       // send serialized message to remote address
-      this.log.debug("Sending " + message)
+      this.log.debug("Agent ==> sending " + message)
       socket ! Udp.Send(Agent.serialize(message), remote)
-
+    }
+    
     // `Udp.Unbind` command requested, forwarding to our socket
-    case Udp.Unbind  =>
+    case Udp.Unbind  => {
       this.log.debug("Unbinding")
       socket ! Udp.Unbind
-      
+    }
       
     case x: Any => 
       println("!!! UNHANDLED MESASGE \n" + x)

@@ -23,7 +23,9 @@ import scala.concurrent.duration._
  * @param id        SHA-1 identifier of the node.
  * @param address   Network address of remote node.
  */
-class Node(val id: Integer160, val address: InetSocketAddress)
+class Node(val id: Integer160, val address: InetSocketAddress) {
+  override def toString = "Node [#" + id + "@" + address.getAddress + ":" + address.getPort + "]" 
+}
 
 /**
  * This class represents complete Node information which is kept in persistent storage.
@@ -85,6 +87,4 @@ class PersistentNode(id: Integer160,
   def recentlySeen(implicit timeout: Duration, threshold: Int): Boolean =
     this.replied.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout ||
       this.queried.map(d => (System.currentTimeMillis - d.getTime).milliseconds).getOrElse(Duration.Inf) < timeout
-
-  override def toString = "Node [#" + id + "@" + address + "]" 
 }
