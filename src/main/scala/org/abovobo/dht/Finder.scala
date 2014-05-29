@@ -116,7 +116,8 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
         Finder.State.Failed
       else 
         Finder.State.Succeeded
-    } else if (this.ordering.lteq(this.succeeded.take(this.K).last, this.untaken.head)) { // XXX: wrong condition: 1) .head on possibly empty collection 2) there's no guarantee that take(K) will give expected results
+    } else if (this.succeeded.size >= K && (this.untaken.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.untaken.head))) {
+     // XXX: wrong condition: 1) .head on possibly empty collection 2) there's no guarantee that take(K) will give expected results
       Finder.State.Succeeded
     } else {
       Finder.State.Continue
