@@ -125,9 +125,9 @@ class Responder(K: Int,
           } else {
             Agent.Send(new Error(q.tid, Error.ERROR_CODE_GENERIC, "Token has expired"), remote)
           }
-        // token has not been distributed to given peer or has already been cleaned up
+        // token has not been distributed to given node or has already been cleaned up
         case None => Agent.Send(
-          new Error(q.tid, Error.ERROR_CODE_PROTOCOL, "Given token was not distributed to this peer"),
+          new Error(q.tid, Error.ERROR_CODE_PROTOCOL, "Given token was not distributed to this node"),
           remote)
       }
     }

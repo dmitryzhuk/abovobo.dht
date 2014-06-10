@@ -24,18 +24,6 @@ import org.abovobo.dht.persistence.Writer
 import org.abovobo.arm.Disposable
 import akka.actor.ActorRef
 
-class ALogger extends Actor with ActorLogging {
-	  override def receive = {
-	    case x: Any => sender ! x
-	  }
-}
-
-class MyAgent(endpoint: InetSocketAddress, timeout: FiniteDuration) extends Agent(endpoint, timeout) {
-  override def preStart() = {
-    println("prestart")
-    super.preStart()
-  }
-}
 
 
 object DhtSmokeTest extends App {
@@ -66,10 +54,10 @@ object DhtSmokeTest extends App {
 		val writer: Writer = h2
 			
 		val system = ActorSystem("TestSystem-" + ordinal, systemConfig)
-		
-		val table = system.actorOf(Table.props(reader, writer), "table")		
-		val agent = system.actorOf(Props(classOf[MyAgent], localEndpoint(ordinal), 10 seconds), "agent")
-		val controller = system.actorOf(Controller.props(routers, reader, writer), "controller")
+
+    val controller = system.actorOf(Controller.props(routers, reader, writer), "controller")
+    val agent = system.actorOf(Agent.props(localEndpoint(ordinal), 10 seconds, controller), "agent")		
+		val table = system.actorOf(Table.props(reader, writer, controller), "table")		
 	
 		NodeSystem(localEndpoint(ordinal), table, agent, controller, system, h2)
 	}

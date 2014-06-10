@@ -39,13 +39,7 @@ class TID(private val value: Array[Byte]) {
 
 /** Factory which creates instances of TID in loop. */
 class TIDFactory {
-
-  /// An array of characters which can be used to generate transaction identifiers
-  private val alfabet = Array[Byte](
-    '0','1','2','3','4','5','6','7','8','9',
-    'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z',
-    'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z'
-  )
+  import TIDFactory.alfabet 
 
   /// Index of the first byte of TID
   private var i0 = 0
@@ -65,5 +59,21 @@ class TIDFactory {
       }
     }
     result
+  }
+}
+
+object TIDFactory {  
+  /// An array of characters which can be used to generate transaction identifiers
+  private val alfabet = Array[Byte](
+    '0','1','2','3','4','5','6','7','8','9', 
+    'A','B','C','D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z'//,
+//    'a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x','y','z'
+  )
+  
+  def random: TIDFactory = {
+    val f = new TIDFactory
+    f.i0 = (System.currentTimeMillis % alfabet.length).toInt
+    f.i1 = (f.hashCode % alfabet.length).toInt
+    f
   }
 }

@@ -18,6 +18,7 @@ import org.abovobo.dht.persistence.{Writer, Reader}
 import scala.concurrent.duration._
 import org.abovobo.dht.Table.Updated
 import org.abovobo.dht.Table.Inserted
+import scala.concurrent.Await
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -44,7 +45,15 @@ class Controller(val K: Int,
   extends Actor with ActorLogging {
 
   import Controller._
-
+  
+  override def preStart() = {}
+  
+  override def postRestart(reason: Throwable): Unit = {
+    log.warning("Restarting controller due to " + reason)
+    // not calling preStart and sending messages again, facility makes actor restarting transparent
+    //preStart()
+  }
+  
   /**
    * @inheritdoc
    *
@@ -53,6 +62,7 @@ class Controller(val K: Int,
   override def postStop() = {
     this.responder.close()
   }
+  
 
   /**
    * @inheritdoc
@@ -69,7 +79,7 @@ class Controller(val K: Int,
 
     case Inserted(id) =>
       log.debug("table: inserted: " + id)
-    
+          
 
     // -- HANDLE COMMANDS
     // -- ---------------
@@ -81,7 +91,7 @@ class Controller(val K: Int,
 
     case FindNode(target: Integer160) =>
       if (!this.recursions.contains(target)) {
-        this.recursions += target -> new Recursion(new Finder(target, this.K, this.routers), this.sender())
+        this.recursions += target -> new Recursion(new Finder(target, this.K, klosest(this.alpha, target)), this.sender())
       }
       val recursion = this.recursions(target)
       val id = this.reader.id().get
@@ -93,7 +103,7 @@ class Controller(val K: Int,
 
     case GetPeers(infohash: Integer160) =>
       if (!this.recursions.contains(infohash)) {
-        this.recursions += infohash -> new Recursion(new Finder(infohash, this.K, this.routers), this.sender())
+        this.recursions += infohash -> new Recursion(new Finder(infohash, this.K, klosest(this.alpha, infohash)), this.sender())
       }
       val recursion = this.recursions(infohash)
       val id = this.reader.id().get
@@ -162,6 +172,8 @@ class Controller(val K: Int,
           // delegate execution to private `process` method
           this.transactions.remove(response.tid) match {
             case Some(transaction) =>
+              //if (transaction.remote.id == Integer160.zero) throw new IllegalStateException
+              
               this.table ! Table.Received(transaction.remote, Message.Kind.Response)
               this.process(response, transaction)
             case None => // Error: invalid transaction
@@ -239,6 +251,16 @@ class Controller(val K: Int,
         transaction.requester ! PeerAnnounced()
     }
   }
+  
+  private def klosest(n: Int, target: Integer160) = {
+    val fromTable = this.reader.klosest(n, target)
+    if (fromTable.size < n) {
+      // routers are always last
+      fromTable ++ routersNodes
+    } else { 
+      fromTable
+    }
+  }
 
   /**
    * Checks current state of the [[org.abovobo.dht.Finder]] associated with given recursion
@@ -263,15 +285,12 @@ class Controller(val K: Int,
         }
     }
   }
-
+  
   /// Initializes sibling `agent` actor reference
-  private lazy val agent = this.context.actorSelection("../agent")
+  private lazy val agent = Await.result(this.context.actorSelection("../agent").resolveOne(5 seconds), 6 seconds)
 
   /// Initializes sibling `table` actor reference
-  private lazy val table = this.context.actorSelection("../table")
-
-  
-  agent.resolveOne(10 seconds)
+  private lazy val table = Await.result(this.context.actorSelection("../table").resolveOne(5 seconds), 6 seconds)
   
   /// An instance of Responder to handle incoming queries
   private lazy val responder =
@@ -285,13 +304,16 @@ class Controller(val K: Int,
       this.context.dispatcher)
 
   /// Instantiate transaction ID factory
-  private val factory = new TIDFactory
+  private val factory = TIDFactory.random
 
   /// Collection of pending transactions
   private val transactions = new mutable.HashMap[TID, Transaction]
 
   /// Collection of pending recursive procedures
   private val recursions = new mutable.HashMap[Integer160, Recursion]
+  
+  /// Routers nodes marked with zero IDs to avoid adding them to routing tables
+  private val routersNodes = routers.map { ra => new Node(Integer160.zero, ra) }
   
   /// Active plugins
   private val plugins = new mutable.HashMap[Long, ActorRef]
@@ -333,7 +355,7 @@ object Controller {
 
   /** Base trait for all events handled or initiated by this actor */
   sealed trait Event
-
+  
   /**
    * This event indicates that there was a query sent to remote peer, but remote peer failed to respond
    * in timely manner.
@@ -363,7 +385,7 @@ object Controller {
    * @param peers   Collected peers (only for `get_peers` operation).
    * @param tokens  Collection of node id -> token associations (only for `get_peers` operation).
    */
-  case class Found(nodes: Traversable[Node], peers: Traversable[Peer], tokens: Map[Integer160, Token]) extends Event
+  case class Found(nodes: Traversable[Node], peers: Traversable[Peer], tokens: scala.collection.Map[Integer160, Token]) extends Event
 
   /** Indicates that recursive `find_node` or `get_peers` operation has failed. */
   case class NotFound() extends Event
@@ -418,4 +440,5 @@ object Controller {
     
   case class PutPlugin(pid: Plugin.PID, plugin: ActorRef) extends Command
   case class RemovePlugin(pid: Plugin.PID) extends Command
+
 }

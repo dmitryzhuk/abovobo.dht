@@ -35,7 +35,7 @@ class TableTest(system: ActorSystem)
   val reader: Reader = this.h2
   val writer: Writer = this.h2
 
-  lazy val table = this.system.actorOf(Table.props(this.reader, this.writer), "table")
+  lazy val table = this.system.actorOf(Table.props(this.reader, this.writer, null), "table")
   lazy val node = new Node(Integer160.zero, new InetSocketAddress(0))
 
   override def beforeAll() = {

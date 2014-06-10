@@ -30,7 +30,7 @@ import java.nio.charset.Charset
  * @param endpoint An endpoint at which this agent must listen.
  * @param timeout  A period in time during which the remote party must respond to a query.
  */
-class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extends Actor with ActorLogging {
+class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, controller: ActorRef) extends Actor with ActorLogging {
 
   import this.context.system
   import this.context.dispatcher
@@ -41,6 +41,8 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
    * Sends [[akka.io.Udp.Bind]] message to IO manager.
    */
   override def preStart() = IO(Udp) ! Udp.Bind(self, this.endpoint)
+  
+  override def postRestart(reason: Throwable) {} // disable preStart call on restarts
 
   /**
    * @inheritdoc
@@ -59,7 +61,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
       this.log.debug("Bound with local address {}", local)
       this.context.become(this.ready(this.sender()))
   }
-
+  
   /**
    * Implements Send/Receive logic. Decodes network package into a [[org.abovobo.dht.Message]]
    * upon receival and if received message is [[org.abovobo.dht.Response]] checks if it corresponds
@@ -68,7 +70,6 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
    * @param socket Akka.IO socket actor which will be used for sending datagrams
    */
   def ready(socket: ActorRef): Actor.Receive = {
-
     // received a packet from UDP socket
     case Udp.Received(data, remote) => try {
       // parse received ByteString into a message instance
@@ -93,18 +94,13 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
 
     // `Send` command received
     case Agent.Send(message, remote) => {
-      
-      message match {
-        case m: Normal => if (m.id == Integer160.zero) throw new IllegalArgumentException
-      }
-      
       // if we are sending query - set up transaction monitor
       message match {
         case query: Query =>
           this.log.debug("Starting transaction " + query.tid)
           this.queries.put(
             query.tid,
-            query -> system.scheduler.scheduleOnce(this.timeout)(this.fail(query)))
+            query -> system.scheduler.scheduleOnce(this.timeout)(self ! Agent.Timeout(query)))
         case _ => // do nothing
       }
       // send serialized message to remote address
@@ -112,14 +108,13 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
       socket ! Udp.Send(Agent.serialize(message), remote)
     }
     
+    case Agent.Timeout(q) => this.fail(q)  
+    
     // `Udp.Unbind` command requested, forwarding to our socket
     case Udp.Unbind  => {
       this.log.debug("Unbinding")
       socket ! Udp.Unbind
-    }
-      
-    case x: Any => 
-      println("!!! UNHANDLED MESASGE \n" + x)
+    }      
   }
 
   /**
@@ -130,7 +125,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
    * @param query A query which remote party failed to respond to in timely manner.
    */
   private def fail(query: Query) = {
-    this.log.debug("Completing transaction " + query.tid + " by means of failure")
+    this.log.debug("Completing transaction " + query.tid + " by means of failure (timeout)")
     this.queries.remove(query.tid).foreach { _._2.cancel() }
     this.controller ! Controller.Failed(query)
   }
@@ -139,9 +134,6 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration) extend
   /// and cancellable tasks which will produce failure command if remote peer
   /// failed to respond in timely manner.
   private val queries = new mutable.HashMap[TID, (Query, Cancellable)]
-
-  /// Initializes sibling `controller` actor reference
-  private lazy val controller = this.context.actorSelection("../controller")
 }
 
 /** Accompanying object */
@@ -154,8 +146,8 @@ object Agent {
    * @param timeout  A period of time to wait for response from queried remote peer.
    * @return         Properly configured [[akka.actor.Props]] instance.
    */
-  def props(endpoint: InetSocketAddress, timeout: FiniteDuration): Props =
-    Props(classOf[Agent], endpoint, timeout)
+  def props(endpoint: InetSocketAddress, timeout: FiniteDuration, controller: ActorRef): Props =
+    Props(classOf[Agent], endpoint, timeout, controller)
 
   /** Base trait for all commands natively supported by [[org.abovobo.dht.Agent]] actor. */
   sealed trait Command
@@ -167,6 +159,14 @@ object Agent {
    * @param remote  An address (IP/Port) to send message to.
    */
   case class Send(message: Message, remote: InetSocketAddress) extends Command
+  
+  /**
+   * Instructs agent to fail transaction with given query due to timeout.
+   * Used by agent scheduler.
+   * 
+   * @param query a query in question
+   */
+  case class Timeout(query: Query) extends Command
 
   /**
    * Represents exception which may happen during packet parsing process.

@@ -15,6 +15,7 @@ import akka.actor.{ActorLogging, Cancellable, Props, Actor}
 import scala.concurrent.duration._
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader}
+import akka.actor.ActorRef
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -103,7 +104,8 @@ class Table(val K: Int,
             val delay: FiniteDuration,
             val threshold: Int,
             val reader: Reader,
-            val writer: Writer)
+            val writer: Writer,
+            val controller: ActorRef)
   extends Actor with ActorLogging {
 
   import Table._
@@ -116,28 +118,21 @@ class Table(val K: Int,
    *
    * Handles RoutingTable Actor specific messages.
    */
-  override def receive = {
+  def receive = {
     case Refresh(min, max)    =>          this.refresh(min, max)
     case Reset()              => sender ! this.reset()
     case Set(id)              => sender ! this.set(id)
     case Purge()              => sender ! this.purge()
     case Received(node, kind) => sender ! this.process(node, kind)
     case Failed(node)         => sender ! this.process(node, Message.Kind.Fail)
-  }
-
-  /**
-   * @inheritdoc
-   *
-   * This override checks if there is a stored node id and generates new one if not.
-   */
-  override def preStart() {
-
+  }  
+  
+  override def preStart() = {
     // check if the table already has assigned ID and reset if not
     // in any case initial FindNode will be issued to controller
     this.reader.id() match {
       case None     => this.reset()
       case Some(id) => this.controller ! Controller.FindNode(id)
-
     }
 
     // upon start also perform refresh procedure for every existing bucket
@@ -155,7 +150,7 @@ class Table(val K: Int,
       this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, Integer160.maxval)))
     }
   }
-
+    
   /**
    * @inheritdoc
    *
@@ -364,9 +359,6 @@ class Table(val K: Int,
     this.cancellables.put(bucket, system.scheduler.scheduleOnce(this.timeout, self, Refresh(bucket, next)))
   }
 
-  /// Initializes sibling `controller` actor reference
-  private lazy val controller = this.context.actorSelection("../controller")
-
   /// Collection of cancellable deferred tasks for refreshing buckets
   private val cancellables: mutable.Map[Integer160, Cancellable] = mutable.Map.empty
 }
@@ -389,8 +381,8 @@ object Table {
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(K: Int, timeout: Duration, delay: Duration, threshold: Int, reader: Reader, writer: Writer): Props =
-    Props(classOf[Table], K, timeout, delay, threshold, reader, writer)
+  def props(K: Int, timeout: Duration, delay: Duration, threshold: Int, reader: Reader, writer: Writer, controller: ActorRef): Props =
+    Props(classOf[Table], K, timeout, delay, threshold, reader, writer, controller)
 
   /**
    * Factory which creates RoutingTable Actor Props instance with default values:
@@ -401,7 +393,7 @@ object Table {
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(reader: Reader, writer: Writer): Props = this.props(8, 15.minutes, 30.seconds, 3, reader, writer)
+  def props(reader: Reader, writer: Writer, controller: ActorRef): Props = this.props(8, 15.minutes, 30.seconds, 3, reader, writer, controller)
 
   /**
    * This enumeration defines four possible outcomes of touching the node:

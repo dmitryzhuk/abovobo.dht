@@ -94,7 +94,9 @@ abstract class Normal(tid: TID, y: Char, val id: Integer160) extends Message(tid
  * @param id    Sending node identifier.
  * @param name  Message name ('ping', 'find_node', 'get_peers', 'announce_peer')
  */
-abstract class Query(tid: TID, id: Integer160, val name: String) extends Normal(tid, 'q', id)
+abstract class Query(tid: TID, id: Integer160, val name: String) extends Normal(tid, 'q', id) {
+  override def toString = "Q: [" + name + "], tid: " + tid + ", self: " + id
+}
 
 /** Accompanying object. */
 object Query {
@@ -115,7 +117,7 @@ object Query {
   class Ping(tid: TID, id: Integer160)
     extends Query(tid, id, QUERY_NAME_PING) {
 
-    override def toString =
+    def toBencodedString =
       "d1:ad2:id20:`" + this.id.toHexString + "`e1:q4:ping1:t2:" + this.tid.toString + "1:y1:qe"
   }
 
@@ -130,10 +132,11 @@ object Query {
                  val target: Integer160)
     extends Query(tid, id, QUERY_NAME_FIND_NODE) {
 
-    override def toString =
+    def toBencodedString =
       "d1:ad2:id20:`" + this.id.toHexString + "`6:target20:`" + this.target.toHexString +
         "`e1:q9:find_node1:t2:" + this.tid.toString + "1:y1:qe"
-
+        
+    override  def toString = super.toString + ", target: " + target 
   }
 
   /**
@@ -147,10 +150,11 @@ object Query {
                  val infohash: Integer160)
     extends Query(tid, id, QUERY_NAME_GET_PEERS) {
 
-    override def toString =
+    def toBencodedString =
       "d1:ad2:id20:`" + this.id.toHexString + "`9:info_hash20:`" + this.infohash.toHexString +
         "`e1:q9:get_peers1:t2:" + this.tid.toString + "1:y1:qe"
 
+    override  def toString = super.toString + ", infohash: " + infohash
   }
 
   /**
@@ -167,7 +171,7 @@ object Query {
                      val infohash: Integer160, val port: Int, val token: Token, val implied: Boolean)
     extends Query(tid, id, QUERY_NAME_ANNOUNCE_PEER) {
 
-    override def toString =
+    def toBencodedString =
       "d1:ad2:id20:`" + this.id.toHexString + "`" +
         "12:implied_porti" + (if (implied) 1 else 0) + "e" +
         "9:info_hash20:`" + this.infohash.toHexString + "`" +
@@ -175,6 +179,7 @@ object Query {
         "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
         "e1:q13:announce_peer1:t2:" + this.tid.toString + "1:y1:qe"
 
+    override  def toString = super.toString + ", infohash: " + infohash + ", port: " + port + ", token: " + org.abovobo.conversions.Hex.ba2hex(this.token)        
   }
 }
 
@@ -184,7 +189,11 @@ object Query {
  * @param tid Transaction identifier.
  * @param id  Sending node identifier.
  */
-abstract class Response(tid: TID, id: Integer160) extends Normal(tid, 'r', id)
+abstract class Response(tid: TID, id: Integer160) extends Normal(tid, 'r', id) {
+  override def toString = "tid: " + tid + ", self: " + id
+
+  
+}
 
 object Response {
 
@@ -198,8 +207,10 @@ object Response {
     extends Response(tid, id) {
 
     override def toString =
-      "[ping] -> d1:rd2:id20:`" + this.id.toHexString + "`e1:t2:" + this.tid.toString + "1:y1:re"
+      "R: [ping] -> " + super.toString
+      //"[ping] -> d1:rd2:id20:`" + this.id.toHexString + "`e1:t2:" + this.tid.toString + "1:y1:re"
 
+    
   }
 
   /**
@@ -213,13 +224,14 @@ object Response {
     extends Response(tid, id) {
 
     override def toString =
-      "[find_node] -> " +
-      "d1:rd2:id20:`" + this.id.toHexString + "`" +
-        "5:nodes" + (this.nodes.length * 26) + ":`" +
-        org.abovobo.conversions.Hex.ba2hex(this.nodes
-          .map(node => node.id.toArray ++ Endpoint.isa2ba(node.address))
-            .foldLeft(Array[Byte]()){ (a, node) => a ++ node }) + "`" +
-        "e1:t2:" + this.tid.toString + "1:y1:re"
+      "R: [find_node] -> " + super.toString + ", nodes: " + nodes.mkString("(", ",", ")")
+//      "[find_node] -> " +
+//      "d1:rd2:id20:`" + this.id.toHexString + "`" +
+//        "5:nodes" + (this.nodes.length * 26) + ":`" +
+//        org.abovobo.conversions.Hex.ba2hex(this.nodes
+//          .map(node => node.id.toArray ++ Endpoint.isa2ba(node.address))
+//            .foldLeft(Array[Byte]()){ (a, node) => a ++ node }) + "`" +
+//        "e1:t2:" + this.tid.toString + "1:y1:re"
   }
 
   /**
@@ -245,14 +257,15 @@ object Response {
     extends GetPeers(tid, id, token) {
 
     override def toString =
-      "[get_peers] -> " +
-      "d1:rd2:id20:`" + this.id.toHexString + "`" +
-        "5:nodes" + (this.nodes.length * 26) + ":`" +
-        org.abovobo.conversions.Hex.ba2hex(this.nodes
-          .map(node => node.id.toArray ++ Endpoint.isa2ba(node.address))
-          .reduceLeft((left, node) => left ++ node)) + "`" +
-        "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
-        "e1:t2:" + this.tid.toString + "1:y1:re"
+      "R: [get_peers] -> " + super.toString + ", nodes: " + nodes.mkString("(", ",", ")")       
+//      "[get_peers] -> " +
+//      "d1:rd2:id20:`" + this.id.toHexString + "`" +
+//        "5:nodes" + (this.nodes.length * 26) + ":`" +
+//        org.abovobo.conversions.Hex.ba2hex(this.nodes
+//          .map(node => node.id.toArray ++ Endpoint.isa2ba(node.address))
+//          .reduceLeft((left, node) => left ++ node)) + "`" +
+//        "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
+//        "e1:t2:" + this.tid.toString + "1:y1:re"
 
   }
 
@@ -269,14 +282,16 @@ object Response {
     extends GetPeers(tid, id, token) {
 
     override def toString =
-      "[get_peers] -> " +
-      "d1:rd2:id20:`" + this.id.toHexString + "`" +
-        "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
-        "6:values" + (this.values.length * 6) + ":`" +
-        org.abovobo.conversions.Hex.ba2hex(this.values
-          .map(Endpoint.isa2ba)
-          .reduceLeft((left, peer) => left ++ peer)) + "`" +
-        "e1:t2:" + this.tid.toString + "1:y1:re"
+      "R: [get_peers] -> " + super.toString + ", peers: " + values.mkString("(", ",", ")")       
+
+//      "[get_peers] -> " +
+//      "d1:rd2:id20:`" + this.id.toHexString + "`" +
+//        "5:token" + this.token.length + ":`" + org.abovobo.conversions.Hex.ba2hex(this.token) + "`" +
+//        "6:values" + (this.values.length * 6) + ":`" +
+//        org.abovobo.conversions.Hex.ba2hex(this.values
+//          .map(Endpoint.isa2ba)
+//          .reduceLeft((left, peer) => left ++ peer)) + "`" +
+//        "e1:t2:" + this.tid.toString + "1:y1:re"
 
   }
 
@@ -290,12 +305,13 @@ object Response {
     extends Response(tid, id) {
 
     override def toString =
-      "[announce_peer] -> d1:rd2:id20:`" + this.id.toHexString + "`e1:t2:" + this.tid.toString + "1:y1:re"
+      "R: [announce_peer] -> " + super.toString       
+//      "[announce_peer] -> d1:rd2:id20:`" + this.id.toHexString + "`e1:t2:" + this.tid.toString + "1:y1:re"
 
   }
 }
 
 abstract class PluginMessage(tid: TID, id: Integer160, val pluginId: Plugin.PID, val payloadBytes: Array[Byte]) extends Normal(tid, 'p', id) {
-
+  override def toString = "Plugin#" + pluginId + ": tid: " + tid + ", self: " + id
 }
 

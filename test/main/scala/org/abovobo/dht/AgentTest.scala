@@ -77,9 +77,10 @@ class AgentTest(system: ActorSystem)
   val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 20000)
   val local = new InetSocketAddress(InetAddress.getLoopbackAddress, 20001)
 
-  val na = this.system.actorOf(Agent.props(local, 10.seconds), "agent")
-  val rp = this.system.actorOf(Props(classOf[RemotePeer], remote), "peer")
   val dc = this.system.actorOf(Props(classOf[DummyController]), "controller")
+
+  val na = this.system.actorOf(Agent.props(local, 10.seconds, dc), "agent")
+  val rp = this.system.actorOf(Props(classOf[RemotePeer], remote), "peer")
 
   override def beforeAll() = {
   }
@@ -339,17 +340,7 @@ class AgentTest(system: ActorSystem)
 	          case a: Any =>
 	            this.fail("Wrong message type " + a.getClass)
 	        }
-	      }
-	
-	      "complete transaction and notify Controller after not receiving network response" in {
-	        expectMsgPF(12.seconds) {
-	          case Controller.Failed(p: PluginMessage) =>
-	            p should be theSameInstanceAs message
-	          case a: Any =>
-	            fail("Wrong message type " + a.getClass)
-	        }
-	      }
-        
+	      }        
       }
 
 

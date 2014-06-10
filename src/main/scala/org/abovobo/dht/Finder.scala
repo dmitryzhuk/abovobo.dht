@@ -13,6 +13,7 @@ package org.abovobo.dht
 import org.abovobo.integer.Integer160
 import scala.collection.mutable
 import java.net.InetSocketAddress
+import java.lang.IllegalArgumentException
 
 /**
  * This class collects data during recursive `find_node` or `get_peers` operations.
@@ -20,9 +21,14 @@ import java.net.InetSocketAddress
  * @param target  A target 160-bit integer against which the find procedure is being ran.
  * @param K       A size of K-bucket used to calculate current state of finder.
  */
-class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddress]) {
+class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
   
-  /** Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances */
+  /** 
+   *  Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances. 
+   *
+   *  XXX: we're loosing nodes which have same distance to the target but different IDs, but due to huge values domain such collisions shoudln't be a problem
+   *  
+   */
   implicit val ordering = new scala.math.Ordering[Node] {
     override def compare(x: Node, y: Node): Int = {
       val x1 = Finder.this.target ^ x.id
@@ -51,12 +57,12 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
 
   // ctor
   
-  if (this.seeds == null) {
-    throw new IllegalStateException()
+  if (this.seeds.isEmpty) {
+    throw new IllegalArgumentException("seeds cannot be empty")
   }
   
-  /// Dump all seeds into collection of untaken nodes with zero id
-  this.seeds.foreach(this.untaken += new Node(Integer160.zero, _))
+  // Dump all seeds into untaken
+  this.add(this.seeds)
 
   /**
    * Reports transaction completion bringing nodes, peers and token from response.
@@ -67,27 +73,33 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
    * @param token     A token distributed by queried node.
    */
   def report(reporter: Node, nodes: Traversable[Node], peers: Traversable[Peer], token: Token) = {
-
     // remove reporter from the collection of pending nodes
     // note that initially reporter may not be here at all
     this.pending -= reporter
 
-    // store reporter into collection of succeded nodes
-    this.succeeded += reporter
-
+    // don't add routers (nodes with zero id) into result
+    if (reporter.id != Integer160.zero) { 
+      // store reporter into collection of succeded nodes
+      this.succeeded += reporter
+    }
+    
     // store node->token association
     if (!token.isEmpty) this._tokens += reporter.id -> token
 
     // add reported peers to internal collection
     this._peers ++= peers
 
+    this.add(nodes)
+  }
+  
+  private def add(nodes: Traversable[Node]) {
     // add all unseen nodes in both `seen` and `untaken` collections
     nodes foreach { node =>
       if (!this.seen.contains(node)) {
         this.seen += node
         this.untaken += node
       }
-    }
+    }    
   }
 
   /**
@@ -109,6 +121,11 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
    *
    * Note that above means that [[org.abovobo.dht.Finder]] starts with [[org.abovobo.dht.Finder.State.Failed]]
    * state. It is responsibility of the owner of this object to handle this case.
+   * 
+   * XXX: FIXME: Update this logic, so it would wait for at least a round of pending requests, without this, we might often stop after first K responded nodes (on second round with alpha 3 and K 8, actually),
+   *    thou there might be closer responses from pending requests.
+   *    We can add "Pending" state which will not generate new requests nor finish recursion, until closer nodes are found or pending set is empty (or at least have less entries then current round 'width')
+   * 
    */
   def state =
     if (this.pending.isEmpty && this.untaken.isEmpty) {
@@ -116,8 +133,10 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
         Finder.State.Failed
       else 
         Finder.State.Succeeded
-    } else if (this.succeeded.size >= K && (this.untaken.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.untaken.head))) {
-     // XXX: wrong condition: 1) .head on possibly empty collection 2) there's no guarantee that take(K) will give expected results
+    } else if (this.succeeded.size >= K 
+                && (this.untaken.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.untaken.head))
+                && (this.pending.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.pending.head)) // at the time response from K-th node arrived all closer nodes might be pending already
+           ) {
       Finder.State.Succeeded
     } else {
       Finder.State.Continue
@@ -147,7 +166,7 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[InetSocketAddres
   def token(id: Integer160) = this._tokens.get(id)
 
   /** Returns map of tokens */
-  def tokens = this._tokens.toMap
+  def tokens: scala.collection.Map[Integer160, Token] = this._tokens
 
   /** Returns collection of peers */
   def peers: scala.collection.Traversable[Peer] = this._peers
