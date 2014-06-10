@@ -91,11 +91,11 @@ class Controller(val K: Int,
 
     case FindNode(target: Integer160) =>
       if (!this.recursions.contains(target)) {
-        this.recursions += target -> new Recursion(new Finder(target, this.K, klosest(this.alpha, target)), this.sender())
+        this.recursions += target -> new NodesFinder(this.sender(), target, this.K, klosest(this.alpha, target))
       }
-      val recursion = this.recursions(target)
+      val finder = this.recursions(target)
       val id = this.reader.id().get
-      recursion.finder.take(this.alpha).foreach { node =>
+      finder.take(this.alpha).foreach { node =>
         val query = new Query.FindNode(this.factory.next(), id, target)
         this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
         this.agent ! Agent.Send(query, node.address)
@@ -103,11 +103,11 @@ class Controller(val K: Int,
 
     case GetPeers(infohash: Integer160) =>
       if (!this.recursions.contains(infohash)) {
-        this.recursions += infohash -> new Recursion(new Finder(infohash, this.K, klosest(this.alpha, infohash)), this.sender())
+        this.recursions += infohash -> new PeersFinder(this.sender(), infohash, this.K, klosest(this.alpha, infohash))
       }
-      val recursion = this.recursions(infohash)
+      val finder = this.recursions(infohash)
       val id = this.reader.id().get
-      recursion.finder.take(this.alpha).foreach { node =>
+      finder.take(this.alpha).foreach { node =>
         val query = new Query.GetPeers(this.factory.next(), id, infohash)
         this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
         this.agent ! Agent.Send(query, node.address)
@@ -141,14 +141,14 @@ class Controller(val K: Int,
           this.table ! Table.Failed(transaction.remote)
           transaction.query match {
             case q: Query.FindNode =>
-              this.recursions.get(q.target).foreach { r =>
-                r.finder.fail(transaction.remote)
-                this.iterate(r)
+              this.recursions.get(q.target).foreach { finder =>
+                finder.fail(transaction.remote)
+                finder.iterate()
               }
             case q: Query.GetPeers =>
-              this.recursions.get(q.infohash).foreach { r =>
-                r.finder.fail(transaction.remote)
-                this.iterate(r)
+              this.recursions.get(q.infohash).foreach { finder =>
+                finder.fail(transaction.remote)
+                finder.iterate()
               }
             case _ => // do nothing for other queries
           }
@@ -188,14 +188,14 @@ class Controller(val K: Int,
               this.table ! Table.Received(transaction.remote, Message.Kind.Error)
               transaction.query match {
                 case q: Query.FindNode =>
-                  this.recursions.get(q.target).foreach { r =>
-                    r.finder.fail(transaction.remote)
-                    this.iterate(r)
+                  this.recursions.get(q.target).foreach { finder =>
+                    finder.fail(transaction.remote)
+                    finder.iterate()
                   }
                 case q: Query.GetPeers =>
-                  this.recursions.get(q.infohash).foreach { r =>
-                    r.finder.fail(transaction.remote)
-                    this.iterate(r)
+                  this.recursions.get(q.infohash).foreach { finder =>
+                    finder.fail(transaction.remote)
+                    finder.iterate()
                   }
                 case _ => // do nothing for other queries
               }
@@ -225,25 +225,25 @@ class Controller(val K: Int,
         transaction.requester ! Pinged()
       case fn: Response.FindNode =>
         this.recursions.get(transaction.query.asInstanceOf[Query.FindNode].target) match {
-          case Some(r) =>
-            r.finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
-            this.iterate(r)
+          case Some(finder) =>
+            finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
+            finder.iterate()
           case None =>
             this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
         }
       case gp: Response.GetPeersWithNodes =>
         this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
-          case Some(r) =>
-            r.finder.report(transaction.remote, gp.nodes, Nil, gp.token)
-            this.iterate(r)
+          case Some(finder) =>
+            finder.report(transaction.remote, gp.nodes, Nil, gp.token)
+            finder.iterate()
           case None =>
             this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
         }
       case gp: Response.GetPeersWithValues =>
         this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
-          case Some(r) =>
-            r.finder.report(transaction.remote, Nil, gp.values, gp.token)
-            this.iterate(r)
+          case Some(finder) =>
+            finder.report(transaction.remote, Nil, gp.values, gp.token)
+            finder.iterate()
           case None =>
             this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
         }
@@ -262,30 +262,6 @@ class Controller(val K: Int,
     }
   }
 
-  /**
-   * Checks current state of the [[org.abovobo.dht.Finder]] associated with given recursion
-   * and makes the next move depending on the state value.
-   *
-   * @param r Recursion instance to interate.
-   */
-  private def iterate(r: Recursion) = {
-    r.finder.state match {
-      case Finder.State.Failed =>
-        r.requester ! NotFound()
-        this.recursions -= r.finder.target
-      case Finder.State.Succeeded =>
-        r.requester ! Found(r.finder.nodes, r.finder.peers, r.finder.tokens)
-        this.recursions -= r.finder.target
-      case Finder.State.Continue =>
-        val id = this.reader.id().get
-        r.finder.take(this.alpha).foreach { node =>
-          val query = new Query.FindNode(this.factory.next(), id, r.finder.target)
-          this.transactions.put(query.tid, new Transaction(query, node, r.requester))
-          this.agent ! Agent.Send(query, node.address)
-        }
-    }
-  }
-  
   /// Initializes sibling `agent` actor reference
   private lazy val agent = Await.result(this.context.actorSelection("../agent").resolveOne(5 seconds), 6 seconds)
 
@@ -310,13 +286,45 @@ class Controller(val K: Int,
   private val transactions = new mutable.HashMap[TID, Transaction]
 
   /// Collection of pending recursive procedures
-  private val recursions = new mutable.HashMap[Integer160, Recursion]
+  private val recursions = new mutable.HashMap[Integer160, Finder]
   
   /// Routers nodes marked with zero IDs to avoid adding them to routing tables
   private val routersNodes = routers.map { ra => new Node(Integer160.zero, ra) }
   
   /// Active plugins
   private val plugins = new mutable.HashMap[Long, ActorRef]
+  
+  private abstract class AbstractFinder(val requester: ActorRef, target: Integer160, K: Int, seeds: Traversable[Node]) extends Finder(target, K, seeds) {
+    /**
+     * Checks current state of the [[org.abovobo.dht.Finder]] associated with given recursion
+     * and makes the next move depending on the state value.
+     */
+    def iterate() = this.state match {
+        case Finder.State.Failed =>
+          requester ! NotFound()
+          Controller.this.recursions -= this.target
+        case Finder.State.Succeeded =>
+          requester ! Found(this.nodes, this.peers, this.tokens)
+          Controller.this.recursions -= this.target
+        case Finder.State.Continue =>
+          val id = Controller.this.reader.id().get
+          this.take(Controller.this.alpha).foreach { node =>
+            val query = newQuery(Controller.this.factory.next(), id)
+            Controller.this.transactions.put(query.tid, new Transaction(query, node, requester))
+            Controller.this.agent ! Agent.Send(query, node.address)
+          }
+      }
+
+    def newQuery(tid: TID, id: Integer160): Query
+  }
+  
+  private class PeersFinder(requester: ActorRef, target: Integer160, K: Int, seeds: Traversable[Node]) extends AbstractFinder(requester, target, K, seeds) {
+    def newQuery(tid: TID, id: Integer160) = new Query.GetPeers(tid, id, this.target)
+  }
+  
+  private class NodesFinder(requester: ActorRef, target: Integer160, K: Int, seeds: Traversable[Node]) extends AbstractFinder(requester, target, K, seeds) {
+    def newQuery(tid: TID, id: Integer160) = new Query.FindNode(tid, id, this.target)
+  }
 }
 
 /** Accompanying object */
@@ -344,14 +352,6 @@ object Controller {
    * @param requester An actor which has requested this transaction to begin.
    */
   class Transaction(val query: Query, val remote: Node, val requester: ActorRef)
-
-  /**
-   * This class defines data associated with `find_node` or `get_peers` recursive procedure.
-   *
-   * @param finder    An instance of [[org.abovobo.dht.Finder]] which collects data.
-   * @param requester An original requester of this operation.
-   */
-  class Recursion(val finder: Finder, val requester: ActorRef)
 
   /** Base trait for all events handled or initiated by this actor */
   sealed trait Event

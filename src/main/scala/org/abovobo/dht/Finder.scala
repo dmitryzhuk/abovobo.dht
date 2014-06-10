@@ -21,7 +21,7 @@ import java.lang.IllegalArgumentException
  * @param target  A target 160-bit integer against which the find procedure is being ran.
  * @param K       A size of K-bucket used to calculate current state of finder.
  */
-class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
+abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
   
   /** 
    *  Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances. 
@@ -92,16 +92,6 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
     this.add(nodes)
   }
   
-  private def add(nodes: Traversable[Node]) {
-    // add all unseen nodes in both `seen` and `untaken` collections
-    nodes foreach { node =>
-      if (!this.seen.contains(node)) {
-        this.seen += node
-        this.untaken += node
-      }
-    }    
-  }
-
   /**
    * Indicates that given node failed to respond in timely manner.
    *
@@ -134,9 +124,8 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
       else 
         Finder.State.Succeeded
     } else if (this.succeeded.size >= K 
-                && (this.untaken.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.untaken.head))
-                && (this.pending.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.pending.head)) // at the time response from K-th node arrived all closer nodes might be pending already
-           ) {
+                && (this.untaken.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.untaken.head))) { 
+                // XXX: a) fix the case when we kill requests with pending closer nodes, b) fix case for GetPeers, when our goal is to get peers not nodes
       Finder.State.Succeeded
     } else {
       Finder.State.Continue
@@ -170,6 +159,18 @@ class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
 
   /** Returns collection of peers */
   def peers: scala.collection.Traversable[Peer] = this._peers
+  
+  def iterate(): Unit
+  
+  private def add(nodes: Traversable[Node]) {
+    // add all unseen nodes in both `seen` and `untaken` collections
+    nodes foreach { node =>
+      if (!this.seen.contains(node)) {
+        this.seen += node
+        this.untaken += node
+      }
+    }    
+  }
 }
 
 /** Accompanying object */
