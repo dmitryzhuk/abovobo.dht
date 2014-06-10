@@ -79,9 +79,9 @@ object DhtBuildingSmokeTest extends App {
     NodeSystem(ordinal, table, agent, controller, system, h2)
   }
 
-  val router = createNode(1)
+  val router = createNode(0)
 
-  val nodes = List(router) ++ (for (i <- 2 to 4) yield {
+  val nodes = List(router) ++ (for (i <- 1 to 3) yield {
     Thread.sleep(3 * 1000)
     createNode(i, List(router.endpoint))
   })

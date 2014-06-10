@@ -58,45 +58,45 @@ class Responder(K: Int,
    * @param query   A query to respond to.
    * @param remote  An address of the remote peer to send response to.
    */
-  def respond(query: Query, remote: InetSocketAddress): Agent.Send = query match {
+  def respond(query: Query, remote: Node): Agent.Send = query match {
     case ping: Query.Ping => this.ping(ping, remote)
     case fn: Query.FindNode => this.findNode(fn, remote)
     case gp: Query.GetPeers => this.getPeers(gp, remote)
-    case ap: Query.AnnouncePeer => this.announcePeer(ap, remote)
+    case ap: Query.AnnouncePeer => this.announcePeer(ap, remote.address)
   }
 
   /** Response to `ping` query */
-  private def ping(q: Query.Ping, remote: InetSocketAddress) = {
+  private def ping(q: Query.Ping, remote: Node) = {
     // simply send response `ping` message
-    Agent.Send(new Response.Ping(q.tid, this.id), remote)
+    Agent.Send(new Response.Ping(q.tid, this.id), remote.address)
   }
 
   /** Responds to `find_node` query */
-  private def findNode(q: Query.FindNode, remote: InetSocketAddress) = {
+  private def findNode(q: Query.FindNode, remote: Node) = {
     // get `K` closest nodes from own routing table
-    val nodes = this.reader.klosest(this.K, q.target)
+    val nodes = this.reader.klosest(this.K + 1, q.target).filter(_.id != remote.id).take(this.K)
     // now respond with proper message
-    Agent.Send(new Response.FindNode(q.tid, this.id, nodes), remote)
+    Agent.Send(new Response.FindNode(q.tid, this.id, nodes), remote.address)
   }
 
   /** Responds to `get_peers` query */
-  private def getPeers(q: Query.GetPeers, remote: InetSocketAddress) = {
+  private def getPeers(q: Query.GetPeers, remote: Node) = {
     // get current token to return to querier
     val token = this.tp.get
     // remember that we sent the token to this remote peer
-    this.tokens.get(remote).getOrElse(Nil) match {
-      case Nil => this.tokens.put(remote, List(token))
-      case l => this.tokens.put(remote, token :: l)
+    this.tokens.get(remote.address).getOrElse(Nil) match {
+      case Nil => this.tokens.put(remote.address, List(token))
+      case l => this.tokens.put(remote.address, token :: l)
     }
     // look for peers for the given infohash in the storage
     val peers = this.reader.peers(q.infohash)
     if (!peers.isEmpty) {
       // if there are peers found send them with response
-      Agent.Send(new Response.GetPeersWithValues(q.tid, id, token, peers.toSeq), remote)
+      Agent.Send(new Response.GetPeersWithValues(q.tid, id, token, peers.toSeq), remote.address)
     } else {
       // otherwise send closest K nodes
-      val nodes = this.reader.klosest(this.K, q.infohash)
-      Agent.Send(new Response.GetPeersWithNodes(q.tid, id, token, nodes), remote)
+      val nodes = this.reader.klosest(this.K + 1, q.infohash).filter(_.id != remote.id).take(this.K)
+      Agent.Send(new Response.GetPeersWithNodes(q.tid, id, token, nodes), remote.address)
     }
   }
 

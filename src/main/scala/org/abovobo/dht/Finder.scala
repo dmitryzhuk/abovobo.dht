@@ -55,12 +55,6 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
   /// Collection of peers reported by queried nodes
   private val _peers = new mutable.HashSet[Peer]
 
-  // ctor
-  
-  if (this.seeds.isEmpty) {
-    throw new IllegalArgumentException("seeds cannot be empty")
-  }
-  
   // Dump all seeds into untaken
   this.add(this.seeds)
 

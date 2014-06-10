@@ -163,8 +163,9 @@ class Controller(val K: Int,
         case query: Query =>
           // if query has been received
           // notify routing table and then delegate execution to `Responder`
-          this.table ! Table.Received(new Node(query.id, remote), Message.Kind.Query)
-          this.agent ! this.responder.respond(query, remote)
+          val node = new Node(query.id, remote)
+          this.table ! Table.Received(node, Message.Kind.Query)
+          this.agent ! this.responder.respond(query, node)
 
         case response: Response =>
           // if response has been received
@@ -172,9 +173,11 @@ class Controller(val K: Int,
           // delegate execution to private `process` method
           this.transactions.remove(response.tid) match {
             case Some(transaction) =>
-              //if (transaction.remote.id == Integer160.zero) throw new IllegalStateException
-              
-              this.table ! Table.Received(transaction.remote, Message.Kind.Response)
+              // don't notify table about routers activity
+              if (transaction.remote.id != Integer160.zero) {
+                /// XXX: handle case when node id is changed i.e. transaction.remote.id != response.id
+                this.table ! Table.Received(transaction.remote, Message.Kind.Response)
+              } 
               this.process(response, transaction)
             case None => // Error: invalid transaction
               this.log.error("Response message with invalid transaction: " + response)
