@@ -86,7 +86,7 @@ object DhtBuildingSmokeTest extends App {
     }
   }
 
-  nodes.foreach { case (_, n) => n ! DhtNode.Dispose }
+  nodes.foreach { case (_, n) => n ! DhtNode.Stop }
 
   Thread.sleep(3 * 1000)
   

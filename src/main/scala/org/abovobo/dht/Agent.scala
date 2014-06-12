@@ -100,7 +100,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
           this.log.debug("Starting transaction " + query.tid)
           this.queries.put(
             query.tid,
-            query -> system.scheduler.scheduleOnce(this.timeout)(self ! Agent.Timeout(query)))
+            query -> system.scheduler.scheduleOnce(this.timeout)(self ! Agent.Timeout(query, remote)))
         case _ => // do nothing
       }
       // send serialized message to remote address
@@ -108,7 +108,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
       socket ! Udp.Send(Agent.serialize(message), remote)
     }
     
-    case Agent.Timeout(q) => this.fail(q)  
+    case Agent.Timeout(q, r) => this.fail(q, r)  
     
     // `Udp.Unbind` command requested, forwarding to our socket
     case Udp.Unbind  => {
@@ -124,8 +124,8 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
    *
    * @param query A query which remote party failed to respond to in timely manner.
    */
-  private def fail(query: Query) = {
-    this.log.debug("Completing transaction " + query.tid + " by means of failure (timeout)")
+  private def fail(query: Query, remote: InetSocketAddress) = {
+    this.log.debug("Completing transaction " + query.tid + " by means of failure (timeout) for " + remote)
     this.queries.remove(query.tid).foreach { _._2.cancel() }
     this.controller ! Controller.Failed(query)
   }
@@ -166,7 +166,7 @@ object Agent {
    * 
    * @param query a query in question
    */
-  case class Timeout(query: Query) extends Command
+  case class Timeout(query: Query, remote: InetSocketAddress) extends Command
 
   /**
    * Represents exception which may happen during packet parsing process.

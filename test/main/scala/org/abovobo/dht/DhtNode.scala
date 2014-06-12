@@ -13,6 +13,7 @@
   import akka.actor.Props
   import akka.actor.ActorSystem
   import java.net.InetAddress
+  import akka.actor.PoisonPill
 
 class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) extends Actor {
   
@@ -31,15 +32,20 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   
   Thread.sleep(100) // allow to generate id
   
+  override def postStop() {
+    super.postStop()
+    h2.close()
+  }
+  
   override def receive() = {
-    case DhtNode.Dispose => h2.close()
+    case DhtNode.Stop => self ! PoisonPill
     case DhtNode.Describe => sender ! DhtNode.NodeInfo(new Node(reader.id.get, endpoint), controller, reader.nodes)
     case msg => this.controller.forward(msg)
   }
 }
 
 object DhtNode {
-  object Dispose
+  object Stop
   object Describe
   
   case class NodeInfo(self: Node, controller: ActorRef, nodes: Traversable[Node])
