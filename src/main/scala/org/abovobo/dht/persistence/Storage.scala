@@ -10,38 +10,23 @@
 
 package org.abovobo.dht.persistence
 
-import java.sql.{PreparedStatement, DriverManager, Connection}
+import java.sql.{PreparedStatement, Connection}
 import org.abovobo.jdbc.Transaction
 
 /**
  * Represetns abstract persistent storage.
  *
- * @param driver  JDBC [[java.sql.DriverManager]] class name.
- * @param uri     JDBC connection string.
- *
  * @author Dmitry Zhuk
  */
-abstract class Storage(val driver: String, val uri: String) extends AutoCloseable {
-
-  /**
-   * Loads actual [[java.sql.DriverManager]] class and gets connection to db,
-   * then calls <code>prepare</code> method to collect statements.
-   */
-  def open(): Unit = {
-    Class.forName(this.driver)
-    this.connection = DriverManager.getConnection(this.uri)
-    this.statements = this.prepare()
-  }
-
+abstract class Storage(val connection: Connection) extends AutoCloseable {
   /**
    * @inheritdoc
    *
-   * Really just closes all prepared connections and JDBC connection instance.
+   * Really just closes all prepared statements and JDBC connection instance.
    */
   override def close() = {
-    import org.abovobo.jdbc.Closer._
-    this.statements.foreach(_._2.dispose())
-    this.connection.dispose()
+    this.statements.foreach(_._2.close())
+    this.connection.close()
   }
 
   /** Delegates invocation to JDBC [[java.sql.Connection]] instance */
@@ -58,10 +43,10 @@ abstract class Storage(val driver: String, val uri: String) extends AutoCloseabl
   protected def prepare(): Map[String, PreparedStatement]
 
   /// An instance of connection
-  protected var connection: Connection = null
+  //protected var connection: Connection = null
 
   /// Collection of named and prepared statements
-  protected var statements: Map[String, PreparedStatement] = null
+  protected var statements: Map[String, PreparedStatement] = this.prepare()
 }
 
 

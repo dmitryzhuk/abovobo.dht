@@ -14,6 +14,7 @@ import akka.actor.{ActorSystem, ActorLogging, Actor}
 import akka.testkit.{ImplicitSender, TestKit}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.dht.persistence.{Writer, Reader, Storage, H2Storage}
+import org.abovobo.dht.persistence.H2DataSource
 
 /**
  * Unit test for [[org.abovobo.dht.Controller]]
@@ -26,7 +27,13 @@ class ControllerTest(system: ActorSystem)
   with BeforeAndAfterAll {
 
   def this() = this(ActorSystem("ControllerTest"))
-  private val h2 = new H2Storage("jdbc:h2:~/db/dht;SCHEMA=ipv4")
+  
+  override def afterAll() {
+    h2.close()
+  }
+  
+  private val dataSource = H2DataSource.open("jdbc:h2:~/db/dht;SCHEMA=ipv4", true)
+  private val h2 = new H2Storage(dataSource.getConnection)
 
   val storage: Storage = this.h2
   val reader: Reader = this.h2

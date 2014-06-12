@@ -19,47 +19,53 @@ import java.io.File
 import java.sql.DriverManager
 import org.h2.tools.RunScript
 import java.io.InputStreamReader
-import org.abovobo.arm._
+import java.sql.Connection
+import javax.sql.DataSource
+import org.h2.jdbcx.JdbcConnectionPool
+
+object H2DataSource {
+  def createDatabase(fsLocation: String): DataSource = {
+    import org.abovobo.jdbc.Closer._
+    import org.abovobo.arm._
+
+    Class.forName("org.h2.Driver")
+  
+    val dbFile = location2file(fsLocation)
+      
+    if (dbFile.exists) throw new IllegalArgumentException("File arlready exists")
+    
+    using(DriverManager.getConnection("jdbc:h2:" + fsLocation)) { connection =>
+      arm.using(this.getClass.getResourceAsStream("tables.sql")) { tablesDef => 
+        RunScript.execute(connection, new InputStreamReader(tablesDef))     
+      }  
+    }
+    
+    H2DataSource(fsLocation)
+  }
+    
+  def apply(fsLocation: String): DataSource = {
+    JdbcConnectionPool.create(createUrl(fsLocation), "", "")
+  }
+  
+  def open(fsLocation: String, createIfNotExists: Boolean = false): DataSource = {    
+    if (!location2file(fsLocation).exists && createIfNotExists) createDatabase(fsLocation) else H2DataSource(fsLocation) 
+  }
+
+  private def createUrl(fsLocation: String) = "jdbc:h2:" + fsLocation + ";SCHEMA=ipv4"
+
+  private def location2file(location: String) = new File((if (location.startsWith("~")) System.getProperty("user.home") + location.substring(1) else location) + ".h2.db")
+}
 
 object H2Storage {
-  
-  def create(fsLocation: String): H2Storage = {
-  	Class.forName("org.h2.Driver")
-  
-  	val dbFile = location2file(fsLocation)
-      
-  	if (dbFile.exists) throw new IllegalArgumentException("File arlready exists")
-  	
-  	val connection = DriverManager.getConnection("jdbc:h2:" + fsLocation)
-  
-  	arm.using(this.getClass.getResourceAsStream("tables.sql")) { tablesDef => 
-  		RunScript.execute(connection, new InputStreamReader(tablesDef))    	
-  	}
-  	
-  	H2Storage(fsLocation)
-  }
-  
-  def apply(fsLocation: String): H2Storage = {
-    new H2Storage("jdbc:h2:" + fsLocation + ";SCHEMA=ipv4")
-  }
-  
-  def open(fsLocation: String, createIfNotExists: Boolean = false): H2Storage = {    
-    val s = if (!location2file(fsLocation).exists && createIfNotExists) create(fsLocation) else H2Storage(fsLocation) 
-    s.open()
-    s
-  }
-  
-  private def location2file(location: String) = new File((if (location.startsWith("~")) System.getProperty("user.home") + location.substring(1) else location) + ".h2.db")
+  def apply(connection: Connection): H2Storage = new H2Storage(connection)  
 }
 
 /**
  * Actual implementation of [[org.abovobo.dht.persistence.Storage]] which uses H2.
  *
- * @param uri     JDBC connection string.
- *
  * @author Dmitry Zhuk
  */
-class H2Storage(uri: String) extends Storage("org.h2.Driver", uri) with Reader with Writer {
+class H2Storage(connection: Connection) extends Storage(connection) with Reader with Writer {
 
   /////////////////
   // READER METHODS

@@ -123,6 +123,7 @@ class Controller(val K: Int,
       // just forward message to agent for now.
       // maybe its possible to reuse plugins query->response style traffic for DHT state update
       // then, tid field and timeouts should be managed by this DHT Controller and Agent
+
       this.agent ! Agent.Send(message, node.address)
       
     case PutPlugin(pid, plugin) => 

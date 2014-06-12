@@ -16,6 +16,7 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.dht.persistence.{Writer, Reader, Storage, H2Storage}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
+import org.abovobo.dht.persistence.H2DataSource
 
 /**
  * Unit test for RoutingTable Actor
@@ -29,7 +30,8 @@ class TableTest(system: ActorSystem)
 
   def this() = this(ActorSystem("RoutingTableTest"))
 
-  private val h2 = new H2Storage("jdbc:h2:~/db/dht;SCHEMA=ipv4")
+  private val dataSource = H2DataSource.open("jdbc:h2:~/db/dht;SCHEMA=ipv4", true)
+  private val h2 = new H2Storage(dataSource.getConnection)
 
   val storage: Storage = this.h2
   val reader: Reader = this.h2
@@ -39,7 +41,6 @@ class TableTest(system: ActorSystem)
   lazy val node = new Node(Integer160.zero, new InetSocketAddress(0))
 
   override def beforeAll() = {
-    this.storage.open()
   }
 
   override def afterAll() = {
