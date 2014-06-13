@@ -3,11 +3,7 @@ package org.abovobo.dht
 import akka.actor.Actor
 import java.net.InetSocketAddress
 import org.abovobo.dht.persistence.H2Storage
-import org.abovobo.dht.persistence.Storage
-import org.abovobo.dht.persistence.Reader
-import org.abovobo.dht.persistence.Writer
 import akka.actor.actorRef2Scala
-import org.abovobo.integer.Integer160
 import scala.concurrent.duration._
 import akka.actor.ActorRef
 import akka.actor.Props
