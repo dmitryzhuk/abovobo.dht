@@ -53,7 +53,8 @@ object H2DataSource {
 
   private def createUrl(fsLocation: String) = "jdbc:h2:" + fsLocation + ";SCHEMA=ipv4"
 
-  private def location2file(location: String) = new File((if (location.startsWith("~")) System.getProperty("user.home") + location.substring(1) else location) + ".h2.db")
+  private def location2file(location: String) = 
+    new File((if (location.startsWith("~")) System.getProperty("user.home") + location.substring(1) else location).split(";")(0) + ".h2.db")
 }
 
 object H2Storage {
