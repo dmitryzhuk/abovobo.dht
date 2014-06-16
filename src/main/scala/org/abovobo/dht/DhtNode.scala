@@ -65,7 +65,7 @@ object DhtNode {
     val eps = for (i <- 1 until count) yield new InetSocketAddress(InetAddress.getLocalHost, portBase + i)
 
     Seq(routerEp -> router) ++ eps.map { ep => 
-      Thread.sleep(5 * 1000)
+      Thread.sleep(3 * 1000)
       ep -> createNode(system, ep, List(routerEp)) 
     }
   }

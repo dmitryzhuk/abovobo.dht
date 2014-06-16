@@ -37,7 +37,6 @@ import scala.concurrent.Await
 import akka.pattern.ask
 import akka.util.Timeout
 import scala.concurrent.duration._
-import org.abovobo.dht.DhtNode
 
 
 object DhtBuildingSmokeTest extends App {
