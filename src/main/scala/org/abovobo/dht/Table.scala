@@ -133,9 +133,9 @@ class Table(val K: Int,
     this.reader.id() match {
       case None     => this.reset()
       case Some(id) => {
-        
-        // AY: Sending first FindNode with delay to make batch nodes startup easier
-        system.scheduler.scheduleOnce(15 seconds, this.controller, Controller.FindNode(id))
+        this.controller ! Controller.FindNode(id)
+        //// AY: Sending first FindNode with delay to make batch nodes startup easier
+        //system.scheduler.scheduleOnce(15 seconds, this.controller, Controller.FindNode(id))
       
       }
     }

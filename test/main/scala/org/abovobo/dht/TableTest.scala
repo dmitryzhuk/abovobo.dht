@@ -17,6 +17,7 @@ import org.abovobo.dht.persistence.{Writer, Reader, Storage, H2Storage}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
 import org.abovobo.dht.persistence.H2DataSource
+import akka.actor.Inbox
 
 /**
  * Unit test for RoutingTable Actor
@@ -31,20 +32,21 @@ class TableTest(system: ActorSystem)
   def this() = this(ActorSystem("RoutingTableTest"))
 
   private val dataSource = H2DataSource.open("~/db/dht", true)
-  private val h2 = new H2Storage(dataSource.getConnection)
 
-  val storage: Storage = this.h2
-  val reader: Reader = this.h2
-  val writer: Writer = this.h2
+  val reader: H2Storage = new H2Storage(dataSource.getConnection)
+  val writer: H2Storage = new H2Storage(dataSource.getConnection)
+  
+  val controllerInbox = Inbox.create(system)
 
-  lazy val table = this.system.actorOf(Table.props(this.reader, this.writer, null), "table")
+  lazy val table = this.system.actorOf(Table.props(this.reader, this.writer, controllerInbox.getRef), "table")
   lazy val node = new Node(Integer160.zero, new InetSocketAddress(0))
 
   override def beforeAll() = {
   }
 
   override def afterAll() = {
-    this.storage.close()
+    reader.close()
+    writer.close()
     TestKit.shutdownActorSystem(this.system)
   }
 
