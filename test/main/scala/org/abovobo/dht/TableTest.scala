@@ -18,6 +18,7 @@ import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
 import org.abovobo.dht.persistence.H2DataSource
 import akka.actor.Inbox
+import scala.concurrent.duration._
 
 /**
  * Unit test for RoutingTable Actor
@@ -139,6 +140,22 @@ class TableTest(system: ActorSystem)
       }
     }
 
+    "50 messages received" must {
+      "split buckets" in {
+        for (i <- 0 until 50) {
+          val node = new Node(Integer160.random, new InetSocketAddress(0))
+          println(node.id)
+          table ! Table.Received(node, Message.Kind.Query)
+          expectMsgType[Table.Result](60.seconds) match {
+            case Table.Inserted(bucket) =>
+            case Table.Rejected =>
+            case Table.Split(was, now) =>
+          }
+        }
+      }
+    }
+
+    /*
     "multiple messages received" must {
       "split zero bucket and finally reject extra message" in {
         val start = Integer160.zero + 1
@@ -156,20 +173,7 @@ class TableTest(system: ActorSystem)
         this.reader.bucket(Integer160.zero) should have size 8
       }
     }
-
-    "40 messages received" must {
-      "split buckets adding 5 new ones" in {
-        val start = Integer160.maxval - 1
-        for (i <- 0 until 40) {
-          val node = new Node(start - i, new InetSocketAddress(0))
-          table ! Table.Received(node, Message.Kind.Query)
-          expectMsg(Table.Inserted)
-          //if (i % 7 == 0) {
-          //  expectMsg(Table.Split())
-          //}
-        }
-      }
-    }
+    */
   }
 
 }

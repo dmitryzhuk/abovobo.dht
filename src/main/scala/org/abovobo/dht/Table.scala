@@ -266,7 +266,7 @@ class Table(val K: Int,
    */
   private def insert(node: Node, kind: Message.Kind.Kind): Result = this.writer.transaction {
 
-    val buckets = this.reader.buckets().toArray
+    val buckets = this.reader.buckets().toArray.sortWith(_._1 < _._1)
 
     // get the bucket which is good for the given node
     val bucket = if (buckets.isEmpty) {
