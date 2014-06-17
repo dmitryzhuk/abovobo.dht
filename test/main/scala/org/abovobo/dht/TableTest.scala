@@ -154,6 +154,20 @@ class TableTest(system: ActorSystem)
         this.reader.bucket(Integer160.zero) should have size 8
       }
     }
+
+    "40 messages received" must {
+      "split buckets adding 5 new ones" in {
+        val start = Integer160.maxval - 1
+        for (i <- 0 until 40) {
+          val node = new Node(start - i, new InetSocketAddress(0))
+          table ! Table.Received(node, Message.Kind.Query)
+          expectMsg(Table.Inserted)
+          //if (i % 7 == 0) {
+          //  expectMsg(Table.Split())
+          //}
+        }
+      }
+    }
   }
 
 }
