@@ -33,11 +33,9 @@ class ControllerTest(system: ActorSystem)
   }
   
   private val dataSource = H2DataSource.open("~/db/dht", true)
-  private val h2 = new H2Storage(dataSource.getConnection)
 
-  val storage: Storage = this.h2
-  val reader: Reader = this.h2
-  val writer: Writer = this.h2
+  val reader: H2Storage = new H2Storage(dataSource.getConnection)
+  val writer: H2Storage = new H2Storage(dataSource.getConnection)
 
   val controller = this.system.actorOf(Controller.props(Nil, reader, writer))
 

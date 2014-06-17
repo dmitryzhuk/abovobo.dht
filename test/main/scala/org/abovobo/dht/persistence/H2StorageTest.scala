@@ -11,18 +11,17 @@ import java.net.{InetAddress, InetSocketAddress}
  */
 class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
   private val dataSource = H2DataSource.open("jdbc:h2:~/db/dht;SCHEMA=ipv4", true)
-  private val h2 = new H2Storage(dataSource.getConnection)
 
-  val storage: Storage = this.h2
-  val reader: Reader = this.h2
-  val writer: Writer = this.h2
+  val reader: H2Storage = new H2Storage(dataSource.getConnection)
+  val writer: H2Storage = new H2Storage(dataSource.getConnection)
 
   override def beforeAll() = {
   }
 
   override def afterAll() = {
-    this.storage.commit()
-    this.storage.close()
+    this.reader.close()
+    this.writer.commit()
+    this.writer.close()
   }
 
   "A storage" when {
