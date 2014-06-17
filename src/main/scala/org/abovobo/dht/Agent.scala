@@ -75,7 +75,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
       // parse received ByteString into a message instance
       val message = Agent.parse(data, this.queries.toMap map { pair => pair._1 -> pair._2._1 }) // XXX: pass a getter-function instead of new collection
       
-      log.debug("Agent <== received " + message)
+      //this.log.debug("Agent <== received " + message)
       
       // check if message completes pending transaction
       message match {
@@ -104,7 +104,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
         case _ => // do nothing
       }
       // send serialized message to remote address
-      this.log.debug("Agent ==> sending " + message)
+      //this.log.debug("Agent ==> sending " + message)
       socket ! Udp.Send(Agent.serialize(message), remote)
     }
     

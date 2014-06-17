@@ -30,7 +30,7 @@ class TableTest(system: ActorSystem)
 
   def this() = this(ActorSystem("RoutingTableTest"))
 
-  private val dataSource = H2DataSource.open("jdbc:h2:~/db/dht;SCHEMA=ipv4", true)
+  private val dataSource = H2DataSource.open("~/db/dht", true)
   private val h2 = new H2Storage(dataSource.getConnection)
 
   val storage: Storage = this.h2
