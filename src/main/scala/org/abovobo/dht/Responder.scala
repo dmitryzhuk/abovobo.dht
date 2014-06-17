@@ -35,22 +35,7 @@ class Responder(K: Int,
                 period: FiniteDuration,
                 lifetime: FiniteDuration,
                 reader: Reader,
-                writer: Writer,
-                scheduler: Scheduler,
-                ec: ExecutionContext)
-  extends AutoCloseable{
-
-  /**
-   * @inheritdoc
-   *
-   * Actually cancels timed task which cleans obsolete tokens and stops token provider.
-   */
-  override def close() = {
-    this.cleanupTokensTask.cancel()
-    this.cleanupPeersTask.cancel()
-    this.tp.stop
-  }
-
+                writer: Writer) {
   /**
    * Creates an instance of [[org.abovobo.dht.Response]] message which is appropriate to
    * an incoming [[org.abovobo.dht.Query]] message and sends it to given remote peer.
@@ -138,32 +123,27 @@ class Responder(K: Int,
   private def id = this.reader.id().get
 
   /**
-   * This method is executed periodically to cleanup `tokens` collection
-   * thus removing those token-peer association which has expired.
+   * This method is executed periodically to rotate tokens (generating a new one, preserving previous) and
+   * cleanup `tokens` collection thus removing those token-peer association which has expired.
    */
-  private def cleanupTokens() = this.tokens.keySet foreach { key =>
-    this.tokens.get(key).getOrElse(Nil).filter(this.tp.valid) match {
-      case Nil => this.tokens.remove(key)
-      case l => this.tokens.put(key, l)
+  def rotateTokens() = {
+    // first rotate
+    tp.rotate()
+    // then cleanup
+    this.tokens.keySet foreach { key =>
+      this.tokens.get(key).getOrElse(Nil).filter(this.tp.valid) match {
+        case Nil => this.tokens.remove(key)
+        case l => this.tokens.put(key, l)
+      }
     }
   }
 
   /** This method is executed periodically to remote expired infohash-peer associations */
-  private def cleanupPeers() =
+  def cleanupPeers() =
     this.writer.cleanup(this.lifetime)
 
-  /// Initializes token provider
-  private val tp = new TokenProvider(this.period, this.scheduler, this.ec)
+  private val tp = new TokenProvider
 
   /// Collection of remote peers which received tokens
   private val tokens = new mutable.HashMap[InetSocketAddress, List[Token]]
-
-  /// Periodic task which cleans up `tokens` collection
-  private val cleanupTokensTask =
-    this.scheduler.schedule(this.period, this.period * 2)(this.cleanupTokens())(this.ec)
-
-  /// Periodic task which cleans up `peers` persistent collection
-  private val cleanupPeersTask =
-    this.scheduler.schedule(Duration.Zero, this.lifetime)(this.cleanupPeers())(this.ec)
-
 }

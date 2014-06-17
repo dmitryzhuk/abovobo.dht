@@ -43,7 +43,9 @@ class Controller(val K: Int,
                  val reader: Reader,
                  val writer: Writer)
   extends Actor with ActorLogging {
-
+  
+  val system = context.system
+  import system.dispatcher
   import Controller._
   
   override def preStart() = {}
@@ -52,17 +54,7 @@ class Controller(val K: Int,
     log.warning("Restarting controller due to " + reason)
     // not calling preStart and sending messages again, facility makes actor restarting transparent
     //preStart()
-  }
-  
-  /**
-   * @inheritdoc
-   *
-   * Closes [[org.abovobo.dht.Responder]] instance.
-   */
-  override def postStop() = {
-    this.responder.close()
-  }
-  
+  }  
 
   /**
    * @inheritdoc
@@ -70,16 +62,11 @@ class Controller(val K: Int,
    * Implements handling of [[org.abovobo.dht.Controller]]-specific events and commands.
    */
   override def receive = {
-    
-    // To avoid "unhandled message" logging. TODO: do we need to process these messages:
-    
-    
-    case Updated =>
-      log.debug("table: updated")
-
-    case Inserted(id) =>
-      log.debug("table: inserted: " + id)
-          
+    // To avoid "unhandled message" logging. TODO: do we need to process these messages?        
+    case Table.Updated =>
+    case Table.Inserted(_) =>
+    case Table.Split(_, _) =>
+   
 
     // -- HANDLE COMMANDS
     // -- ---------------
@@ -131,6 +118,14 @@ class Controller(val K: Int,
     
     case RemovePlugin(pid) => 
       this.plugins.remove(pid.number)
+      
+    case RotateTokens =>
+      system.scheduler.scheduleOnce(this.period, self, RotateTokens)
+      responder.rotateTokens()
+
+    case CleanupPeers =>
+      system.scheduler.scheduleOnce(this.lifetime, self, CleanupPeers)
+      responder.cleanupPeers()      
 
     // -- HANDLE EVENTS
     // -- -------------
@@ -279,9 +274,10 @@ class Controller(val K: Int,
       this.period,
       this.lifetime,
       this.reader,
-      this.writer,
-      this.context.system.scheduler,
-      this.context.dispatcher)
+      this.writer)
+  
+  self ! RotateTokens
+  self ! CleanupPeers
 
   /// Instantiate transaction ID factory
   private val factory = TIDFactory.random
@@ -444,5 +440,7 @@ object Controller {
     
   case class PutPlugin(pid: Plugin.PID, plugin: ActorRef) extends Command
   case class RemovePlugin(pid: Plugin.PID) extends Command
-
+  
+  case object RotateTokens extends Command
+  case object CleanupPeers extends Command
 }
