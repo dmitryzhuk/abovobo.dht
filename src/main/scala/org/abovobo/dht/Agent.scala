@@ -75,7 +75,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
       // parse received ByteString into a message instance
       val message = Agent.parse(data, this.queries.toMap map { pair => pair._1 -> pair._2._1 }) // XXX: pass a getter-function instead of new collection
       
-      log.debug("Agent <== received " + message)
+      //this.log.debug("Agent <== received " + message)
       
       // check if message completes pending transaction
       message match {
@@ -104,7 +104,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
         case _ => // do nothing
       }
       // send serialized message to remote address
-      this.log.debug("Agent ==> sending " + message)
+      //this.log.debug("Agent ==> sending " + message)
       socket ! Udp.Send(Agent.serialize(message), remote)
     }
     
@@ -218,6 +218,11 @@ object Agent {
       case Bencode.Bytestring(value) => new String(value, "UTF-8")
       case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
+    
+    def byteString(event: Bencode.Event): ByteString = event match {
+      case Bencode.Bytestring(value) => ByteString(value) 
+      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")      
+    }
 
     def nodes(event: Bencode.Event): IndexedSeq[Node] = event match {
       case Bencode.Bytestring(value) =>
@@ -298,7 +303,7 @@ object Agent {
         case 'p' =>
           val id = integer160(dump(n - 9))
           val pid = new Plugin.PID(integer(dump(n - 8)))
-          val payload = array(dump(n - 7))
+          val payload = byteString(dump(n - 7))
           new PluginMessage(tid, id, pid, payload) {}
           
         case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown method")
@@ -414,7 +419,7 @@ object Agent {
           buf += 'l'
             buf += '2' += '0' += ':' ++= pluginMessage.id.toArray
             buf += 'i' ++= pluginMessage.pluginId.toString.getBytes("UTF-8") += 'e'
-            buf ++= pluginMessage.payloadBytes.length.toString.getBytes("UTF-8") += ':' ++= pluginMessage.payloadBytes
+            buf ++= pluginMessage.payload.length.toString.getBytes("UTF-8") += ':' ++= pluginMessage.payload
           buf += 'e'
           
       }

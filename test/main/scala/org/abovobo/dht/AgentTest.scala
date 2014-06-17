@@ -327,7 +327,7 @@ class AgentTest(system: ActorSystem)
       
 	      val tid = factory.next()
 	      val target = Integer160.random
-	      val message = new PluginMessage(tid, id = Integer160.maxval, pluginId = new Plugin.PID(0), payloadBytes = Array( '0', '1', '2', '3', '4' )) {}
+	      val message = new PluginMessage(tid, Integer160.maxval, new Plugin.PID(0), ByteString(Array[Byte]( '0', '1', '2', '3', '4'))) {}
 	      //new Query.FindNode(tid, id = Integer160.maxval, target = target)
 	      val packet: Array[Byte] = "d1:pl20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++ "i0e".getBytes("UTF-8") ++
 	    		  "5:01234e".getBytes("UTF-8") ++ "1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:pe".getBytes("UTF-8") 

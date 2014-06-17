@@ -132,7 +132,12 @@ class Table(val K: Int,
     // in any case initial FindNode will be issued to controller
     this.reader.id() match {
       case None     => this.reset()
-      case Some(id) => this.controller ! Controller.FindNode(id)
+      case Some(id) => {
+        this.controller ! Controller.FindNode(id)
+        //// AY: Sending first FindNode with delay to make batch nodes startup easier
+        //system.scheduler.scheduleOnce(15 seconds, this.controller, Controller.FindNode(id))
+      
+      }
     }
 
     // upon start also perform refresh procedure for every existing bucket

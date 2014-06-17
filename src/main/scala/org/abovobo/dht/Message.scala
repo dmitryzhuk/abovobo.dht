@@ -12,6 +12,7 @@ package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
 import org.abovobo.conversions.Bencode
+import akka.util.ByteString
 
 /**
  * Base abstract class defining general contract for any message which
@@ -311,7 +312,7 @@ object Response {
   }
 }
 
-abstract class PluginMessage(tid: TID, id: Integer160, val pluginId: Plugin.PID, val payloadBytes: Array[Byte]) extends Normal(tid, 'p', id) {
+abstract class PluginMessage(tid: TID, id: Integer160, val pluginId: Plugin.PID, val payload: ByteString) extends Normal(tid, 'p', id) {
   override def toString = "Plugin#" + pluginId + ": tid: " + tid + ", self: " + id
 }
 
