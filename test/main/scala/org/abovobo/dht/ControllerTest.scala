@@ -29,7 +29,8 @@ class ControllerTest(system: ActorSystem)
   def this() = this(ActorSystem("ControllerTest"))
   
   override def afterAll() {
-    h2.close()
+    reader.close()
+    writer.close()
   }
   
   private val dataSource = H2DataSource.open("~/db/dht", true)
