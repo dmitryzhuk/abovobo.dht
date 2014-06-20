@@ -235,11 +235,11 @@ class Table(val K: Int,
         if (kind == Kind.Query || kind == Kind.Response) {
           // insert new node only if event does not indicate error or failure
           val result = this.insert(node, kind)
-          this.log.info("Attempted insertion with result {}", result)
+          this.log.debug("Attempted insertion with result {}", result)
           result
         } else {
           // otherwise reject node
-          this.log.info("Rejected processing")
+          this.log.debug("Rejected processing")
           Rejected
         }
       case Some(pn) =>
