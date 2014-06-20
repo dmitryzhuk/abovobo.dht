@@ -58,7 +58,10 @@ object DhtBuildingSmokeTest extends App {
   val timeoutDuration = 10 seconds
   implicit val timeout = Timeout(timeoutDuration)
 
-  val nodes = DhtNode.spawnNodes(system, 20000, 30)
+  val nodes = DhtNode.spawnNodes(system, 20000, 30) { (ep, n) => 
+    Thread.sleep(500) 
+    ep -> n
+  }
   
   println("---------- waiting -------- ")
 
