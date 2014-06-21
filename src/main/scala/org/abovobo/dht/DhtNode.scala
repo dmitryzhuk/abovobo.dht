@@ -22,7 +22,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   val controller = this.context.actorOf(Controller.props(routers, storageC, storageC), "controller")
   val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")
   
-  Thread.sleep(100) // Agent needs time to bind a socket and become an agent
+  Thread.sleep(300) // Agent needs time to bind a socket and become an agent
 
   val table = this.context.actorOf(Table.props(storageT, storageT, controller), "table")
     
@@ -36,7 +36,13 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   
   override def receive() = {
     case DhtNode.Stop => self ! PoisonPill
-    case DhtNode.Describe => sender ! DhtNode.NodeInfo(new Node(storageD.id.get, endpoint), controller, storageD.nodes)
+    case DhtNode.Describe => {
+      if (storageD.id.isEmpty) {
+        this.context.system.scheduler.scheduleOnce(250 milliseconds, self, DhtNode.Describe)(this.context.system.dispatcher, sender())
+      } else {
+        sender ! DhtNode.NodeInfo(new Node(storageD.id.get, endpoint), controller, storageD.nodes)        
+      }
+    }
     case msg => this.controller.forward(msg)
   }
 }

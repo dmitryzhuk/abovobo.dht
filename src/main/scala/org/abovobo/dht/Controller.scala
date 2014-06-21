@@ -68,10 +68,7 @@ class Controller(val K: Int,
    */
   override def receive = {
     // To avoid "unhandled message" logging. TODO: do we need to process these messages?        
-    case Table.Updated =>
-    case Table.Inserted(_) =>
-    case Table.Split(_, _) =>
-   
+    case r: Table.Result =>   
 
     // -- HANDLE COMMANDS
     // -- ---------------
