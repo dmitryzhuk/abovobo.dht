@@ -334,7 +334,7 @@ class Table(val K: Int,
           // request ping operation for every questionnable node
           questionnable foreach { node => this.controller ! Controller.Ping(node) }
           // send deferred message to itself
-          system.scheduler.scheduleOnce(this.delay)(self.!(Received(node, kind))(this.sender()))
+          system.scheduler.scheduleOnce(this.delay, self, Received(node, kind))(this.context.dispatcher, this.sender())
           // notify caller that insertion has been deferred
           Deferred
         }
