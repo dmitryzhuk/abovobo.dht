@@ -1,38 +1,8 @@
 package org.abovobo.dht
 
-import java.net.InetSocketAddress
-import java.net.Inet4Address
-import java.net.InetAddress
-import scala.concurrent.duration.FiniteDuration
-import java.util.concurrent.TimeUnit
-import akka.actor.ActorSystem
-import scala.concurrent.duration._
-import akka.actor.Actor
-import akka.actor.ActorLogging
-import com.typesafe.config.Config
-import com.typesafe.config.impl.SimpleConfig
-import com.typesafe.config.ConfigObject
 import com.typesafe.config.ConfigFactory
-import collection.JavaConversions._
-import akka.actor.Inbox
-import akka.actor.Props
-import akka.actor.ActorDSL._
-import org.abovobo.dht.persistence.H2Storage
-import org.abovobo.dht.persistence.Storage
-import org.abovobo.dht.persistence.Reader
-import org.abovobo.dht.persistence.Writer
-import org.abovobo.arm.Disposable
-import akka.actor.ActorRef
 import org.abovobo.integer.Integer160
-import akka.actor.ActorDSL._
 import akka.actor.ActorSystem
-import scala.concurrent.duration._
-import java.util.concurrent.TimeoutException
-import akka.pattern.ask
-import akka.util.Timeout
-import scala.concurrent.Await
-import org.abovobo.dht.Controller.PutPlugin
-import akka.pattern.ask
 import scala.concurrent.Await
 import akka.pattern.ask
 import akka.util.Timeout
@@ -40,6 +10,8 @@ import scala.concurrent.duration._
 
 
 object DhtBuildingSmokeTest extends App {
+  import scala.collection.JavaConversions._
+
   val systemConfig = ConfigFactory.parseMap(Map(
       "akka.log-dead-letters" -> "true", 
       "akka.actor.debug.lifecycle" -> false,
@@ -55,7 +27,7 @@ object DhtBuildingSmokeTest extends App {
   val system = ActorSystem("TestSystem", systemConfig)
 
   
-  val timeoutDuration = 10 seconds
+  val timeoutDuration = 10.seconds
   implicit val timeout = Timeout(timeoutDuration)
 
   val nodes = DhtNode.spawnNodes(system, 20000, 30)

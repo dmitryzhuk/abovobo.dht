@@ -26,7 +26,6 @@ import org.h2.jdbcx.JdbcConnectionPool
 object H2DataSource {
   def createDatabase(fsLocation: String): DataSource = {
     import org.abovobo.jdbc.Closer._
-    import org.abovobo.arm._
 
     Class.forName("org.h2.Driver")
   
@@ -35,7 +34,7 @@ object H2DataSource {
     if (dbFile.exists) throw new IllegalArgumentException("File arlready exists")
     
     using(DriverManager.getConnection("jdbc:h2:" + fsLocation)) { connection =>
-      arm.using(this.getClass.getResourceAsStream("tables.sql")) { tablesDef => 
+      using(this.getClass.getResourceAsStream("tables.sql")) { tablesDef =>
         RunScript.execute(connection, new InputStreamReader(tablesDef))     
       }  
     }

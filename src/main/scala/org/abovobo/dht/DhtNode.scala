@@ -21,7 +21,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   val storageD: H2Storage = H2Storage(dataSource.getConnection) // node (self)
     
   val controller = this.context.actorOf(Controller.props(routers, storageC, storageC), "controller")
-  val agent = this.context.actorOf(Agent.props(endpoint, 10 seconds, controller), "agent")
+  val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")
   
   Thread.sleep(300) // Agent needs time to bind a socket and become an agent
 

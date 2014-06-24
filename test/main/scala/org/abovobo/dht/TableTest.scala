@@ -150,6 +150,7 @@ class TableTest(system: ActorSystem)
             case Table.Inserted(bucket) =>
             case Table.Rejected =>
             case Table.Split(was, now) =>
+            case _ => //
           }
         }
       }

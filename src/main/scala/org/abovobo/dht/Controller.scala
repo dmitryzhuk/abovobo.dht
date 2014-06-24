@@ -209,10 +209,9 @@ class Controller(val K: Int,
         case pm: PluginMessage =>
           this.plugins.get(pm.pluginId.number) match {
             case Some(plugin) => plugin ! Received(pm, remote)
-            case None => {
+            case None =>
               this.log.error("Error, message to non-existing plugin.")
               this.agent ! Agent.Send(new Error(pm.tid, Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
-            }
           }
       }
   }
@@ -267,10 +266,10 @@ class Controller(val K: Int,
   }
 
   /// Initializes sibling `agent` actor reference
-  private lazy val agent = Await.result(this.context.actorSelection("../agent").resolveOne(5 seconds), 6 seconds)
+  private lazy val agent = Await.result(this.context.actorSelection("../agent").resolveOne(5.seconds), 6.seconds)
 
   /// Initializes sibling `table` actor reference
-  private lazy val table = Await.result(this.context.actorSelection("../table").resolveOne(5 seconds), 6 seconds)
+  private lazy val table = Await.result(this.context.actorSelection("../table").resolveOne(5.seconds), 6.seconds)
   
   /// An instance of Responder to handle incoming queries
   private lazy val responder =
