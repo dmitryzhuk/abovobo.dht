@@ -19,6 +19,7 @@ import scala.concurrent.duration._
 import org.abovobo.dht.Table.Updated
 import org.abovobo.dht.Table.Inserted
 import scala.concurrent.Await
+import akka.actor.Cancellable
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -29,6 +30,7 @@ import scala.concurrent.Await
  * @param alpha     Number of concurrent lookup threads.
  * @param period    A period of rotating the token.
  * @param lifetime  A lifetime of the peer info.
+ * @param timeout   @see Actor.timeout
  * @param routers   A collection of addresses which can be used as inital seeds when own routing table is empty.
  * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
@@ -39,11 +41,14 @@ class Controller(val K: Int,
                  val alpha: Int,
                  val period: FiniteDuration,
                  val lifetime: FiniteDuration,
+                 val timeout: FiniteDuration,
                  val routers: Traversable[InetSocketAddress],
                  val reader: Reader,
                  val writer: Writer)
   extends Actor with ActorLogging {
-
+  
+  val system = context.system
+  import system.dispatcher
   import Controller._
   
   override def preStart() = {}
@@ -52,17 +57,11 @@ class Controller(val K: Int,
     log.warning("Restarting controller due to " + reason)
     // not calling preStart and sending messages again, facility makes actor restarting transparent
     //preStart()
-  }
+  }  
   
-  /**
-   * @inheritdoc
-   *
-   * Closes [[org.abovobo.dht.Responder]] instance.
-   */
-  override def postStop() = {
-    this.responder.close()
+  override def postStop() {
+    timerTasks.foreach(_.cancel)
   }
-  
 
   /**
    * @inheritdoc
@@ -70,16 +69,11 @@ class Controller(val K: Int,
    * Implements handling of [[org.abovobo.dht.Controller]]-specific events and commands.
    */
   override def receive = {
-    
-    // To avoid "unhandled message" logging. TODO: do we need to process these messages:
-    
-    
-    case Updated =>
-      log.debug("table: updated")
-
-    case Inserted(id) =>
-      log.debug("table: inserted: " + id)
-          
+    // To avoid "unhandled message" logging. TODO: do we need to process these messages?        
+    case Table.Updated =>
+    case Table.Inserted(_) =>
+    case Table.Split(_, _) =>
+   
 
     // -- HANDLE COMMANDS
     // -- ---------------
@@ -131,6 +125,12 @@ class Controller(val K: Int,
     
     case RemovePlugin(pid) => 
       this.plugins.remove(pid.number)
+      
+    case RotateTokens => responder.rotateTokens()
+
+    case CleanupPeers => responder.cleanupPeers()      
+      
+    case StopRecursion(target) => this.recursions.get(target).foreach(_.stopWaiting)
 
     // -- HANDLE EVENTS
     // -- -------------
@@ -209,9 +209,10 @@ class Controller(val K: Int,
         case pm: PluginMessage =>
           this.plugins.get(pm.pluginId.number) match {
             case Some(plugin) => plugin ! Received(pm, remote)
-            case None =>
+            case None => {
               this.log.error("Error, message to non-existing plugin.")
               this.agent ! Agent.Send(new Error(pm.tid, Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
+            }
           }
       }
   }
@@ -232,7 +233,7 @@ class Controller(val K: Int,
             finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
             finder.iterate()
           case None =>
-            this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
+            this.log.warning("For reply to mine message {} from {}: failed to match recursion for target {}", transaction.query.name, transaction.remote, transaction.query.asInstanceOf[Query.FindNode].target)
         }
       case gp: Response.GetPeersWithNodes =>
         this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
@@ -240,7 +241,7 @@ class Controller(val K: Int,
             finder.report(transaction.remote, gp.nodes, Nil, gp.token)
             finder.iterate()
           case None =>
-            this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
+            this.log.warning("For message {} from {}: failed to match recursion for target {}", transaction.query.name, transaction.remote, transaction.query.asInstanceOf[Query.FindNode].target)
         }
       case gp: Response.GetPeersWithValues =>
         this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
@@ -248,7 +249,7 @@ class Controller(val K: Int,
             finder.report(transaction.remote, Nil, gp.values, gp.token)
             finder.iterate()
           case None =>
-            this.log.error("Failed to match recursion for " + transaction.query.asInstanceOf[Query.FindNode].target)
+            this.log.warning("For message {} from {}: failed to match recursion for target {}", transaction.query.name, transaction.remote, transaction.query.asInstanceOf[Query.FindNode].target)
         }
       case ap: Response.AnnouncePeer =>
         transaction.requester ! PeerAnnounced()
@@ -266,10 +267,10 @@ class Controller(val K: Int,
   }
 
   /// Initializes sibling `agent` actor reference
-  private lazy val agent = Await.result(this.context.actorSelection("../agent").resolveOne(5.seconds), 6.seconds)
+  private lazy val agent = Await.result(this.context.actorSelection("../agent").resolveOne(15.seconds), 15.seconds)
 
   /// Initializes sibling `table` actor reference
-  private lazy val table = Await.result(this.context.actorSelection("../table").resolveOne(5.seconds), 6.seconds)
+  private lazy val table = Await.result(this.context.actorSelection("../table").resolveOne(15.seconds), 15.seconds)
   
   /// An instance of Responder to handle incoming queries
   private lazy val responder =
@@ -278,9 +279,11 @@ class Controller(val K: Int,
       this.period,
       this.lifetime,
       this.reader,
-      this.writer,
-      this.context.system.scheduler,
-      this.context.dispatcher)
+      this.writer)
+  
+  val timerTasks = 
+    system.scheduler.schedule(Duration.Zero, this.period, self, RotateTokens) ::
+    system.scheduler.schedule(this.lifetime, this.lifetime, self, CleanupPeers) :: Nil
 
   /// Instantiate transaction ID factory
   private val factory = TIDFactory.random
@@ -298,24 +301,62 @@ class Controller(val K: Int,
   private val plugins = new mutable.HashMap[Long, ActorRef]
   
   private abstract class AbstractFinder(val requester: ActorRef, target: Integer160, K: Int, seeds: Traversable[Node]) extends Finder(target, K, seeds) {
+    private var waitingForStopTask: Option[Cancellable] = None
+    
+    def stopWaiting() =
+      if (waitingForStopTask.isDefined) {
+        log.debug("Finishing recursion {} due to timeout", this.target)
+        waitingForStopTask = None
+        iterate(Finder.State.Succeeded)
+      } else {
+        // since then somebody replied and we'd reset state, lets wait again
+        scheduleWait()
+      }
+
     /**
      * Checks current state of the [[org.abovobo.dht.Finder]] associated with given recursion
      * and makes the next move depending on the state value.
      */
-    def iterate() = this.state match {
-        case Finder.State.Failed =>
-          requester ! NotFound()
-          Controller.this.recursions -= this.target
-        case Finder.State.Succeeded =>
-          requester ! Found(this.nodes, this.peers, this.tokens)
-          Controller.this.recursions -= this.target
-        case Finder.State.Continue =>
-          val id = Controller.this.reader.id().get
-          this.take(Controller.this.alpha).foreach { node =>
-            val query = newQuery(Controller.this.factory.next(), id)
-            Controller.this.transactions.put(query.tid, new Transaction(query, node, requester))
-            Controller.this.agent ! Agent.Send(query, node.address)
-          }
+    def iterate() { iterate(this.state) }
+    
+    private def iterate(s: Finder.State.Value): Unit = s match {
+      case Finder.State.Failed =>
+        log.debug("FindNode recursion for {} is finished with FAILURE", this.target)
+        cancelWait()
+        requester ! NotFound()
+        Controller.this.recursions -= this.target
+
+      case Finder.State.Succeeded =>
+        log.debug("FindNode recursion for {} is finished with success, nodes: {}", this.target, this.nodes.map { n => n.address }.mkString(", "))
+        cancelWait()
+        requester ! Found(this.nodes, this.peers, this.tokens)
+        Controller.this.recursions -= this.target
+
+      case Finder.State.Waiting =>
+        // possibly there are more untaken nodes but we made no new requests, just wait for timeout or pending requests to complete
+        if (waitingForStopTask.isEmpty) {
+          scheduleWait()
+        } 
+        
+      case Finder.State.Continue =>
+        val id = Controller.this.reader.id().get
+        this.take(Controller.this.alpha).foreach { node =>
+          val query = newQuery(Controller.this.factory.next(), id)
+          Controller.this.transactions.put(query.tid, new Transaction(query, node, requester))
+          Controller.this.agent ! Agent.Send(query, node.address)
+        }
+        cancelWait()
+    }
+    
+    private def scheduleWait() {
+      log.debug("Waiting for recursion for {} to be finished", this.target)
+      waitingForStopTask = Some(system.scheduler.scheduleOnce(timeout / 2, self, StopRecursion(this.target)))
+    }
+    
+    private def cancelWait() =
+      if (waitingForStopTask.isDefined) {
+        waitingForStopTask.get.cancel()
+        waitingForStopTask = None
       }
 
     def newQuery(tid: TID, id: Integer160): Query
@@ -338,14 +379,15 @@ object Controller {
             alpha: Int,
             period: FiniteDuration,
             lifetime: FiniteDuration,
+            timeout: FiniteDuration,
             routers: Traversable[InetSocketAddress],
             reader: Reader,
             writer: Writer) =
-    Props(classOf[Controller], K, alpha, period, lifetime, routers, reader, writer)
+    Props(classOf[Controller], K, alpha, period, lifetime, timeout, routers, reader, writer)
 
   /** Generates [[akka.actor.Props]] instance with most parameters set to their default values */
   def props(routers: Traversable[InetSocketAddress], reader: Reader, writer: Writer): Props =
-    this.props(8, 3, 5.minutes, 30.minutes, routers, reader, writer)
+    this.props(8, 3, 5.minutes, 30.minutes, 10.seconds, routers, reader, writer)
 
   /**
    * This class defines transaction data.
@@ -443,5 +485,11 @@ object Controller {
     
   case class PutPlugin(pid: Plugin.PID, plugin: ActorRef) extends Command
   case class RemovePlugin(pid: Plugin.PID) extends Command
-
+  
+  trait SelfCommand extends Command
+  
+  case object RotateTokens extends SelfCommand
+  case object CleanupPeers extends SelfCommand
+  
+  case class StopRecursion(target: Integer160) extends SelfCommand
 }

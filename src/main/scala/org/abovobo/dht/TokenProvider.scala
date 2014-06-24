@@ -18,7 +18,7 @@ import org.abovobo.integer.Integer160
 /**
  * This class is responsible for providing tokens and checking token validity.
  */
-class TokenProvider(period: FiniteDuration, scheduler: Scheduler, ec: ExecutionContext) {
+class TokenProvider {
 
   /** Returns current token */
   def get: Token = this.tokens(0)
@@ -31,20 +31,14 @@ class TokenProvider(period: FiniteDuration, scheduler: Scheduler, ec: ExecutionC
    */
   def valid(token: Token): Boolean = this.tokens(0).sameElements(token) || this.tokens(1).sameElements(token)
 
-  /** Cancels periodic task which rotates token array */
-  def stop = this.task.cancel()
-
   /** Rotates array of tokens generating new one */
-  private def next() = {
+  def rotate() = {
     this.tokens(1) = this.tokens(0)
     this.tokens(0) = Integer160.random.toArray
   }
 
   /** Array of currently valid tokens. */
   private val tokens: Array[Token] = Array[Token](Integer160.zero.toArray, Integer160.zero.toArray)
-
-  /** Periodic task which changes current token */
-  private val task = this.scheduler.schedule(Duration.Zero, period)(this.next())(this.ec)
 }
 
 

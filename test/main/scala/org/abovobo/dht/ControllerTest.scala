@@ -29,16 +29,15 @@ class ControllerTest(system: ActorSystem)
   def this() = this(ActorSystem("ControllerTest"))
   
   override def afterAll() {
-    reader.close()
-    writer.close()
+    storage.close()
   }
   
   private val dataSource = H2DataSource.open("~/db/dht", true)
 
-  val reader: H2Storage = new H2Storage(dataSource.getConnection)
-  val writer: H2Storage = new H2Storage(dataSource.getConnection)
+  val storage = new H2Storage(dataSource.getConnection)
+  val reader = storage
+  val writer = storage
 
   val controller = this.system.actorOf(Controller.props(Nil, reader, writer))
-
 }
 

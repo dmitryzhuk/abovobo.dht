@@ -119,8 +119,13 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
         Finder.State.Succeeded
     } else if (this.succeeded.size >= K 
                 && (this.untaken.isEmpty || this.ordering.lteq(this.succeeded.take(this.K).last, this.untaken.head))) { 
-                // XXX: a) fix the case when we kill requests with pending closer nodes, b) fix case for GetPeers, when our goal is to get peers not nodes
-      Finder.State.Succeeded
+                // XXX: 
+                // DONE: a) fix the case when we kill requests with pending closer nodes, 
+                // TODO: b) fix case for GetPeers, when our goal is to get peers not nodes
+
+      // Means we've got some results, but there are unanswered nodes, with possibly better results. 
+      // So we can wait for some timeout or some activity from them with better results
+      Finder.State.Waiting
     } else {
       Finder.State.Continue
     }
@@ -156,6 +161,8 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
   
   def iterate(): Unit
   
+  def stopWaiting(): Unit
+  
   private def add(nodes: Traversable[Node]) {
     // add all unseen nodes in both `seen` and `untaken` collections
     nodes foreach { node =>
@@ -172,7 +179,11 @@ object Finder {
 
   /** Defines enumeration of possible [[org.abovobo.dht.Finder]] states */
   object State extends Enumeration {
-    val Continue, Succeeded, Failed = Value
+    val Continue,   // our search should continue 
+        Waiting,    // we've got enough results but there are hanging requests
+        Succeeded,  // search is finished with results
+        Failed      // search is finished without results
+          = Value
   }
 
 }

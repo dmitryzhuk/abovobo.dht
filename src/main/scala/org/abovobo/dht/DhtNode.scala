@@ -14,7 +14,7 @@ import org.abovobo.dht.persistence.H2DataSource
 
 class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) extends Actor {
   
-  val dataSource = H2DataSource.open("~/db/dht-" + self.path.name + ";TRACE_LEVEL_FILE=2", true)
+  val dataSource = H2DataSource.open("~/db/dht-" + self.path.name, true)
   
   val storageC: H2Storage = H2Storage(dataSource.getConnection) // controller
   val storageT: H2Storage = H2Storage(dataSource.getConnection) // table
@@ -23,7 +23,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   val controller = this.context.actorOf(Controller.props(routers, storageC, storageC), "controller")
   val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")
   
-  Thread.sleep(300) // Agent needs time to bind a socket and become an agent
+  Thread.sleep(100) // Agent needs time to bind a socket and become an agent
 
   val table = this.context.actorOf(Table.props(storageT, storageT, controller), "table")
     
@@ -50,13 +50,12 @@ object DhtNode {
   
   def props(endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()) = 
     Props(classOf[DhtNode], endpoint, routers)
-
     
   def createNode(system: ActorSystem, endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()): ActorRef = {
     system.actorOf(DhtNode.props(endpoint, routers), "Node-" + endpoint.getPort)
-  }    
+  }
     
-  def spawnNodes(system: ActorSystem, portBase: Int, count: Int): Seq[(InetSocketAddress, ActorRef)] = {
+  def spawnNodes[A](system: ActorSystem, portBase: Int, count: Int)(f: (InetSocketAddress, ActorRef) => A): Seq[A] = {
     
     val routerEp = new InetSocketAddress(InetAddress.getLocalHost, portBase)
         
@@ -64,9 +63,8 @@ object DhtNode {
     
     val eps = for (i <- 1 until count) yield new InetSocketAddress(InetAddress.getLocalHost, portBase + i)
 
-    Seq(routerEp -> router) ++ eps.map { ep => 
-      Thread.sleep(1 * 1000)
-      ep -> createNode(system, ep, List(routerEp)) 
+    Seq(f(routerEp, router)) ++ eps.map { ep => 
+      f(ep, createNode(system, ep, List(routerEp)))
     }
   }
 }

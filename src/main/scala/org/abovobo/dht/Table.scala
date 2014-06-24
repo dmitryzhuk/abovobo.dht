@@ -133,10 +133,9 @@ class Table(val K: Int,
     this.reader.id() match {
       case None     => this.reset()
       case Some(id) => {
-        this.controller ! Controller.FindNode(id)
-        //// AY: Sending first FindNode with delay to make batch nodes startup easier
-        //system.scheduler.scheduleOnce(15 seconds, this.controller, Controller.FindNode(id))
-      
+        //this.controller ! Controller.FindNode(id)
+        // AY: Sending first FindNode with delay to make batch nodes startup easier
+        system.scheduler.scheduleOnce(15.seconds, this.controller, Controller.FindNode(id))
       }
     }
 
@@ -236,11 +235,11 @@ class Table(val K: Int,
         if (kind == Kind.Query || kind == Kind.Response) {
           // insert new node only if event does not indicate error or failure
           val result = this.insert(node, kind)
-          this.log.info("Attempted insertion with result {}", result)
+          this.log.debug("Attempted insertion with result {}", result)
           result
         } else {
           // otherwise reject node
-          this.log.info("Rejected processing")
+          this.log.debug("Rejected processing")
           Rejected
         }
       case Some(pn) =>
@@ -335,7 +334,7 @@ class Table(val K: Int,
           // request ping operation for every questionnable node
           questionnable foreach { node => this.controller ! Controller.Ping(node) }
           // send deferred message to itself
-          system.scheduler.scheduleOnce(this.delay)(self.!(Received(node, kind))(this.sender()))
+          system.scheduler.scheduleOnce(this.delay, self, Received(node, kind))(this.context.dispatcher, this.sender())
           // notify caller that insertion has been deferred
           Deferred
         }
