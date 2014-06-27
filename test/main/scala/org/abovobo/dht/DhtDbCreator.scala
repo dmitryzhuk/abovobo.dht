@@ -16,7 +16,7 @@ object DhtDbCreator extends App {
 	  println("deleted existing " + dbFile)
 	}
 	val connection = DriverManager.getConnection("jdbc:h2:" + path)
-	RunScript.execute(connection, new FileReader("tables.sql"))    
+	RunScript.execute(connection, new FileReader("tables.sql"))
 	println("db created at " + dbFile)
   }
   

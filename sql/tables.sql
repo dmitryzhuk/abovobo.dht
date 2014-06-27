@@ -1,3 +1,5 @@
+drop all objects;
+
 create schema ipv4;
 create schema ipv6;
 

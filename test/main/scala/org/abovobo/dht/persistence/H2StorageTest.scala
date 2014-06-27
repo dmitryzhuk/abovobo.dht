@@ -5,14 +5,19 @@ import org.abovobo.dht.{Message, Node}
 import org.abovobo.integer.Integer160
 import java.sql.SQLException
 import java.net.{InetAddress, InetSocketAddress}
+import org.abovobo.jdbc.Closer._
 
 /**
  * Unit test for H2 Storage implementation
  */
 class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
-  private val dataSource = H2DataSource.open("~/db/dht", true)
 
-  val storage = new H2Storage(dataSource.getConnection)
+  val ds = using(this.getClass.getResourceAsStream("/tables.sql")) { is: java.io.InputStream =>
+    using(new java.io.InputStreamReader(is)) { reader =>
+      H2DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4", reader)
+    }
+  }
+  val storage = new H2Storage(ds.connection)
   val reader = storage
   val writer = storage
 
@@ -20,8 +25,8 @@ class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
   }
 
   override def afterAll() = {
-    storage.commit()
-    storage.close()
+    this.storage.commit()
+    this.storage.close()
   }
 
   "A storage" when {

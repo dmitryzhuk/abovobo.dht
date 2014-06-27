@@ -24,10 +24,7 @@ import java.lang.IllegalArgumentException
 abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
   
   /** 
-   *  Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances. 
-   *
-   *  XXX: we're loosing nodes which have same distance to the target but different IDs, but due to huge values domain such collisions shoudln't be a problem
-   *  
+   * Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances.
    */
   implicit val ordering = new scala.math.Ordering[Node] {
     override def compare(x: Node, y: Node): Int = {

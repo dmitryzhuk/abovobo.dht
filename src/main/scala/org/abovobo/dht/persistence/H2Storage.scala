@@ -12,53 +12,10 @@ package org.abovobo.dht.persistence
 
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.{Peer, Message, PersistentNode, Node}
-import Message.Kind._
+import Message.Kind.Kind
 import org.abovobo.jdbc.Transaction
 import scala.concurrent.duration.FiniteDuration
-import java.io.File
-import java.sql.DriverManager
-import org.h2.tools.RunScript
-import java.io.InputStreamReader
 import java.sql.Connection
-import javax.sql.DataSource
-import org.h2.jdbcx.JdbcConnectionPool
-
-object H2DataSource {
-  def createDatabase(fsLocation: String): DataSource = {
-    import org.abovobo.jdbc.Closer._
-
-    Class.forName("org.h2.Driver")
-  
-    val dbFile = location2file(fsLocation)
-      
-    if (dbFile.exists) throw new IllegalArgumentException("File arlready exists")
-    
-    using(DriverManager.getConnection("jdbc:h2:" + fsLocation)) { connection =>
-      using(this.getClass.getResourceAsStream("tables.sql")) { tablesDef =>
-        RunScript.execute(connection, new InputStreamReader(tablesDef))     
-      }  
-    }
-    
-    H2DataSource(fsLocation)
-  }
-    
-  def apply(fsLocation: String): DataSource = {
-    JdbcConnectionPool.create(createUrl(fsLocation), "", "")
-  }
-  
-  def open(fsLocation: String, createIfNotExists: Boolean = false): DataSource = {    
-    if (!location2file(fsLocation).exists && createIfNotExists) createDatabase(fsLocation) else H2DataSource(fsLocation) 
-  }
-
-  private def createUrl(fsLocation: String) = "jdbc:h2:" + fsLocation + ";SCHEMA=ipv4"
-
-  private def location2file(location: String) = 
-    new File((if (location.startsWith("~")) System.getProperty("user.home") + location.substring(1) else location).split(";")(0) + ".h2.db")
-}
-
-object H2Storage {
-  def apply(connection: Connection): H2Storage = new H2Storage(connection)  
-}
 
 /**
  * Actual implementation of [[org.abovobo.dht.persistence.Storage]] which uses H2.
@@ -172,4 +129,5 @@ class H2Storage(connection: Connection) extends Storage(connection) with Reader 
       "deletePeer" -> c.prepareStatement("delete from peer where infohash=? and address=?"),
       "cleanupPeers" -> c.prepareStatement("delete from peer where dateadd('SECOND', ?, announced) < now()"))
   }
+
 }

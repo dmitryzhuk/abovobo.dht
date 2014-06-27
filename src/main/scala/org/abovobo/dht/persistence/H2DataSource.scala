@@ -1,0 +1,59 @@
+/**
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
+ */
+
+package org.abovobo.dht.persistence
+
+import javax.sql.DataSource
+import org.h2.jdbcx.JdbcConnectionPool
+import org.abovobo.jdbc.Closer._
+import java.sql.Connection
+import org.h2.tools.RunScript
+
+object H2DataSource {
+
+  /// Load JDBC drier
+  Class.forName("org.h2.Driver")
+
+  /**
+   * Instantiates connection pool at given URL and wraps it with new instance of [[H2DataSource]].
+   *
+   * @param url An URL to create connection pool at.
+   * @return new instance of [[H2DataSource]]
+   */
+  def apply(url: String): H2DataSource = new H2DataSource(JdbcConnectionPool.create(url, "", ""))
+
+  /**
+   * Instantiates connection pool at given URL and wraps it with new instance of [[H2DataSource]]
+   * and executes given script.
+   *
+   * @param url An URL to create connection pool at.
+   * @param script A script to execute.
+   * @return new instance of [[H2DataSource]]
+   */
+  def apply(url: String, script: java.io.Reader): H2DataSource = {
+    val source = this.apply(url)
+    using(source.connection) { connection: Connection =>
+      RunScript.execute(connection, script)
+    }
+    source
+  }
+}
+
+/**
+ * Represents wrapper over the [[javax.sql.DataSource]].
+ *
+ * @param ds An instance of [[javax.sql.DataSource]] to wrap.
+ */
+class H2DataSource(val ds: DataSource) {
+
+  /** Returns new connection from given [[javax.sql.DataSource]] */
+  def connection = this.ds.getConnection
+
+}

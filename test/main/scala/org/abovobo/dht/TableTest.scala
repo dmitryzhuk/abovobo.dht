@@ -13,10 +13,9 @@ package org.abovobo.dht
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
-import org.abovobo.dht.persistence.{Writer, Reader, Storage, H2Storage}
+import org.abovobo.dht.persistence.{H2DataSource, H2Storage}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
-import org.abovobo.dht.persistence.H2DataSource
 import akka.actor.Inbox
 import scala.concurrent.duration._
 
@@ -32,22 +31,29 @@ class TableTest(system: ActorSystem)
 
   def this() = this(ActorSystem("RoutingTableTest"))
 
-  private val dataSource = H2DataSource.open("~/db/dht", true)
+  private val ds = H2DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
+  private val h2 = new H2Storage(ds.connection)
+  private val reader = h2
 
-  val reader: H2Storage = new H2Storage(dataSource.getConnection)
-  val writer: H2Storage = new H2Storage(dataSource.getConnection)
-  
   val controllerInbox = Inbox.create(system)
 
-  lazy val table = this.system.actorOf(Table.props(this.reader, this.writer, controllerInbox.getRef), "table")
+  lazy val table = this.system.actorOf(Table.props(
+      K = 8,
+      timeout = 60.seconds,
+      delay = 30.seconds,
+      threshold = 3,
+      reader = this.h2,
+      writer = this.h2,
+      controller = controllerInbox.getRef()),
+    "table")
   lazy val node = new Node(Integer160.zero, new InetSocketAddress(0))
 
   override def beforeAll() = {
+    // Do nothing
   }
 
   override def afterAll() = {
-    reader.close()
-    writer.close()
+    h2.close()
     TestKit.shutdownActorSystem(this.system)
   }
 
@@ -140,41 +146,57 @@ class TableTest(system: ActorSystem)
       }
     }
 
-    "50 messages received" must {
-      "split buckets" in {
-        for (i <- 0 until 50) {
-          val node = new Node(Integer160.random, new InetSocketAddress(0))
-          println(node.id)
+    "table is being filled with nodes" must {
+      "have like a whole lot of them in the end :)" in {
+
+        // Delete previously added node from the table
+        this.h2.delete(this.node.id)
+        this.h2.commit()
+
+        // start with 1 as a node id and 0 as an initial bucket
+        var start = Integer160.zero + 1
+        var bucket = Integer160.zero
+        var repeat = true
+
+        while (repeat) {
+          // insert 8 nodes assuming they will be put into a current bucket
+          for (i <- 0 to 7) {
+            val node = new Node(start + i, new InetSocketAddress(0))
+            table ! Table.Received(node, Message.Kind.Query)
+            expectMsg(Table.Inserted(bucket))
+          }
+
+          // try to insert 9th node which must cause
+          // -- pair of messages Split, Reject if there is a more space for nodes in the table
+          // -- single Reject message if there is no room to split buckets further
+          val node = new Node(start + 8, new InetSocketAddress(0))
           table ! Table.Received(node, Message.Kind.Query)
-          expectMsgType[Table.Result](60.seconds) match {
-            case Table.Inserted(bucket) =>
-            case Table.Rejected =>
+          expectMsgType[Table.Result] match {
             case Table.Split(was, now) =>
-            case _ => //
+              bucket = now
+              start = bucket
+              expectMsg(Table.Rejected)
+            case Table.Rejected =>
+              repeat = false
+            case _ =>
+              this.fail("Unexpected table behaviour")
           }
         }
+
+        this.reader.buckets() should have size 157
+        this.reader.nodes() should have size 8 * 157
       }
     }
 
-    /*
-    "multiple messages received" must {
-      "split zero bucket and finally reject extra message" in {
-        val start = Integer160.zero + 1
-        for (i <- 0 to 6) {
-          val node = new Node(start + i, new InetSocketAddress(0))
-          table ! Table.Received(node, Message.Kind.Query)
-          expectMsg(Table.Inserted(Integer160.zero))
+    "after timeout expires table" must {
+      "send Refresh events and cause FindNode received by Controller" in {
+        this.controllerInbox.receive(60.seconds) match {
+          case Controller.FindNode(target) =>
+            for (i <- 0 until 160) this.controllerInbox.receive(1.second)
+          case _ => this.fail("Unexpected message to controller")
         }
-        val node = new Node(start + 7, new InetSocketAddress(0))
-        table ! Table.Received(node, Message.Kind.Query)
-        expectMsg(Table.Split(Integer160.zero, Integer160.maxval >> 1))
-        expectMsg(Table.Rejected)
-        this.reader.buckets() should have size 2
-        this.reader.nodes() should have size 8
-        this.reader.bucket(Integer160.zero) should have size 8
       }
     }
-    */
   }
 
 }

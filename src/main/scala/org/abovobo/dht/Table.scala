@@ -85,17 +85,18 @@ import akka.actor.ActorRef
  *
  * // --
  *
- * @constructor     Creates new instance of routing table with provided parameters.
+ * @constructor      Creates new instance of routing table with provided parameters.
  *
- * @param K         Max number of entries per bucket.
- * @param timeout   Time interval before bucket becomes inactive or node becomes questionable.
- *                  In documentation above it is 15 minutes.
- * @param delay     A delay before deferred message must be redelivered to self.
- *                  This duration must normally be a bit longer when waiting node
- *                  reply timeout.
- * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
- * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
- * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+ * @param K          Max number of entries per bucket.
+ * @param timeout    Time interval before bucket becomes inactive or node becomes questionable.
+ *                   In documentation above it is 15 minutes.
+ * @param delay      A delay before deferred message must be redelivered to self.
+ *                   This duration must normally be a bit longer when waiting node
+ *                   reply timeout.
+ * @param threshold  Number of times a node must fail to respond before being marked as 'bad'.
+ * @param reader     Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
+ * @param writer     Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+ * @param controller An instance of [[ActorRef]] of [[Controller]] actor.
  *
  * @author Dmitry Zhuk
  */
@@ -132,11 +133,10 @@ class Table(val K: Int,
     // in any case initial FindNode will be issued to controller
     this.reader.id() match {
       case None     => this.reset()
-      case Some(id) => {
+      case Some(id) =>
         //this.controller ! Controller.FindNode(id)
         // AY: Sending first FindNode with delay to make batch nodes startup easier
         system.scheduler.scheduleOnce(15.seconds, this.controller, Controller.FindNode(id))
-      }
     }
 
     // upon start also perform refresh procedure for every existing bucket
@@ -308,7 +308,7 @@ class Table(val K: Int,
             this.writer.insert(b)
             // move nodes appropriately
             nodes.filter(_.id >= b) foreach { node => this.writer.move(node, b) }
-            // send message to itself
+            // send message to itself preserving original sender
             self.!(Received(node, kind))(this.sender())
             // notify caller that insertion has been deferred
             Split(bucket._1, b)
@@ -382,6 +382,7 @@ object Table {
    * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
    * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
    * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+   * @param controller An instance of [[ActorRef]] of [[Controller]] actor.
    *
    * @return          Properly configured Actor Props instance.
    */
@@ -394,25 +395,12 @@ object Table {
    *
    * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
    * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+   * @param controller An instance of [[ActorRef]] of [[Controller]] actor.
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(reader: Reader, writer: Writer, controller: ActorRef): Props = this.props(8, 15.minutes, 30.seconds, 3, reader, writer, controller)
-
-  /**
-   * This enumeration defines four possible outcomes of touching the node:
-   *
-   * 1. Inserted for new node, Updated if node already existed in the table.
-   * 2. Replaced for the case when new node replaced existing bad node.
-   * 3. Updated for the case when existing node information and time stamp updated.
-   * 4. Rejected for the new node when there was no room in the table for it.
-   * 5. Deferred for the case when node processing has been deffered until some
-   *    checks with existing questionable nodes are done.
-   */
-  /*object Result extends Enumeration {
-    type Result = Value
-    val Inserted, Replaced, Updated, Rejected, Deferred = Value
-  }*/
+  def props(reader: Reader, writer: Writer, controller: ActorRef): Props =
+    this.props(8, 15.minutes, 30.seconds, 3, reader, writer, controller)
 
   /**
    * Basic trait for all possible outcomes of Table operation.

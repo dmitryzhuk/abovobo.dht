@@ -10,8 +10,7 @@
 
 package org.abovobo.dht.persistence
 
-import java.sql.{PreparedStatement, Connection}
-import org.abovobo.jdbc.Transaction
+import java.sql.{Connection, PreparedStatement}
 
 /**
  * Represetns abstract persistent storage.

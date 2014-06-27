@@ -10,15 +10,14 @@ import akka.actor.Props
 import akka.actor.ActorSystem
 import java.net.InetAddress
 import akka.actor.PoisonPill
-import org.abovobo.dht.persistence.H2DataSource
 
 class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) extends Actor {
   
-  val dataSource = H2DataSource.open("~/db/dht-" + self.path.name, true)
+  val dataSource = null //H2DataSource.open("~/db/dht-" + self.path.name, true)
   
-  val storageC: H2Storage = H2Storage(dataSource.getConnection) // controller
-  val storageT: H2Storage = H2Storage(dataSource.getConnection) // table
-  val storageD: H2Storage = H2Storage(dataSource.getConnection) // node (self)
+  val storageC: H2Storage = null //H2Storage(dataSource.getConnection) // controller
+  val storageT: H2Storage = null //H2Storage(dataSource.getConnection) // table
+  val storageD: H2Storage = null //H2Storage(dataSource.getConnection) // node (self)
     
   val controller = this.context.actorOf(Controller.props(routers, storageC, storageC), "controller")
   val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")
