@@ -19,7 +19,6 @@ import akka.util.ByteStringBuilder
 import org.abovobo.conversions.Bencode
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
-import java.nio.charset.Charset
 
 /**
  * This actor is responsible for sending Kademlia UDP messages and receiving them.
@@ -27,10 +26,12 @@ import java.nio.charset.Charset
  * will keep record about that fact and if remote party failed to respond in timely
  * manner, this actor will produce [[org.abovobo.dht.Controller.Failed]] command.
  *
- * @param endpoint An endpoint at which this agent must listen.
- * @param timeout  A period in time during which the remote party must respond to a query.
+ * @param endpoint   An endpoint at which this agent must listen.
+ * @param timeout    A period in time during which the remote party must respond to a query.
+ * @param controller An [[ActorRef]] instance pointing the controller actor.
  */
-class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, controller: ActorRef) extends Actor with ActorLogging {
+class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, val controller: ActorRef)
+  extends Actor with ActorLogging {
 
   import this.context.system
   import this.context.dispatcher
@@ -41,8 +42,14 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
    * Sends [[akka.io.Udp.Bind]] message to IO manager.
    */
   override def preStart() = IO(Udp) ! Udp.Bind(self, this.endpoint)
-  
-  override def postRestart(reason: Throwable) {} // disable preStart call on restarts
+
+  /**
+   * @inheritdoc
+   * @param reason
+   *
+   * Disables preStart call on restarts
+   */
+  override def postRestart(reason: Throwable) {}
 
   /**
    * @inheritdoc
@@ -73,9 +80,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
     // received a packet from UDP socket
     case Udp.Received(data, remote) => try {
       // parse received ByteString into a message instance
-      val message = Agent.parse(data, this.queries.toMap map { pair => pair._1 -> pair._2._1 }) // XXX: pass a getter-function instead of new collection
-      
-      //this.log.debug("Agent <== received " + message)
+      val message = Agent.parse(data) { tid: TID => this.queries.get(tid).map { _._1 } }
       
       // check if message completes pending transaction
       message match {
@@ -89,11 +94,10 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
     } catch {
       case e: Agent.ParsingException =>
         self ! Agent.Send(e.error, remote)
-        //socket ! Udp.Send(Agent.serialize(e.error), remote)
     }
 
     // `Send` command received
-    case Agent.Send(message, remote) => {
+    case Agent.Send(message, remote) =>
       // if we are sending query - set up transaction monitor
       message match {
         case query: Query =>
@@ -104,30 +108,19 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, contro
         case _ => // do nothing
       }
       // send serialized message to remote address
-      //this.log.debug("Agent ==> sending " + message)
       socket ! Udp.Send(Agent.serialize(message), remote)
-    }
-    
-    case Agent.Timeout(q, r) => this.fail(q, r)  
+
+    // `Timeout` event occurred
+    case Agent.Timeout(q, r) =>
+      this.log.debug("Completing transaction " + q.tid + " by means of failure (timeout) for " + r)
+      this.queries.remove(q.tid).foreach { _._2.cancel() }
+      this.controller ! Controller.Failed(q)
     
     // `Udp.Unbind` command requested, forwarding to our socket
-    case Udp.Unbind  => {
+    case Udp.Unbind  =>
       this.log.debug("Unbinding")
       socket ! Udp.Unbind
-    }      
-  }
 
-  /**
-   * Implements the case when remote peer has failed to respond to our query
-   * in timely manner. In this case we generate [[org.abovobo.dht.Controller.Failed]]
-   * command to controller actor.
-   *
-   * @param query A query which remote party failed to respond to in timely manner.
-   */
-  private def fail(query: Query, remote: InetSocketAddress) = {
-    this.log.debug("Completing transaction " + query.tid + " by means of failure (timeout) for " + remote)
-    this.queries.remove(query.tid).foreach { _._2.cancel() }
-    this.controller ! Controller.Failed(query)
   }
 
   /// Instantiates a map of associations between transaction identifiers
@@ -142,9 +135,10 @@ object Agent {
   /**
    * Factory which creates [[org.abovobo.dht.Agent]] [[akka.actor.Props]] instance.
    *
-   * @param endpoint An adress/port to bind to to receive incoming packets
-   * @param timeout  A period of time to wait for response from queried remote peer.
-   * @return         Properly configured [[akka.actor.Props]] instance.
+   * @param endpoint   An adress/port to bind to to receive incoming packets
+   * @param timeout    A period of time to wait for response from queried remote peer.
+   * @param controller An [[ActorRef]] instance pointing the controller actor.
+   * @return           Properly configured [[akka.actor.Props]] instance.
    */
   def props(endpoint: InetSocketAddress, timeout: FiniteDuration, controller: ActorRef): Props =
     Props(classOf[Agent], endpoint, timeout, controller)
@@ -185,11 +179,13 @@ object Agent {
    * [[org.abovobo.dht.Agent.ParsingException]] with corresponding
    * [[org.abovobo.dht.Error]] message which can be sent to remote party.
    *
-   * @param data [[akka.util.ByteString]] instance representing UDP packet received
-   *             from remote peer.
-   * @return     [[org.abovobo.dht.Message]] instance of proper type.
+   * @param data  [[akka.util.ByteString]] instance representing UDP packet received
+   *              from remote peer.
+   * @param query function which returns query by Transaction Id; used to properly parse
+   *              Response message.
+   * @return      [[org.abovobo.dht.Message]] instance of proper type.
    */
-  def parse(data: ByteString, queries: Map[TID, Query]): Message = {
+  def parse(data: ByteString)(query: (TID => Option[Query])): Message = {
 
     import Endpoint._
 
@@ -270,9 +266,9 @@ object Agent {
             case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown query")
           }
         case 'r' =>
-          queries.get(tid) match {
-            case Some(query) =>
-              query match {
+          query(tid) match {
+            case Some(q) =>
+              q match {
                 case p: Query.Ping =>
                   new Response.Ping(tid, integer160(dump(n - 7)))
                 case fn: Query.FindNode =>

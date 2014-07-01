@@ -21,6 +21,7 @@ import org.abovobo.integer.Integer160
 
 import scala.concurrent.duration._
 import akka.util.ByteString
+import com.typesafe.config.ConfigFactory
 
 class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLogging {
 
@@ -31,7 +32,7 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
   override def receive = {
     case Udp.Bound(l) =>
       this.log.info("Bound with local address {}", l)
-      this.context.become(this.ready(this.sender))
+      this.context.become(this.ready(this.sender()))
   }
 
   def ready(socket: ActorRef): Actor.Receive = {
@@ -49,6 +50,7 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
   }
 }
 
+/*
 class DummyController extends Actor with ActorLogging {
 
   override def receive = {
@@ -61,6 +63,7 @@ class DummyController extends Actor with ActorLogging {
   }
 
 }
+*/
 
 /**
  * Unit test for [[org.abovobo.dht.Agent]]
@@ -72,22 +75,24 @@ class AgentTest(system: ActorSystem)
   with Matchers
   with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("AgentTest"))
+  def this() = this(ActorSystem("AgentTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
-  val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 20000)
-  val local = new InetSocketAddress(InetAddress.getLoopbackAddress, 20001)
+  val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
+  val local = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
 
-  val dc = this.system.actorOf(Props(classOf[DummyController]), "controller")
+  //val dc = this.system.actorOf(Props(classOf[DummyController]), "controller")
 
-  val na = this.system.actorOf(Agent.props(local, 10.seconds, dc), "agent")
-  val rp = this.system.actorOf(Props(classOf[RemotePeer], remote), "peer")
+  val controllerInbox = Inbox.create(system)
+
+  val agent = this.system.actorOf(Agent.props(local, 10.seconds, controllerInbox.getRef()), "agent")
+  val peer = this.system.actorOf(Props(classOf[RemotePeer], remote), "peer")
 
   override def beforeAll() = {
   }
 
   override def afterAll() = {
-    this.rp ! Udp.Unbind
-    this.na ! Udp.Unbind
+    this.peer ! Udp.Unbind
+    this.agent ! Udp.Unbind
     TestKit.shutdownActorSystem(this.system)
   }
 
@@ -102,7 +107,7 @@ class AgentTest(system: ActorSystem)
         "e1:q4:ping1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
 
       "serialize message and send it to remote peer" in {
-        na ! Agent.Send(query, remote)
+        agent ! Agent.Send(query, remote)
         expectMsgPF() {
           case Udp.Received(data, address) =>
             packet should equal(data.toArray)
@@ -112,8 +117,8 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        rp ! Udp.Send(Agent.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
-        expectMsgPF() {
+        peer ! Udp.Send(Agent.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
+        controllerInbox.receive(1.second) match {
           case Controller.Received(message, address) =>
             message match {
               case ping: Response.Ping =>
@@ -138,7 +143,7 @@ class AgentTest(system: ActorSystem)
         "e1:q9:find_node1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
 
       "serialize message and send it to remote peer" in {
-        na ! Agent.Send(query, remote)
+        agent ! Agent.Send(query, remote)
         expectMsgPF() {
           case Udp.Received(data, address) =>
             packet should equal(data.toArray)
@@ -148,7 +153,7 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after not receiving network response" in {
-        expectMsgPF(12.seconds) {
+        controllerInbox.receive(10.seconds) match {
           case Controller.Failed(q: Query) =>
             q should be theSameInstanceAs query
           case a: Any =>
@@ -166,7 +171,7 @@ class AgentTest(system: ActorSystem)
         "e1:q9:find_node1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
 
       "serialize message and send it to remote peer" in {
-        na ! Agent.Send(query, remote)
+        agent ! Agent.Send(query, remote)
         expectMsgPF() {
           case Udp.Received(data, address) =>
             packet should equal(data.toArray)
@@ -176,9 +181,9 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        rp ! Udp.Send(Agent.serialize(new Response.FindNode(query.tid, Integer160.zero,
+        peer ! Udp.Send(Agent.serialize(new Response.FindNode(query.tid, Integer160.zero,
           nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
-        expectMsgPF() {
+        controllerInbox.receive(10.seconds) match {
           case Controller.Received(message, address) =>
             message match {
               case fn: Response.FindNode =>
@@ -205,7 +210,7 @@ class AgentTest(system: ActorSystem)
         "e1:q9:get_peers1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
 
       "serialize message and send it to remote peer" in {
-        na ! Agent.Send(query, remote)
+        agent ! Agent.Send(query, remote)
         expectMsgPF() {
           case Udp.Received(data, address) =>
             packet should equal(data.toArray)
@@ -215,10 +220,10 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        rp ! Udp.Send(Agent.serialize(new Response.GetPeersWithNodes(query.tid, Integer160.zero,
+        peer ! Udp.Send(Agent.serialize(new Response.GetPeersWithNodes(query.tid, Integer160.zero,
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
-        expectMsgPF() {
+        controllerInbox.receive(10.seconds) match {
           case Controller.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithNodes =>
@@ -246,7 +251,7 @@ class AgentTest(system: ActorSystem)
         "e1:q9:get_peers1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
 
       "serialize message and send it to remote peer" in {
-        na ! Agent.Send(query, remote)
+        agent ! Agent.Send(query, remote)
         expectMsgPF() {
           case Udp.Received(data, address) =>
             packet should equal(data.toArray)
@@ -256,10 +261,10 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        rp ! Udp.Send(Agent.serialize(new Response.GetPeersWithValues(query.tid, Integer160.zero,
+        peer ! Udp.Send(Agent.serialize(new Response.GetPeersWithValues(query.tid, Integer160.zero,
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           values = Array(new InetSocketAddress(0)))), local)
-        expectMsgPF() {
+        controllerInbox.receive(10.seconds) match {
           case Controller.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithValues =>
@@ -294,7 +299,7 @@ class AgentTest(system: ActorSystem)
         "e1:q13:announce_peer1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
 
       "serialize message and send it to remote peer" in {
-        na ! Agent.Send(query, remote)
+        agent ! Agent.Send(query, remote)
         expectMsgPF() {
           case Udp.Received(data, address) =>
             packet should equal(data.toArray)
@@ -304,8 +309,8 @@ class AgentTest(system: ActorSystem)
       }
       
       "complete transaction and notify Controller after receiving network response" in {
-        rp ! Udp.Send(Agent.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
-        expectMsgPF() {
+        peer ! Udp.Send(Agent.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
+        controllerInbox.receive(10.seconds) match {
           case Controller.Received(message, address) =>
             message match {
               case ap: Response.AnnouncePeer =>
@@ -323,17 +328,13 @@ class AgentTest(system: ActorSystem)
     
     "command Send(PluginMessage) is issued" must {
     	
-    	  def benc2str(data: Array[Byte]): String = new String(data)
-      
 	      val tid = factory.next()
-	      val target = Integer160.random
 	      val message = new PluginMessage(tid, Integer160.maxval, new Plugin.PID(0), ByteString(Array[Byte]( '0', '1', '2', '3', '4'))) {}
-	      //new Query.FindNode(tid, id = Integer160.maxval, target = target)
 	      val packet: Array[Byte] = "d1:pl20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++ "i0e".getBytes("UTF-8") ++
 	    		  "5:01234e".getBytes("UTF-8") ++ "1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:pe".getBytes("UTF-8") 
 	
 	      "serialize message and send it to remote peer" in {
-	        na ! Agent.Send(message, remote)
+	        agent ! Agent.Send(message, remote)
 	        expectMsgPF() {
 	          case Udp.Received(data, address) =>
 	            packet should equal(data.toArray)
@@ -351,7 +352,7 @@ class AgentTest(system: ActorSystem)
           "e1:q4:ping1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:ze".getBytes("UTF-8")
         val error: Array[Byte] = "d1:eli204e14:Unknown methode1:t2:".getBytes("UTF-8") ++ tid.toArray ++
           "1:y1:ee".getBytes("UTF-8")
-        rp ! Udp.Send(ByteString(packet), local)
+        peer ! Udp.Send(ByteString(packet), local)
         expectMsgPF() {
           case Udp.Received(dump, address) =>
             dump.toArray should equal(error)
