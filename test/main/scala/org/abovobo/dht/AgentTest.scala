@@ -50,21 +50,6 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
   }
 }
 
-/*
-class DummyController extends Actor with ActorLogging {
-
-  override def receive = {
-    case Controller.Received(message, remote) =>
-      this.log.info("Received message " + message)
-      this.context.actorSelection("../../system/testActor*") ! Controller.Received(message, remote)
-    case Controller.Failed(query) =>
-      this.log.info("Failed to receive response to " + query)
-      this.context.actorSelection("../../system/testActor*") ! Controller.Failed(query)
-  }
-
-}
-*/
-
 /**
  * Unit test for [[org.abovobo.dht.Agent]]
  */
