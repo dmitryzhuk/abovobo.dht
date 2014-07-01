@@ -65,8 +65,6 @@ class AgentTest(system: ActorSystem)
   val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
   val local = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
 
-  //val dc = this.system.actorOf(Props(classOf[DummyController]), "controller")
-
   val controllerInbox = Inbox.create(system)
 
   val agent = this.system.actorOf(Agent.props(local, 10.seconds, controllerInbox.getRef()), "agent")

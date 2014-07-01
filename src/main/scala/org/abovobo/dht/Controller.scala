@@ -16,8 +16,6 @@ import akka.actor.{Props, ActorRef, ActorLogging, Actor}
 import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader}
 import scala.concurrent.duration._
-import org.abovobo.dht.Table.Updated
-import org.abovobo.dht.Table.Inserted
 import scala.concurrent.Await
 import akka.actor.Cancellable
 
@@ -60,7 +58,7 @@ class Controller(val K: Int,
   }  
   
   override def postStop() {
-    timerTasks.foreach(_.cancel)
+    timerTasks.foreach(_.cancel())
   }
 
   /**
@@ -130,7 +128,7 @@ class Controller(val K: Int,
 
     case CleanupPeers => responder.cleanupPeers()      
       
-    case StopRecursion(target) => this.recursions.get(target).foreach(_.stopWaiting)
+    case StopRecursion(target) => this.recursions.get(target).foreach(_.stopWaiting())
 
     // -- HANDLE EVENTS
     // -- -------------
@@ -209,10 +207,9 @@ class Controller(val K: Int,
         case pm: PluginMessage =>
           this.plugins.get(pm.pluginId.number) match {
             case Some(plugin) => plugin ! Received(pm, remote)
-            case None => {
+            case None =>
               this.log.error("Error, message to non-existing plugin.")
               this.agent ! Agent.Send(new Error(pm.tid, Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
-            }
           }
       }
   }
