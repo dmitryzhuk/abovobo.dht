@@ -17,6 +17,7 @@ import akka.testkit.{ImplicitSender, TestKit}
 import java.net.{InetAddress, InetSocketAddress}
 
 import org.abovobo.dht
+import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.{Response, Query}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160

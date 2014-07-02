@@ -3,6 +3,7 @@ package org.abovobo.dht
 import akka.actor.Actor
 import java.net.InetSocketAddress
 import akka.actor.actorRef2Scala
+import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.persistence.h2.Storage
 import scala.concurrent.duration._
 import akka.actor.ActorRef

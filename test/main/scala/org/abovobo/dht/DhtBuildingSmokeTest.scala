@@ -1,6 +1,7 @@
 package org.abovobo.dht
 
 import com.typesafe.config.ConfigFactory
+import org.abovobo.dht.controller.Controller
 import org.abovobo.integer.Integer160
 import akka.actor.ActorSystem
 import scala.concurrent.Await

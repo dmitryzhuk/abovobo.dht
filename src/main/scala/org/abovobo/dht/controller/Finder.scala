@@ -8,15 +8,19 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht
+package org.abovobo.dht.controller
 
-import org.abovobo.dht.message.Response
+import java.util.Comparator
+import java.util.function.{ToDoubleFunction, ToIntFunction, ToLongFunction, Function}
+
+import org.abovobo.dht._
 import org.abovobo.integer.Integer160
+
 import scala.collection.mutable
 
 /**
  * This class collects data during recursive `find_node` or `get_peers` operations.
- * Instance of this class is completely reactive and single-threaded
+ * Instance of this class is completely reactive and single-threaded.
  *
  * @param target  A target 160-bit integer against which the find procedure is being ran.
  * @param K       A size of K-bucket used to calculate current state of finder.
@@ -24,14 +28,28 @@ import scala.collection.mutable
 abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) {
   
   /** 
-   * Defines implicit [[scala.math.Ordering]] for [[org.abovobo.dht.Node]] instances.
+   * Defines implicit [[math.Ordering]] for [[org.abovobo.dht.Node]] instances.
    */
-  implicit val ordering = new scala.math.Ordering[Node] {
+  implicit val ordering = new math.Ordering[Node] {
     override def compare(x: Node, y: Node): Int = {
       val x1 = Finder.this.target ^ x.id
       val y1 = Finder.this.target ^ y.id
       if (x1 < y1) -1 else if (x1 > y1) 1 else 0
     }
+    /// Overrides below are necessary to avoid IntelliJ IDEA to display error here
+    /// due to lack of support of Java 8 @FunctionalInterface feature.
+    override def reversed(): Comparator[Node] = super.reversed()
+    override def thenComparingDouble(keyExtractor: ToDoubleFunction[_ >: Node]): Comparator[Node] =
+      super.thenComparingDouble(keyExtractor)
+    override def thenComparingInt(keyExtractor: ToIntFunction[_ >: Node]): Comparator[Node] =
+      super.thenComparingInt(keyExtractor)
+    override def thenComparingLong(keyExtractor: ToLongFunction[_ >: Node]): Comparator[Node] =
+      super.thenComparingLong(keyExtractor)
+    override def thenComparing(other: Comparator[_ >: Node]): Comparator[Node] = super.thenComparing(other)
+    override def thenComparing[U](keyExtractor: Function[_ >: Node, _ <: U], keyComparator: Comparator[_ >: U]): Comparator[Node] =
+      super.thenComparing(keyExtractor)
+    override def thenComparing[U <: Comparable[_ >: U]](keyExtractor: Function[_ >: Node, _ <: U]): Comparator[Node] =
+      super.thenComparing(keyExtractor)
   }
 
   /// Collection of all nodes which were seen by means of node information sent with responses
@@ -58,7 +76,7 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
   /**
    * Reports transaction completion bringing nodes, peers and token from response.
    *
-   * @param reporter  A node which has sent a [[Response]].
+   * @param reporter  A node which has sent a [[org.abovobo.dht.message.Response]].
    * @param nodes     A collection of nodes reported by queried node.
    * @param peers     A collection of peers reported by queried node.
    * @param token     A token distributed by queried node.
@@ -100,7 +118,7 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
    * -- Succeeded if there are at least K succeeded nodes which are `closer` to `target` then any of untaken ones
    * -- Continue in any other case
    *
-   * Note that above means that [[org.abovobo.dht.Finder]] starts with [[org.abovobo.dht.Finder.State.Failed]]
+   * Note that above means that [[controller.Finder]] starts with [[controller.Finder.State.Failed]]
    * state. It is responsibility of the owner of this object to handle this case.
    * 
    * XXX: FIXME: Update this logic, so it would wait for at least a round of pending requests, without this, we might often stop after first K responded nodes (on second round with alpha 3 and K 8, actually),
@@ -151,10 +169,10 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
   def token(id: Integer160) = this._tokens.get(id)
 
   /** Returns map of tokens */
-  def tokens: scala.collection.Map[Integer160, Token] = this._tokens
+  def tokens: collection.Map[Integer160, Token] = this._tokens
 
   /** Returns collection of peers */
-  def peers: scala.collection.Traversable[Peer] = this._peers
+  def peers: collection.Traversable[Peer] = this._peers
   
   def iterate(): Unit
   
@@ -174,7 +192,7 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
 /** Accompanying object */
 object Finder {
 
-  /** Defines enumeration of possible [[org.abovobo.dht.Finder]] states */
+  /** Defines enumeration of possible [[controller.Finder]] states */
   object State extends Enumeration {
     val Continue,   // our search should continue 
         Waiting,    // we've got enough results but there are hanging requests

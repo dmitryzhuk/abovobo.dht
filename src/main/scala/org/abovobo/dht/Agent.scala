@@ -14,6 +14,7 @@ import akka.io.{Udp, IO}
 import akka.actor._
 import java.net.InetSocketAddress
 import org.abovobo.dht
+import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.{Query, Response, Message}
 import org.abovobo.integer.Integer160
 import akka.util.ByteString
@@ -26,7 +27,7 @@ import scala.concurrent.duration.FiniteDuration
  * This actor is responsible for sending Kademlia UDP messages and receiving them.
  * It also manages Kademlia queries: when some sender initiates a query, this actor
  * will keep record about that fact and if remote party failed to respond in timely
- * manner, this actor will produce [[org.abovobo.dht.Controller.Failed]] command.
+ * manner, this actor will produce [[Controller.Failed]] command.
  *
  * @param endpoint   An endpoint at which this agent must listen.
  * @param timeout    A period in time during which the remote party must respond to a query.

@@ -8,11 +8,15 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht
+package org.abovobo.dht.controller
 
 import java.net.InetSocketAddress
-import org.abovobo.dht.message.{Response, Query}
-import org.abovobo.dht.persistence.{Writer, Reader}
+
+import org.abovobo.dht._
+import org.abovobo.dht.controller.Controller
+import org.abovobo.dht.message.{Query, Response}
+import org.abovobo.dht.persistence.{Reader, Writer}
+
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
@@ -20,7 +24,7 @@ import scala.concurrent.duration.FiniteDuration
  * The responsibility of this class is to generate [[Response]] message
  * from particular incoming [[Query]] message.
  *
- * The instance of this class is an aggregated sub-part of [[org.abovobo.dht.Controller]] actor.
+ * The instance of this class is an aggregated sub-part of [[Controller]] actor.
  *
  * @param K         Max number of entries to send back to querier.
  * @param period    A period of rotating the token.

@@ -8,18 +8,20 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht
+package org.abovobo.dht.controller
 
-import org.abovobo.dht
-import org.abovobo.dht.message.{Query, Message, Response}
-import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
-import akka.actor.{Props, ActorRef, ActorLogging, Actor}
+
+import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, Props}
+import org.abovobo.dht
+import org.abovobo.dht._
+import org.abovobo.dht.message.{Message, Query, Response}
+import org.abovobo.dht.persistence.{Reader, Writer}
+import org.abovobo.integer.Integer160
+
 import scala.collection.mutable
-import org.abovobo.dht.persistence.{Writer, Reader}
-import scala.concurrent.duration._
 import scala.concurrent.Await
-import akka.actor.Cancellable
+import scala.concurrent.duration._
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -48,8 +50,8 @@ class Controller(val K: Int,
   extends Actor with ActorLogging {
   
   val system = context.system
-  import system.dispatcher
-  import Controller._
+  import org.abovobo.dht.controller.Controller._
+  import Controller
   
   override def preStart() = {}
   
@@ -66,7 +68,7 @@ class Controller(val K: Int,
   /**
    * @inheritdoc
    *
-   * Implements handling of [[org.abovobo.dht.Controller]]-specific events and commands.
+   * Implements handling of [[controller.Controller]]-specific events and commands.
    */
   override def receive = {
     // To avoid "unhandled message" logging. TODO: do we need to process these messages?        
@@ -310,7 +312,7 @@ class Controller(val K: Int,
       }
 
     /**
-     * Checks current state of the [[org.abovobo.dht.Finder]] associated with given recursion
+     * Checks current state of the [[controller.Finder]] associated with given recursion
      * and makes the next move depending on the state value.
      */
     def iterate() { iterate(this.state) }
@@ -460,8 +462,8 @@ object Controller {
   case class GetPeers(infohash: Integer160) extends Command
 
   /**
-   * This command instructs [[org.abovobo.dht.Controller]] to send [[org.abovobo.dht.Controller.AnnouncePeer]]
-   * message to given address. Normally, this command is issued after [[org.abovobo.dht.Controller.GetPeers]]
+   * This command instructs [[controller.Controller]] to send [[controller.Controller.AnnouncePeer]]
+   * message to given address. Normally, this command is issued after [[controller.Controller.GetPeers]]
    * command completed and produced a collection of nodes which can be used to announce itself as peer to them.
    *
    * @param node      A node to send message to.
