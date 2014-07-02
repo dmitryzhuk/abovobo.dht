@@ -2,8 +2,8 @@ package org.abovobo.dht
 
 import akka.actor.Actor
 import java.net.InetSocketAddress
-import org.abovobo.dht.persistence.H2Storage
 import akka.actor.actorRef2Scala
+import org.abovobo.dht.persistence.h2.Storage
 import scala.concurrent.duration._
 import akka.actor.ActorRef
 import akka.actor.Props
@@ -15,9 +15,9 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   
   val dataSource = null //H2DataSource.open("~/db/dht-" + self.path.name, true)
   
-  val storageC: H2Storage = null //H2Storage(dataSource.getConnection) // controller
-  val storageT: H2Storage = null //H2Storage(dataSource.getConnection) // table
-  val storageD: H2Storage = null //H2Storage(dataSource.getConnection) // node (self)
+  val storageC: Storage = null //H2Storage(dataSource.getConnection) // controller
+  val storageT: Storage = null //H2Storage(dataSource.getConnection) // table
+  val storageD: Storage = null //H2Storage(dataSource.getConnection) // node (self)
     
   val controller = this.context.actorOf(Controller.props(routers, storageC, storageC), "controller")
   val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")

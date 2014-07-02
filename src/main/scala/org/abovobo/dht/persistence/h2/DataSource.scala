@@ -8,36 +8,36 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.persistence
+package org.abovobo.dht.persistence.h2
 
-import javax.sql.DataSource
-import org.h2.jdbcx.JdbcConnectionPool
-import org.abovobo.jdbc.Closer._
 import java.sql.Connection
+
+import org.abovobo.jdbc.Closer._
+import org.h2.jdbcx.JdbcConnectionPool
 import org.h2.tools.RunScript
 
-object H2DataSource {
+object DataSource {
 
   /// Load JDBC drier
   Class.forName("org.h2.Driver")
 
   /**
-   * Instantiates connection pool at given URL and wraps it with new instance of [[H2DataSource]].
+   * Instantiates connection pool at given URL and wraps it with new instance of [[DataSource]].
    *
    * @param url An URL to create connection pool at.
-   * @return new instance of [[H2DataSource]]
+   * @return new instance of [[DataSource]]
    */
-  def apply(url: String): H2DataSource = new H2DataSource(JdbcConnectionPool.create(url, "", ""))
+  def apply(url: String): DataSource = new DataSource(JdbcConnectionPool.create(url, "", ""))
 
   /**
-   * Instantiates connection pool at given URL and wraps it with new instance of [[H2DataSource]]
+   * Instantiates connection pool at given URL and wraps it with new instance of [[DataSource]]
    * and executes given script.
    *
    * @param url An URL to create connection pool at.
    * @param script A script to execute.
-   * @return new instance of [[H2DataSource]]
+   * @return new instance of [[DataSource]]
    */
-  def apply(url: String, script: java.io.Reader): H2DataSource = {
+  def apply(url: String, script: java.io.Reader): DataSource = {
     val source = this.apply(url)
     using(source.connection) { connection: Connection =>
       RunScript.execute(connection, script)
@@ -51,7 +51,7 @@ object H2DataSource {
  *
  * @param ds An instance of [[javax.sql.DataSource]] to wrap.
  */
-class H2DataSource(val ds: DataSource) {
+class DataSource(val ds: javax.sql.DataSource) {
 
   /** Returns new connection from given [[javax.sql.DataSource]] */
   def connection = this.ds.getConnection

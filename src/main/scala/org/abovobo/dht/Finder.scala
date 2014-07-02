@@ -15,6 +15,7 @@ import scala.collection.mutable
 
 /**
  * This class collects data during recursive `find_node` or `get_peers` operations.
+ * Instance of this class is completely reactive and single-threaded
  *
  * @param target  A target 160-bit integer against which the find procedure is being ran.
  * @param K       A size of K-bucket used to calculate current state of finder.

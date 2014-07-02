@@ -12,8 +12,8 @@ package org.abovobo.dht
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
+import org.abovobo.dht.persistence.h2.{Storage, DataSource}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
-import org.abovobo.dht.persistence.{H2DataSource, H2Storage}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
 import akka.actor.Inbox
@@ -31,8 +31,8 @@ class TableTest(system: ActorSystem)
 
   def this() = this(ActorSystem("RoutingTableTest"))
 
-  private val ds = H2DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  private val h2 = new H2Storage(ds.connection)
+  private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
+  private val h2 = new Storage(ds.connection)
   private val reader = h2
 
   val controllerInbox = Inbox.create(system)

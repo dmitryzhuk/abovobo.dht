@@ -1,23 +1,34 @@
-package org.abovobo.dht.persistence
+/**
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
+ */
 
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
+package org.abovobo.dht.persistence.h2
+
+import java.net.{InetAddress, InetSocketAddress}
+import java.sql.SQLException
+
 import org.abovobo.dht.{Message, Node}
 import org.abovobo.integer.Integer160
-import java.sql.SQLException
-import java.net.{InetAddress, InetSocketAddress}
 import org.abovobo.jdbc.Closer._
+import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
 
 /**
  * Unit test for H2 Storage implementation
  */
-class H2StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
+class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
 
   val ds = using(this.getClass.getResourceAsStream("/tables.sql")) { is: java.io.InputStream =>
     using(new java.io.InputStreamReader(is)) { reader =>
-      H2DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4", reader)
+      DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4", reader)
     }
   }
-  val storage = new H2Storage(ds.connection)
+  val storage = new Storage(ds.connection)
   val reader = storage
   val writer = storage
 

@@ -8,21 +8,26 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.persistence
+package org.abovobo.dht.persistence.h2
 
-import org.abovobo.integer.Integer160
-import org.abovobo.dht.{Peer, Message, PersistentNode, Node}
-import Message.Kind.Kind
-import org.abovobo.jdbc.Transaction
-import scala.concurrent.duration.FiniteDuration
 import java.sql.Connection
+
+import org.abovobo.dht.Message.Kind.Kind
+import org.abovobo.dht.persistence
+import org.abovobo.dht.{Node, Peer, PersistentNode}
+import org.abovobo.integer.Integer160
+import org.abovobo.jdbc.Transaction
+
+import scala.concurrent.duration.FiniteDuration
 
 /**
  * Actual implementation of [[org.abovobo.dht.persistence.Storage]] which uses H2.
  *
  * @author Dmitry Zhuk
  */
-class H2Storage(connection: Connection) extends Storage(connection) with Reader with Writer {
+class Storage(connection: Connection)
+  extends persistence.Storage(connection)
+  with persistence.Reader with persistence.Writer {
 
   /////////////////
   // READER METHODS
