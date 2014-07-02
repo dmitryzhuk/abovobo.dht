@@ -14,7 +14,7 @@ import java.sql.Connection
 
 import org.abovobo.dht.Message.Kind.Kind
 import org.abovobo.dht.persistence
-import org.abovobo.dht.{Node, Peer, PersistentNode}
+import org.abovobo.dht.{Node, Peer, KnownNode}
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Transaction
 
@@ -64,11 +64,11 @@ class Storage(connection: Connection)
     this.insert(this.statements("insertNode"), node, bucket, kind)
 
   /** @inheritdoc */
-  override def update(node: Node, pn: PersistentNode, kind: Kind) =
+  override def update(node: Node, pn: KnownNode, kind: Kind) =
     this.update(this.statements("updateNode"), node, pn, kind)
 
   /** @inheritdoc */
-  override def move(node: PersistentNode, bucket: Integer160) =
+  override def move(node: KnownNode, bucket: Integer160) =
     this.move(this.statements("moveNode"), node, bucket)
 
   /** @inheritdoc */

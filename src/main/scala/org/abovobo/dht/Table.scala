@@ -432,7 +432,7 @@ object Table {
    *
    * @param old An old node instance which has been replaced with the new one.
    */
-  case class Replaced(old: PersistentNode) extends Result
+  case class Replaced(old: KnownNode) extends Result
 
   /** Indicates that Node has already been in the table, so its info has just been updated. */
   case object Updated extends Result

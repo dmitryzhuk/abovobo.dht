@@ -10,7 +10,7 @@
 
 package org.abovobo.dht.persistence
 
-import org.abovobo.dht.{Peer, Message, PersistentNode, Node}
+import org.abovobo.dht.{Peer, Message, KnownNode, Node}
 import org.abovobo.dht.Endpoint._
 import org.abovobo.integer.Integer160
 import Message.Kind._
@@ -104,7 +104,7 @@ trait Writer {
    * @param pn      A corresponding persistent node.
    * @param kind    A kind of network message.
    */
-  def update(node: Node, pn: PersistentNode, kind: Kind): Unit
+  def update(node: Node, pn: KnownNode, kind: Kind): Unit
 
   /**
    * Set statement parameters from given arguments and executes it in update mode.
@@ -125,7 +125,7 @@ trait Writer {
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */
-  protected def update(statement: PreparedStatement, node: Node, pn: PersistentNode, kind: Kind): Unit = {
+  protected def update(statement: PreparedStatement, node: Node, pn: KnownNode, kind: Kind): Unit = {
     statement.setBytes(1, node.address)
     kind match {
       case Response | Error =>
@@ -151,7 +151,7 @@ trait Writer {
    * @param node    A node to move.
    * @param bucket  A bucket to move node to.
    */
-  def move(node: PersistentNode, bucket: Integer160): Unit
+  def move(node: KnownNode, bucket: Integer160): Unit
 
   /**
    * Sets statement parameters and executes it in update mode. Note,
@@ -165,7 +165,7 @@ trait Writer {
    * @param node      A node instance to get properties from.
    * @param bucket    A bucket to which this node will be inserted.
    */
-  protected def move(statement: PreparedStatement, node: PersistentNode, bucket: Integer160): Unit = {
+  protected def move(statement: PreparedStatement, node: KnownNode, bucket: Integer160): Unit = {
     statement.setBytes(1, bucket.toArray)
     statement.setBytes(2, node.id.toArray)
     statement.executeUpdate()
