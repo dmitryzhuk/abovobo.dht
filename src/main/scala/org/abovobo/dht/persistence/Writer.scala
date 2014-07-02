@@ -10,7 +10,8 @@
 
 package org.abovobo.dht.persistence
 
-import org.abovobo.dht.{Peer, Message, KnownNode, Node}
+import org.abovobo.dht.message.Message
+import org.abovobo.dht.{Peer, KnownNode, Node}
 import org.abovobo.dht.Endpoint._
 import org.abovobo.integer.Integer160
 import Message.Kind._
@@ -79,7 +80,7 @@ trait Writer {
    * @param statement A statement to execute.
    * @param node      A node instance to get properties from.
    * @param bucket    A bucket to which this node will be inserted.
-   * @param kind      A [[org.abovobo.dht.Message.Kind.Kind]] represending
+   * @param kind      A [[Message.Kind.Kind]] represending
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */
@@ -121,7 +122,7 @@ trait Writer {
    *
    * @param statement A statement to execute.
    * @param node      A node instance to get properties from.
-   * @param kind      A [[org.abovobo.dht.Message.Kind.Kind]] represending
+   * @param kind      A [[Message.Kind.Kind]] represending
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */

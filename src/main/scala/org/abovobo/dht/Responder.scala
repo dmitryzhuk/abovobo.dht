@@ -11,13 +11,14 @@
 package org.abovobo.dht
 
 import java.net.InetSocketAddress
+import org.abovobo.dht.message.{Response, Query}
 import org.abovobo.dht.persistence.{Writer, Reader}
 import scala.collection.mutable
-import scala.concurrent.duration.{FiniteDuration, Duration}
+import scala.concurrent.duration.FiniteDuration
 
 /**
- * The responsibility of this class is to generate [[org.abovobo.dht.Response]] message
- * from particular incoming [[org.abovobo.dht.Query]] message.
+ * The responsibility of this class is to generate [[Response]] message
+ * from particular incoming [[Query]] message.
  *
  * The instance of this class is an aggregated sub-part of [[org.abovobo.dht.Controller]] actor.
  *
@@ -33,8 +34,8 @@ class Responder(K: Int,
                 reader: Reader,
                 writer: Writer) {
   /**
-   * Creates an instance of [[org.abovobo.dht.Response]] message which is appropriate to
-   * an incoming [[org.abovobo.dht.Query]] message and sends it to given remote peer.
+   * Creates an instance of [[Response]] message which is appropriate to
+   * an incoming [[Query]] message and sends it to given remote peer.
    *
    * @param query   A query to respond to.
    * @param remote  An address of the remote peer to send response to.
@@ -65,13 +66,13 @@ class Responder(K: Int,
     // get current token to return to querier
     val token = this.tp.get
     // remember that we sent the token to this remote peer
-    this.tokens.get(remote.address).getOrElse(Nil) match {
+    this.tokens.getOrElse(remote.address, Nil) match {
       case Nil => this.tokens.put(remote.address, List(token))
       case l => this.tokens.put(remote.address, token :: l)
     }
     // look for peers for the given infohash in the storage
     val peers = this.reader.peers(q.infohash)
-    if (!peers.isEmpty) {
+    if (peers.nonEmpty) {
       // if there are peers found send them with response
       Agent.Send(new Response.GetPeersWithValues(q.tid, id, token, peers.toSeq), remote.address)
     } else {
@@ -83,10 +84,10 @@ class Responder(K: Int,
 
   /** Responds to `announce_peer` query */
   private def announcePeer(q: Query.AnnouncePeer, remote: InetSocketAddress): Agent.Send = {
-    this.tokens.get(remote).getOrElse(Nil) match {
+    this.tokens.getOrElse(remote, Nil) match {
       // error: address not found
       case Nil => Agent.Send(
-        new Error(q.tid, Error.ERROR_CODE_PROTOCOL, "Address is missing in token distribution list"),
+        new message.Error(q.tid, message.Error.ERROR_CODE_PROTOCOL, "Address is missing in token distribution list"),
         remote)
       // ok: address is here
       case l: List[Token] => l.find(_.sameElements(q.token)) match {
@@ -104,11 +105,11 @@ class Responder(K: Int,
             Agent.Send(new Response.AnnouncePeer(q.tid, id), remote)
           // error: token has expired
           } else {
-            Agent.Send(new Error(q.tid, Error.ERROR_CODE_GENERIC, "Token has expired"), remote)
+            Agent.Send(new message.Error(q.tid, message.Error.ERROR_CODE_GENERIC, "Token has expired"), remote)
           }
         // token has not been distributed to given node or has already been cleaned up
         case None => Agent.Send(
-          new Error(q.tid, Error.ERROR_CODE_PROTOCOL, "Given token was not distributed to this node"),
+          new message.Error(q.tid, message.Error.ERROR_CODE_PROTOCOL, "Given token was not distributed to this node"),
           remote)
       }
     }
@@ -127,7 +128,7 @@ class Responder(K: Int,
     tp.rotate()
     // then cleanup
     this.tokens.keySet foreach { key =>
-      this.tokens.get(key).getOrElse(Nil).filter(this.tp.valid) match {
+      this.tokens.getOrElse(key, Nil).filter(this.tp.valid) match {
         case Nil => this.tokens.remove(key)
         case l => this.tokens.put(key, l)
       }

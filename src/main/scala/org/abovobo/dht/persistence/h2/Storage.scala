@@ -12,7 +12,8 @@ package org.abovobo.dht.persistence.h2
 
 import java.sql.Connection
 
-import org.abovobo.dht.Message.Kind.Kind
+import org.abovobo.dht.message.Message
+import Message.Kind.Kind
 import org.abovobo.dht.persistence
 import org.abovobo.dht.{Node, Peer, KnownNode}
 import org.abovobo.integer.Integer160

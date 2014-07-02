@@ -12,6 +12,7 @@ package org.abovobo.dht
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
+import org.abovobo.dht.message.Message
 import org.abovobo.dht.persistence.h2.{Storage, DataSource}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160

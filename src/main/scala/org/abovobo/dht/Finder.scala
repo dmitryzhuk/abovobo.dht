@@ -10,6 +10,7 @@
 
 package org.abovobo.dht
 
+import org.abovobo.dht.message.Response
 import org.abovobo.integer.Integer160
 import scala.collection.mutable
 
@@ -57,7 +58,7 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
   /**
    * Reports transaction completion bringing nodes, peers and token from response.
    *
-   * @param reporter  A node which has sent a [[org.abovobo.dht.Response]].
+   * @param reporter  A node which has sent a [[Response]].
    * @param nodes     A collection of nodes reported by queried node.
    * @param peers     A collection of peers reported by queried node.
    * @param token     A token distributed by queried node.

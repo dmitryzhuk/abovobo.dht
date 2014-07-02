@@ -16,6 +16,8 @@ import akka.testkit.{ImplicitSender, TestKit}
 
 import java.net.{InetAddress, InetSocketAddress}
 
+import org.abovobo.dht
+import org.abovobo.dht.message.{Response, Query}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
 
@@ -312,7 +314,7 @@ class AgentTest(system: ActorSystem)
     "command Send(PluginMessage) is issued" must {
     	
 	      val tid = factory.next()
-	      val message = new PluginMessage(tid, Integer160.maxval, new Plugin.PID(0), ByteString(Array[Byte]( '0', '1', '2', '3', '4'))) {}
+	      val message = new dht.message.Plugin(tid, Integer160.maxval, new PID(0), ByteString(Array[Byte]( '0', '1', '2', '3', '4'))) {}
 	      val packet: Array[Byte] = "d1:pl20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++ "i0e".getBytes("UTF-8") ++
 	    		  "5:01234e".getBytes("UTF-8") ++ "1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:pe".getBytes("UTF-8") 
 	

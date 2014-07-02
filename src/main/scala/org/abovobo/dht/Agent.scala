@@ -13,6 +13,8 @@ package org.abovobo.dht
 import akka.io.{Udp, IO}
 import akka.actor._
 import java.net.InetSocketAddress
+import org.abovobo.dht
+import org.abovobo.dht.message.{Query, Response, Message}
 import org.abovobo.integer.Integer160
 import akka.util.ByteString
 import akka.util.ByteStringBuilder
@@ -70,8 +72,8 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, val co
   }
   
   /**
-   * Implements Send/Receive logic. Decodes network package into a [[org.abovobo.dht.Message]]
-   * upon receival and if received message is [[org.abovobo.dht.Response]] checks if it corresponds
+   * Implements Send/Receive logic. Decodes network package into a [[Message]]
+   * upon receival and if received message is [[Response]] checks if it corresponds
    * to existing transaction.
    *
    * @param socket Akka.IO socket actor which will be used for sending datagrams
@@ -164,26 +166,26 @@ object Agent {
 
   /**
    * Represents exception which may happen during packet parsing process.
-   * Note that this exception will normally result in sending [[org.abovobo.dht.Error]]
+   * Note that this exception will normally result in sending [[message.Error]]
    * message back to remote peer which sent us a packet. It means, that effectively
    * this exception will only be thrown after bencoded packet already decoded successfully
    * and transaction identifier located correctly.
    *
    * @param error An error message to send back to remote peer.
    */
-  private class ParsingException(val error: Error) extends Exception
+  private class ParsingException(val error: message.Error) extends Exception
 
   /**
    * Parses given [[akka.util.ByteString]] producing instance of corresponding
-   * [[org.abovobo.dht.Message]] type. If something goes wrong, throws
+   * [[Message]] type. If something goes wrong, throws
    * [[org.abovobo.dht.Agent.ParsingException]] with corresponding
-   * [[org.abovobo.dht.Error]] message which can be sent to remote party.
+   * [[message.Error]] message which can be sent to remote party.
    *
    * @param data  [[akka.util.ByteString]] instance representing UDP packet received
    *              from remote peer.
    * @param query function which returns query by Transaction Id; used to properly parse
    *              Response message.
-   * @return      [[org.abovobo.dht.Message]] instance of proper type.
+   * @return      [[Message]] instance of proper type.
    */
   def parse(data: ByteString)(query: (TID => Option[Query])): Message = {
 
@@ -198,26 +200,26 @@ object Agent {
     }
 
     def xthrow(code: Int, message: String) =
-      throw new Agent.ParsingException(new Error(tid, code, message))
+      throw new Agent.ParsingException(new dht.message.Error(tid, code, message))
 
     def array(event: Bencode.Event): Array[Byte] = event match {
       case Bencode.Bytestring(value) => value
-      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+      case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def integer160(event: Bencode.Event): Integer160 = event match {
       case Bencode.Bytestring(value) => new Integer160(value)
-      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+      case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def string(event: Bencode.Event): String = event match {
       case Bencode.Bytestring(value) => new String(value, "UTF-8")
-      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+      case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
     
     def byteString(event: Bencode.Event): ByteString = event match {
       case Bencode.Bytestring(value) => ByteString(value) 
-      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")      
+      case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def nodes(event: Bencode.Event): IndexedSeq[Node] = event match {
@@ -226,23 +228,23 @@ object Agent {
         val ez = sz + Endpoint.IPV4_ADDR_SIZE + 2
         val n = value.length / ez
         for (i <- 0 until n) yield new Node(new Integer160(value.drop(i * ez).take(sz)), value.drop(i * ez).drop(sz).take(Endpoint.IPV4_ADDR_SIZE + 2))
-      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+      case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def peers(events: IndexedSeq[Bencode.Event]): IndexedSeq[Peer] = events map {
       case Bencode.Bytestring(value) => Endpoint.ba2isa(value)
-      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+      case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     def integer(event: Bencode.Event): Long = event match {
       case Bencode.Integer(value) => value
-      case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+      case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
     dump(n - 2) match {
       case Bencode.Bytestring(value) => value(0) match {
         case 'e' =>
-          new Error(tid, integer(dump(n - 8)), string(dump(n - 7)))
+          new message.Error(tid, integer(dump(n - 8)), string(dump(n - 7)))
         case 'q' =>
           string(dump(n - 6)) match {
             case Query.QUERY_NAME_PING =>
@@ -263,7 +265,7 @@ object Agent {
                 port = integer(dump(n - 11)).toInt,
                 token = array(dump(n - 9)),
                 implied = variables._2)
-            case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown query")
+            case _ => xthrow(message.Error.ERROR_CODE_UNKNOWN, "Unknown query")
           }
         case 'r' =>
           query(tid) match {
@@ -287,24 +289,24 @@ object Agent {
                         id = integer160(dump(4)),
                         token = array(dump(6)),
                         values = peers(dump.slice(9, n - 7)))
-                    case _ => xthrow(Error.ERROR_CODE_PROTOCOL, "Malformed packet")
+                    case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
                   }
                 case ap: Query.AnnouncePeer =>
                   new Response.AnnouncePeer(tid, integer160(dump(n - 7)))
-                case _ => xthrow(Error.ERROR_CODE_GENERIC, "Unknown corresponding query type")
+                case _ => xthrow(message.Error.ERROR_CODE_GENERIC, "Unknown corresponding query type")
               }
             case None =>
-              xthrow(Error.ERROR_CODE_PROTOCOL, "Invalid transaction id")
+              xthrow(message.Error.ERROR_CODE_PROTOCOL, "Invalid transaction id")
           }
         case 'p' =>
           val id = integer160(dump(n - 9))
-          val pid = new Plugin.PID(integer(dump(n - 8)))
+          val pid = new PID(integer(dump(n - 8)))
           val payload = byteString(dump(n - 7))
-          new PluginMessage(tid, id, pid, payload) {}
+          new message.Plugin(tid, id, pid, payload) {}
           
-        case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Unknown method")
+        case _ => xthrow(message.Error.ERROR_CODE_UNKNOWN, "Unknown method")
       }
-      case _ => xthrow(Error.ERROR_CODE_UNKNOWN, "Malformed packet")
+      case _ => xthrow(message.Error.ERROR_CODE_UNKNOWN, "Malformed packet")
     }
   }
 
@@ -320,7 +322,7 @@ object Agent {
     buf += 'd'
 
       message match {
-        case error: Error =>
+        case error: dht.message.Error =>
           // "e" -> list(code, message)
           buf += '1' += ':' += 'e'
           buf += 'l'
@@ -409,13 +411,13 @@ object Agent {
           }
           buf += 'e'
             
-        case pluginMessage: PluginMessage =>
+        case p: org.abovobo.dht.message.Plugin =>
           // 'p' -> list(nodeId, pluginId, message)
           buf += '1' += ':' += 'p'
           buf += 'l'
-            buf += '2' += '0' += ':' ++= pluginMessage.id.toArray
-            buf += 'i' ++= pluginMessage.pluginId.toString.getBytes("UTF-8") += 'e'
-            buf ++= pluginMessage.payload.length.toString.getBytes("UTF-8") += ':' ++= pluginMessage.payload
+            buf += '2' += '0' += ':' ++= p.id.toArray
+            buf += 'i' ++= p.pid.toString.getBytes("UTF-8") += 'e'
+            buf ++= p.payload.length.toString.getBytes("UTF-8") += ':' ++= p.payload
           buf += 'e'
           
       }

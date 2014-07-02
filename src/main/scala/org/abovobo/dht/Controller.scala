@@ -10,6 +10,8 @@
 
 package org.abovobo.dht
 
+import org.abovobo.dht
+import org.abovobo.dht.message.{Query, Message, Response}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
 import akka.actor.{Props, ActorRef, ActorLogging, Actor}
@@ -116,10 +118,10 @@ class Controller(val K: Int,
       this.agent ! Agent.Send(message, node.address)
       
     case PutPlugin(pid, plugin) => 
-      this.plugins.put(pid.number, plugin)
+      this.plugins.put(pid.value, plugin)
     
     case RemovePlugin(pid) => 
-      this.plugins.remove(pid.number)
+      this.plugins.remove(pid.value)
       
     case RotateTokens => responder.rotateTokens()
 
@@ -179,7 +181,7 @@ class Controller(val K: Int,
               this.log.error("Response message with invalid transaction: " + response)
           }
 
-        case error: Error =>
+        case error: dht.message.Error =>
           // if error message has been received
           // close transaction and notify routing table
           this.transactions.remove(error.tid) match {
@@ -201,12 +203,12 @@ class Controller(val K: Int,
             case None => // Error: invalid transaction
               this.log.error("Error message with invalid transaction: " + error)
           }
-        case pm: PluginMessage =>
-          this.plugins.get(pm.pluginId.number) match {
+        case pm: dht.message.Plugin =>
+          this.plugins.get(pm.pid.value) match {
             case Some(plugin) => plugin ! Received(pm, remote)
             case None =>
               this.log.error("Error, message to non-existing plugin.")
-              this.agent ! Agent.Send(new Error(pm.tid, Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
+              this.agent ! Agent.Send(new dht.message.Error(pm.tid, dht.message.Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
           }
       }
   }
@@ -214,7 +216,7 @@ class Controller(val K: Int,
   /**
    * Processes given response for given transaction.
    *
-   * @param response    A [[org.abovobo.dht.Response]] message from remote peer.
+   * @param response    A [[Response]] message from remote peer.
    * @param transaction A transaction instance that response was received for.
    */
   private def process(response: Response, transaction: Transaction) = {
@@ -475,10 +477,10 @@ object Controller {
                           implied: Boolean)
     extends Command
     
-  case class SendPluginMessage(message: PluginMessage, node: Node) extends Command
+  case class SendPluginMessage(message: org.abovobo.dht.message.Plugin, node: Node) extends Command
     
-  case class PutPlugin(pid: Plugin.PID, plugin: ActorRef) extends Command
-  case class RemovePlugin(pid: Plugin.PID) extends Command
+  case class PutPlugin(pid: PID, plugin: ActorRef) extends Command
+  case class RemovePlugin(pid: PID) extends Command
   
   trait SelfCommand extends Command
   

@@ -13,7 +13,8 @@ package org.abovobo.dht.persistence.h2
 import java.net.{InetAddress, InetSocketAddress}
 import java.sql.SQLException
 
-import org.abovobo.dht.{Message, Node}
+import org.abovobo.dht.Node
+import org.abovobo.dht.message.Message
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}

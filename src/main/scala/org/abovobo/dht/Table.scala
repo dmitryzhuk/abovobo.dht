@@ -10,6 +10,7 @@
 
 package org.abovobo.dht
 
+import org.abovobo.dht.message.Message
 import org.abovobo.integer.Integer160
 import akka.actor.{ActorLogging, Cancellable, Props, Actor}
 import scala.concurrent.duration._
