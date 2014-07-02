@@ -11,11 +11,9 @@
 package org.abovobo.dht
 
 import java.net.InetSocketAddress
-import akka.actor.Scheduler
 import org.abovobo.dht.persistence.{Writer, Reader}
 import scala.collection.mutable
 import scala.concurrent.duration.{FiniteDuration, Duration}
-import scala.concurrent.ExecutionContext
 
 /**
  * The responsibility of this class is to generate [[org.abovobo.dht.Response]] message
@@ -28,8 +26,6 @@ import scala.concurrent.ExecutionContext
  * @param lifetime  A lifetime of the peer info.
  * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
- * @param scheduler Akka system scheduler derived from owning actor instance.
- * @param ec        General execution context for scheduled tasks derived from owning execution context.
  */
 class Responder(K: Int,
                 period: FiniteDuration,

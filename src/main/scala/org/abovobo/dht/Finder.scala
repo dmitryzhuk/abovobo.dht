@@ -12,8 +12,6 @@ package org.abovobo.dht
 
 import org.abovobo.integer.Integer160
 import scala.collection.mutable
-import java.net.InetSocketAddress
-import java.lang.IllegalArgumentException
 
 /**
  * This class collects data during recursive `find_node` or `get_peers` operations.
@@ -52,7 +50,7 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
   /// Collection of peers reported by queried nodes
   private val _peers = new mutable.HashSet[Peer]
 
-  // Dump all seeds into untaken
+  // Dump all seeds into `untaken` and `seen`
   this.add(this.seeds)
 
   /**
@@ -75,7 +73,7 @@ abstract class Finder(val target: Integer160, K: Int, seeds: Traversable[Node]) 
     }
     
     // store node->token association
-    if (!token.isEmpty) this._tokens += reporter.id -> token
+    if (token.nonEmpty) this._tokens += reporter.id -> token
 
     // add reported peers to internal collection
     this._peers ++= peers
