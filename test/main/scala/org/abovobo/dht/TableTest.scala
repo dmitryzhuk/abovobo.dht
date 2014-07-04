@@ -55,7 +55,8 @@ class TableTest(system: ActorSystem)
   }
 
   override def afterAll() = {
-    h2.close()
+    this.h2.close()
+    this.ds.close()
     TestKit.shutdownActorSystem(this.system)
   }
 

@@ -35,6 +35,7 @@ class NodeOrdering(val origin: Integer160) extends math.Ordering[Node] {
 
   /// Overrides below are necessary to avoid IntelliJ IDEA to display error here
   /// due to lack of support of Java 8 @FunctionalInterface feature.
+  /*
   override def reversed(): Comparator[Node] = super.reversed()
   override def thenComparingDouble(keyExtractor: ToDoubleFunction[_ >: Node]): Comparator[Node] =
     super.thenComparingDouble(keyExtractor)
@@ -47,4 +48,5 @@ class NodeOrdering(val origin: Integer160) extends math.Ordering[Node] {
     super.thenComparing(keyExtractor)
   override def thenComparing[U <: Comparable[_ >: U]](keyExtractor: Function[_ >: Node, _ <: U]): Comparator[Node] =
     super.thenComparing(keyExtractor)
+    */
 }

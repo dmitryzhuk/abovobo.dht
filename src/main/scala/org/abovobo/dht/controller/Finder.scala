@@ -49,21 +49,26 @@ import scala.collection.mutable
  *
  * @param target  A target 160-bit integer against which the find procedure is being ran.
  * @param K       A size of K-bucket used to calculate current state of finder.
+ * @param alpha   System-wide parameter alpha defining typical number of requests per round.
  * @param seeds   A collection of nodes to start with.
  */
-class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
+class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Traversable[Node]) {
 
   /// Defines implicit [[math.Ordering]] for [[org.abovobo.dht.Node]] instances.
   private implicit val ordering = new NodeOrdering(this.target)
 
-  /// Collection of all nodes which were seen by means of node information sent with responses
+  /// Collection of all nodes which were seen by means of node information sent with responses.
+  /// This collection is used to check if there were closer nodes learned from completed requests.
   private val _seen = new mutable.TreeSet[Node]
-
-  /// Collection of pending request rounds; round is removed from the queue when its size reaches 0
-  private val _pending = new mutable.Queue[Round]
 
   /// Collection of nodes which were seen but not yet taken to be queried
   private val _untaken = new mutable.TreeSet[Node]
+
+  /// Collection of pending request rounds
+  private val _pending = new Rounds()
+
+  /// Collection of completed request rounds
+  private val _completed = new Rounds()
 
   /// Collection of nodes which reported successfully
   private val _succeeded = new mutable.TreeSet[Node]
@@ -75,7 +80,8 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
   private val _peers = new mutable.HashSet[Peer]
 
   // Dump all seeds into `untaken` and `seen`
-  this.add(this.seeds)
+  this._seen ++= this.seeds
+  this._untaken ++= this.seeds
 
   /**
    * Reports transaction completion bringing nodes, peers and token from response.
@@ -86,13 +92,38 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
    * @param token     A token distributed by queried node.
    */
   def report(reporter: Node, nodes: Traversable[Node], peers: Traversable[Peer], token: Token) = {
-    // remove reporter from the collection of pending nodes
-    // note that basically reporter may not be here at all
-    this._pending -= reporter
 
-    // don't add routers (nodes with zero id) into result
+    // detect if reporting node will improve collection of seen nodes
+    val improved = nodes.foldLeft(0) { (r, node) =>
+      if (this.ordering.compare(node, this._seen.head) == -1) r + 1 else r
+    }
+
+    // update request result value
+    this._pending.get(reporter) match {
+      case Some((round, request)) =>
+        request.result =
+          if (improved > 0)
+            Request.Improved(improved)
+          else
+            Request.Neutral()
+      case None =>
+        // Reporter was not found in collection of pending requests.
+        // It probably means that request has already timed out.
+        // XXX We might want to handle this case in the future
+    }
+
+    // if head round of the queue of pending request rounds
+    // became completed after this report, move it to collection
+    // of completed rounds for further reference
+    while (this._pending.front.result match {
+      case Request.Neutral() | Request.Failed() => true
+      case Request.Improved(n) => true
+      case _ => false
+    }) this._completed.enqueue(this._pending.dequeue())
+
+    // store reporter into collection of succeeded nodes
+    // but don't add routers (nodes with zero id)
     if (reporter.id != Integer160.zero) { 
-      // store reporter into collection of succeded nodes
       this._succeeded += reporter
     }
     
@@ -102,7 +133,13 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
     // add reported peers to internal collection
     this._peers ++= peers
 
-    this.add(nodes)
+    // add unseen reported nodes into a collection of seen and untaken nodes
+    nodes.foreach { node =>
+      if (!this._seen.contains(node)) {
+        this._seen += node
+        this._untaken += node
+      }
+    }
   }
   
   /**
@@ -111,7 +148,16 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
    * @param node  A node which failed to respond in timely manner.
    */
   def fail(node: Node) = {
-    this._pending -= node
+    this._pending.get(node) match {
+      case Some((round, request)) =>
+        request.result = Request.Failed()
+      case None =>
+        // Reporter was not found in collection of pending requests.
+        // It probably means that request has already timed out.
+        // This can only happen if remote peer responded with Error
+        // message after timeout expired. Thus, this case can safely
+        // be ignored.
+    }
   }
 
   /**
@@ -130,6 +176,33 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
    * 
    */
   def state =
+
+    // case #1: No pending requests, no untaken nodes, no succeeded nodes means
+    //          that node lookup attempt has totally failed.
+    if (this._pending.isEmpty && this._untaken.isEmpty && this._succeeded.size < this.K)
+      Finder.State.Failed
+
+    // case #2: No request rounds completed yet, but the very first round of pending requests
+    //          has already brought at least alpha new nodes: recursion may continue without
+    //          waiting the first round to complete.
+    else if (this._completed.isEmpty && this._pending.nonEmpty && this._pending.front.improved > alpha)
+      Finder.State.Continue
+
+    // case #3: Last round did not bring any nodes which are closer than already seen ones,
+    //          means that initator should consider to send requests to K closest known nodes,
+    //          which were not yet queried.
+    else if (this._completed.nonEmpty && this._completed.last.improved == 0 && this._pending.nonEmpty)
+      Finder.State.Finalize
+
+    // case #4: There are more than `K` succeeded responses AND: all `K` of succeeded nodes are
+    //          closer than any of untaken ones OR there are no untaken nodes remaining.
+    else if (this._succeeded.size >= this.K &&
+      (this.ordering.compare(this._succeeded.take(this.K).last, this._untaken.head) == -1 || this._untaken.isEmpty))
+      Finder.State.Succeeded
+
+    else Finder.State.Wait
+
+  /*
     if (this._pending.isEmpty && this._untaken.isEmpty) {
       if (this._succeeded.isEmpty)
         Finder.State.Failed
@@ -147,6 +220,7 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
     } else {
       Finder.State.Continue
     }
+    */
 
   /**
    * Takes maximum `n` nodes which were not given yet.
@@ -157,7 +231,7 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
   def take(n: Int) = {
     val more = this._untaken.take(n)
     this._untaken --= more
-    this._pending ++= more
+    this._pending.enqueue(new Round(more.map(new Request(_))))
     more
   }
 
@@ -166,38 +240,17 @@ class Finder(val target: Integer160, val K: Int, val seeds: Traversable[Node]) {
 
   /**
    * Returns token ([[scala.Option]]) for given node id.
+   *
    * @param id Node id to return token for.
    * @return   token for given node id.
    */
   def token(id: Integer160) = this._tokens.get(id)
 
-  /** Returns map of tokens */
+  /** Returns map of all reported tokens */
   def tokens: collection.Map[Integer160, Token] = this._tokens
 
-  /** Returns collection of peers */
+  /** Returns collection of all reported peers */
   def peers: collection.Traversable[Peer] = this._peers
-
-  /**
-   * Adds unseen nodes from the given collection into the collection of seen nodes and untaken nodes.
-   *
-   * @param nodes A collection of potentially unseen nodes.
-   */
-  private def add(nodes: Traversable[Node]) = nodes foreach { node =>
-    if (!this._seen.contains(node)) {
-      this._seen += node
-      this._untaken += node
-    }
-  }
-
-  /**
-   * Removes given node from the corresponding round of pending requests.
-   * If, as a result of this operation, round becomes empty, removes the round from the queue.
-   *
-   * @param node a node request to which was complete.
-   */
-  private def complete(node: Node) = {
-    // --
-  }
 }
 
 /** Accompanying object */

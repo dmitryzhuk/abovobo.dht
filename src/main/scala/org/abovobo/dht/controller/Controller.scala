@@ -50,8 +50,10 @@ class Controller(val K: Int,
   extends Actor with ActorLogging {
   
   val system = context.system
+  import this.context.dispatcher
+  //import system.ex
   import org.abovobo.dht.controller.Controller._
-  import Controller
+  //import orgController
   
   override def preStart() = {}
   
@@ -129,7 +131,7 @@ class Controller(val K: Int,
 
     case CleanupPeers => responder.cleanupPeers()      
       
-    case StopRecursion(target) => this.recursions.get(target).foreach(_.stopWaiting())
+    //case StopRecursion(target) => this.recursions.get(target).foreach(_.stopWaiting())
 
     // -- HANDLE EVENTS
     // -- -------------
@@ -143,12 +145,12 @@ class Controller(val K: Int,
             case q: Query.FindNode =>
               this.recursions.get(q.target).foreach { finder =>
                 finder.fail(transaction.remote)
-                finder.iterate()
+                //finder.iterate()
               }
             case q: Query.GetPeers =>
               this.recursions.get(q.infohash).foreach { finder =>
                 finder.fail(transaction.remote)
-                finder.iterate()
+                //finder.iterate()
               }
             case _ => // do nothing for other queries
           }
@@ -193,12 +195,12 @@ class Controller(val K: Int,
                 case q: Query.FindNode =>
                   this.recursions.get(q.target).foreach { finder =>
                     finder.fail(transaction.remote)
-                    finder.iterate()
+                    //finder.iterate()
                   }
                 case q: Query.GetPeers =>
                   this.recursions.get(q.infohash).foreach { finder =>
                     finder.fail(transaction.remote)
-                    finder.iterate()
+                    //finder.iterate()
                   }
                 case _ => // do nothing for other queries
               }
@@ -229,7 +231,7 @@ class Controller(val K: Int,
         this.recursions.get(transaction.query.asInstanceOf[Query.FindNode].target) match {
           case Some(finder) =>
             finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
-            finder.iterate()
+            //finder.iterate()
           case None =>
             this.log.warning("For reply to mine message {} from {}: failed to match recursion for target {}", transaction.query.name, transaction.remote, transaction.query.asInstanceOf[Query.FindNode].target)
         }
@@ -237,7 +239,7 @@ class Controller(val K: Int,
         this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
           case Some(finder) =>
             finder.report(transaction.remote, gp.nodes, Nil, gp.token)
-            finder.iterate()
+            //finder.iterate()
           case None =>
             this.log.warning("For message {} from {}: failed to match recursion for target {}", transaction.query.name, transaction.remote, transaction.query.asInstanceOf[Query.FindNode].target)
         }
@@ -245,7 +247,7 @@ class Controller(val K: Int,
         this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
           case Some(finder) =>
             finder.report(transaction.remote, Nil, gp.values, gp.token)
-            finder.iterate()
+            //finder.iterate()
           case None =>
             this.log.warning("For message {} from {}: failed to match recursion for target {}", transaction.query.name, transaction.remote, transaction.query.asInstanceOf[Query.FindNode].target)
         }
@@ -298,7 +300,7 @@ class Controller(val K: Int,
   /// Active plugins
   private val plugins = new mutable.HashMap[Long, ActorRef]
   
-  private abstract class AbstractFinder(val requester: ActorRef, target: Integer160, K: Int, seeds: Traversable[Node]) extends Finder(target, K, seeds) {
+  private abstract class AbstractFinder(val requester: ActorRef, target: Integer160, K: Int, seeds: Traversable[Node]) extends Finder(target, K, 0, seeds) {
     private var waitingForStopTask: Option[Cancellable] = None
     
     def stopWaiting() =
@@ -330,11 +332,13 @@ class Controller(val K: Int,
         requester ! Found(this.nodes, this.peers, this.tokens)
         Controller.this.recursions -= this.target
 
+        /*
       case Finder.State.Waiting =>
         // possibly there are more untaken nodes but we made no new requests, just wait for timeout or pending requests to complete
         if (waitingForStopTask.isEmpty) {
           scheduleWait()
-        } 
+        }
+        */
         
       case Finder.State.Continue =>
         val id = Controller.this.reader.id().get

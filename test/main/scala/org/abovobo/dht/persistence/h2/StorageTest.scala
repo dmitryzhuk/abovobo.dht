@@ -26,9 +26,11 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
 
   val ds = using(this.getClass.getResourceAsStream("/tables.sql")) { is: java.io.InputStream =>
     using(new java.io.InputStreamReader(is)) { reader =>
-      DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4", reader)
+      DataSource("jdbc:h2:~/db/dht", reader).close()
     }
+    DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
   }
+
   val storage = new Storage(ds.connection)
   val reader = storage
   val writer = storage
@@ -39,6 +41,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
   override def afterAll() = {
     this.storage.commit()
     this.storage.close()
+    this.ds.close()
   }
 
   "A storage" when {

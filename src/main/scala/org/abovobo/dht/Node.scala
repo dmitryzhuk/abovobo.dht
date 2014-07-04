@@ -24,5 +24,9 @@ import scala.concurrent.duration._
  * @param address   Network address of remote node.
  */
 class Node(val id: Integer160, val address: InetSocketAddress) {
-  override def toString = "Node [#" + id + "@" + address.getAddress.getHostAddress + ":" + address.getPort + "]" 
+
+  /** @inheritdoc */
+  override def toString =
+    "Node [#" + id + "@" + address.getAddress.getHostAddress + ":" + address.getPort + "]"
+
 }

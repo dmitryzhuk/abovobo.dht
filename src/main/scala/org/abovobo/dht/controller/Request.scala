@@ -18,30 +18,31 @@ import org.abovobo.dht.Node
  * @param node   A node which is being requested
  * @param result A result of request
  */
-private[controller] class Request(val node: Node, var result: Request.Result.Value = Request.Result.Unknown)
+private[controller] class Request(val node: Node, var result: Request.Result = Request.Unknown())
 
 /**
  * Accompanying object holding request result enumeration definition
  */
 private[controller] object Request {
 
-  object Result extends Enumeration {
-    val
-    // Initial value indicating that request is still in progress
-    Unknown,
+  /** Basic trait for all possible result cases */
+  sealed trait Result
 
-    // Indicates that requested node brought information about new nodes
-    // that are closer than already seen.
-    Improved,
+  /** Result is still unknown, request is in progress */
+  case class Unknown() extends Result
 
-    // Indicates that requested node successfully responded but didn't bring new nodes or
-    // there was no nodes closer than already seen reported.
-    Neutral,
+  /**
+   * Request has improved the collection of known nodes by `n` nodes which are
+   * closer than previously seen.
+   *
+   * @param n Number of nodes reported, which are closer than previously seen.
+   */
+  case class Improved(n: Int) extends Result
 
-    // Indicates that requested node failed to respond.
-    Failed
+  /** Request was successful, but did not improve the collection of known nodes. */
+  case class Neutral() extends Result
 
-    = Value
-  }
+  /** Request has failed probably due to timeout */
+  case class Failed() extends Result
 
 }
