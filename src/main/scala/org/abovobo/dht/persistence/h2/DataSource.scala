@@ -51,9 +51,12 @@ object DataSource {
  *
  * @param ds An instance of [[javax.sql.DataSource]] to wrap.
  */
-class DataSource(val ds: javax.sql.DataSource) {
+class DataSource(val ds: JdbcConnectionPool) extends AutoCloseable {
 
   /** Returns new connection from given [[javax.sql.DataSource]] */
   def connection = this.ds.getConnection
+
+  /** Calls [[org.h2.jdbcx.JdbcConnectionPool#dispose]] */
+  override def close() = this.ds.dispose()
 
 }
