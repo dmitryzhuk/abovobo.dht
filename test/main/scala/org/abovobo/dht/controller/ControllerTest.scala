@@ -8,15 +8,13 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht
+package org.abovobo.dht.controller
 
-import akka.actor.{ActorSystem, ActorLogging, Actor}
+import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
-import org.abovobo.dht.controller.Controller
+import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.persistence.h2.{DataSource, Storage}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
-import org.abovobo.dht.persistence._
-import com.typesafe.config.ConfigFactory
 
 //import org.abovobo.dht.persistence.h2.H2DataSource
 

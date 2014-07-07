@@ -317,7 +317,7 @@ class Controller(val K: Int,
      * Checks current state of the [[controller.Finder]] associated with given recursion
      * and makes the next move depending on the state value.
      */
-    def iterate() { iterate(this.state) }
+    //def iterate() { iterate(this.state) }
     
     private def iterate(s: Finder.State.Value): Unit = s match {
       case Finder.State.Failed =>

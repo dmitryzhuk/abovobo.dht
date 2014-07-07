@@ -115,11 +115,11 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
     // if head round of the queue of pending request rounds
     // became completed after this report, move it to collection
     // of completed rounds for further reference
-    while (this._pending.front.result match {
+    while (this._pending.nonEmpty && (this._pending.front.result match {
       case Request.Neutral() | Request.Failed() => true
       case Request.Improved(n) => true
       case _ => false
-    }) this._completed.enqueue(this._pending.dequeue())
+    })) this._completed.enqueue(this._pending.dequeue())
 
     // store reporter into collection of succeeded nodes
     // but don't add routers (nodes with zero id)
@@ -161,66 +161,44 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   }
 
   /**
-   * Indicates current state of the Finder object:
-   * -- if pending requests list is empty and no untaken nodes exist
-   *      * Succeeded:  if there are succeeded nodes
-   *      * Failed:     otherwise
-   * -- if there are at least K succeeded nodes which are `closer` to `target` then closest untaken one
-   *      * Succeeded:  if there are no pending requests
-   *      * Pending:    if there are still pending requests remain
-   * -- Continue in any other case
-   *
-   * XXX: FIXME: Update this logic, so it would wait for at least a round of pending requests, without this, we might often stop after first K responded nodes (on second round with alpha 3 and K 8, actually),
-   *    thou there might be closer responses from pending requests.
-   *    We can add "Pending" state which will not generate new requests nor finish recursion, until closer nodes are found or pending set is empty (or at least have less entries then current round 'width')
-   * 
+   * Returns current state of [[Finder]] instance.
    */
   def state =
 
-    // case #1: No pending requests, no untaken nodes, no succeeded nodes means
-    //          that node lookup attempt has totally failed.
-    if (this._pending.isEmpty && this._untaken.isEmpty && this._succeeded.size < this.K)
-      Finder.State.Failed
-
-    // case #2: No request rounds completed yet, but the very first round of pending requests
-    //          has already brought at least alpha new nodes: recursion may continue without
-    //          waiting the first round to complete.
-    else if (this._completed.isEmpty && this._pending.nonEmpty && this._pending.front.improved > alpha)
+    // case #0: The beginning of Finder lifecycle: no nodes has been taken yet
+    if (this._pending.isEmpty && this._succeeded.isEmpty && this._untaken.nonEmpty && this._seen.nonEmpty)
       Finder.State.Continue
 
-    // case #3: Last round did not bring any nodes which are closer than already seen ones,
-    //          means that initator should consider to send requests to K closest known nodes,
-    //          which were not yet queried.
-    else if (this._completed.nonEmpty && this._completed.last.improved == 0 && this._pending.nonEmpty)
-      Finder.State.Finalize
+    // case #1: No pending requests, no untaken nodes, no succeeded nodes means
+    //          that node lookup attempt has totally failed.
+    else if (this._pending.isEmpty && this._untaken.isEmpty && this._succeeded.size < this.K)
+      Finder.State.Failed
 
-    // case #4: There are more than `K` succeeded responses AND: all `K` of succeeded nodes are
+    // case #2: Either currently pending request has improved collection of seen nodes or
+    //          (if there are no pending requests) the most recent of completed ones did that.
+    else if ((this._pending.nonEmpty && this._pending.front.improved > alpha) ||
+      (this._pending.isEmpty && this._completed.nonEmpty && this._completed.last.improved > alpha))
+      Finder.State.Continue
+
+    // case #3: There are more than `K` succeeded responses AND: all `K` of succeeded nodes are
     //          closer than any of untaken ones OR there are no untaken nodes remaining.
-    else if (this._succeeded.size >= this.K &&
+    else if (this._pending.isEmpty && this._succeeded.size >= this.K &&
       (this.ordering.compare(this._succeeded.take(this.K).last, this._untaken.head) == -1 || this._untaken.isEmpty))
       Finder.State.Succeeded
 
-    else Finder.State.Wait
+    // case #4: Last round did not bring any nodes which are closer than already seen ones,
+    //          means that initator should consider to send requests to K closest known nodes,
+    //          which were not yet queried.
+    else if (this._completed.nonEmpty && this._completed.last.improved == 0)
+      Finder.State.Finalize
 
-  /*
-    if (this._pending.isEmpty && this._untaken.isEmpty) {
-      if (this._succeeded.isEmpty)
-        Finder.State.Failed
-      else 
-        Finder.State.Succeeded
-    } else if (this._succeeded.size >= K
-                && (this._untaken.isEmpty || this.ordering.lteq(this._succeeded.take(this.K).last, this._untaken.head))) {
-                // XXX: 
-                // DONE: a) fix the case when we kill requests with pending closer nodes, 
-                // TODO: b) fix case for GetPeers, when our goal is to get peers not nodes
+    // case #5: If none of the cases above but still there are pending requests
+    //          just wait for more requests to complete.
+    else if (this._pending.nonEmpty)
+      Finder.State.Wait
 
-      // Means we've got some results, but there are unanswered nodes, with possibly better results. 
-      // So we can wait for some timeout or some activity from them with better results
-      Finder.State.Pending
-    } else {
-      Finder.State.Continue
-    }
-    */
+    // Otherwise throw an exception. In theory this must never happen.
+    else throw new RuntimeException("Invalid Finder State")
 
   /**
    * Takes maximum `n` nodes which were not given yet.
