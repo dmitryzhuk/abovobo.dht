@@ -35,24 +35,7 @@ class FinderTest(system: ActorSystem)
   val seed = new Node(Integer160.random, new InetSocketAddress(0))
   val finder = new Finder(target, 8, 3, List(seed))
 
-  override def beforeAll() {
-
-    // distance to seed
-    val d = this.target ^ this.seed.id
-    // lower distance bound
-    val l = d / 1000
-
-    val o = new NodeOrdering(this.target)
-
-    println()
-    println(l < d)
-    println(o.compare(new Node(l ^ this.target, new InetSocketAddress(0)), new Node(this.seed.id, new InetSocketAddress(0))))
-
-    val r = l + Integer160.random % (d - l)
-    println(r < d)
-    println(o.compare(new Node(r ^ this.target, new InetSocketAddress(0)), new Node(this.seed.id, new InetSocketAddress(0))))
-
-  }
+  override def beforeAll() {}
 
   override def afterAll() {}
 
@@ -90,17 +73,61 @@ class FinderTest(system: ActorSystem)
     }
 
     "given alpha nodes and got report with even closer nodes form them" must {
-      "have state Finder.State.Continue after first node reported" in {
-        val more = this.finder.take(3)
-        val reporter = more.take(1).head
-        val distanceFromReporter = this.target ^ reporter.id
-        val lowerDistanceBound = distanceFromReporter / 1000
-        val distanceRange = distanceFromReporter - lowerDistanceBound
-        val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ this.target
-        val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
-        // -----
-        this.finder.report(reporter, nodes, Nil, Array.empty)
-        this.finder.state should be(Finder.State.Continue)
+      "have state Finder.State.Continue after taken nodes reported" in {
+        this.finder.take(3) foreach { reporter =>
+          val distanceFromReporter = this.target ^ reporter.id
+          val lowerDistanceBound = distanceFromReporter / 1000
+          val distanceRange = distanceFromReporter - lowerDistanceBound
+          val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ this.target
+          val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+          // -----
+          this.finder.report(reporter, nodes, Nil, Array.empty)
+          this.finder.state should be(Finder.State.Continue)
+        }
+      }
+    }
+
+    "given alpha nodes and got report" must {
+      "have state Finder.State.Wait after the first node reported no closer nodes and Finder.State.Finalize after all round reported no closer nodes" in {
+        val more = this.finder.take(3).toArray
+        def report(node: Node) {
+          val distanceFromReporter = this.target ^ node.id
+          val upperDistanceBound = distanceFromReporter + 1000
+          val distanceRange = upperDistanceBound - distanceFromReporter
+          val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ this.target
+          val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+          this.finder.report(node, nodes, Nil, Array.empty)
+        }
+        for (i <- 0 until 2) {
+          report(more(i))
+          this.finder.state should be(Finder.State.Wait)
+        }
+        report(more(2))
+        this.finder.state should be(Finder.State.Finalize)
+      }
+    }
+
+    "given K nodes and got report" must {
+      "have state Finder.State.Wait after while K nodes reporting no closer nodes and Finder.State.Succeeded after round is completed" in {
+        while (this.finder.state == Finder.State.Finalize) {
+          val more = this.finder.take(8).toArray
+          def report(node: Node) {
+            val distanceFromReporter = this.target ^ node.id
+            val upperDistanceBound = distanceFromReporter + 1000
+            val distanceRange = upperDistanceBound - distanceFromReporter
+            val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ this.target
+            val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+            this.finder.report(node, nodes, Nil, Array.empty)
+          }
+          for (i <- 0 until 7) {
+            report(more(i))
+            this.finder.state should be(Finder.State.Wait)
+          }
+          report(more(7))
+          println()
+          println("Finalizing...")
+        }
+        this.finder.state should be(Finder.State.Succeeded)
       }
     }
   }

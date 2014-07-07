@@ -183,13 +183,14 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
     // case #3: There are more than `K` succeeded responses AND: all `K` of succeeded nodes are
     //          closer than any of untaken ones OR there are no untaken nodes remaining.
     else if (this._pending.isEmpty && this._succeeded.size >= this.K &&
+      (this._completed.nonEmpty && this._completed.last.improved == 0) &&
       (this.ordering.compare(this._succeeded.take(this.K).last, this._untaken.head) == -1 || this._untaken.isEmpty))
       Finder.State.Succeeded
 
     // case #4: Last round did not bring any nodes which are closer than already seen ones,
     //          means that initator should consider to send requests to K closest known nodes,
     //          which were not yet queried.
-    else if (this._completed.nonEmpty && this._completed.last.improved == 0)
+    else if (this._completed.nonEmpty && this._completed.last.improved == 0 && this._pending.isEmpty)
       Finder.State.Finalize
 
     // case #5: If none of the cases above but still there are pending requests
