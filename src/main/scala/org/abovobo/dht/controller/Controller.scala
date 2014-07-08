@@ -52,9 +52,8 @@ class Controller(val K: Int,
                  val table: ActorRef)
   extends Actor with ActorLogging {
   
-  private val system = context.system
   import this.context.dispatcher
-  import org.abovobo.dht.controller.Controller._
+  import Controller._
 
   override def preStart() = {}
   
@@ -73,6 +72,7 @@ class Controller(val K: Int,
    * Implements handling of [[controller.Controller]]-specific events and commands.
    */
   override def receive = {
+
     // To avoid "unhandled message" logging
     case r: Table.Result =>   
 
@@ -89,9 +89,8 @@ class Controller(val K: Int,
         this.recursions += target -> new Finder(target, this.K, this.alpha, klosest(this.alpha, target))
       }
       val finder = this.recursions(target)
-      val id = this.reader.id().get
       finder.take(this.alpha).foreach { node =>
-        val query = new Query.FindNode(this.factory.next(), id, target)
+        val query = new Query.FindNode(this.factory.next(), this.reader.id().get, target)
         this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
         this.agent ! Agent.Send(query, node.address)
       }
@@ -112,21 +111,7 @@ class Controller(val K: Int,
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
       this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
-      
-      
-    case SendPluginMessage(message, node) =>
-      // just forward message to agent for now.
-      // maybe its possible to reuse plugins query->response style traffic for DHT state update
-      // then, tid field and timeouts should be managed by this DHT Controller and Agent
 
-      this.agent ! Agent.Send(message, node.address)
-      
-    case PutPlugin(pid, plugin) => 
-      this.plugins.put(pid.value, plugin)
-    
-    case RemovePlugin(pid) => 
-      this.plugins.remove(pid.value)
-      
     case RotateTokens => responder.rotateTokens()
 
     case CleanupPeers => responder.cleanupPeers()      
@@ -138,7 +123,10 @@ class Controller(val K: Int,
       // and properly notify routing table about this failure
       this.transactions.remove(query.tid) match {
         case Some(transaction) =>
-          this.table ! Table.Failed(transaction.remote)
+          // don't notify table about routers activity
+          if (transaction.remote.id != Integer160.zero) {
+            this.table ! Table.Failed(transaction.remote)
+          }
           transaction.query match {
             case q: Query.FindNode =>
               this.recursions.get(q.target).foreach { finder =>
@@ -187,7 +175,10 @@ class Controller(val K: Int,
           // close transaction and notify routing table
           this.transactions.remove(error.tid) match {
             case Some(transaction) =>
-              this.table ! Table.Received(transaction.remote, Message.Kind.Error)
+              // don't notify table about routers activity
+              if (transaction.remote.id != Integer160.zero) {
+                this.table ! Table.Received(transaction.remote, Message.Kind.Error)
+              }
               transaction.query match {
                 case q: Query.FindNode =>
                   this.recursions.get(q.target).foreach { finder =>
@@ -203,6 +194,7 @@ class Controller(val K: Int,
               this.log.error("Error message with invalid transaction: " + error)
           }
 
+        /// XXX To be removed
         case pm: dht.message.Plugin =>
           this.plugins.get(pm.pid.value) match {
             case Some(plugin) => plugin ! Received(pm, remote)
@@ -212,6 +204,14 @@ class Controller(val K: Int,
                 new dht.message.Error(pm.tid, dht.message.Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
           }
       }
+
+    // just forward message to agent for now.
+    // maybe its possible to reuse plugins query->response style traffic for DHT state update
+    // then, tid field and timeouts should be managed by this DHT Controller and Agent
+    /// XXX To be removed
+    case SendPluginMessage(message, node) => this.agent ! Agent.Send(message, node.address)
+    case PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
+    case RemovePlugin(pid) =>  this.plugins.remove(pid.value)
   }
 
   /**
@@ -263,29 +263,19 @@ class Controller(val K: Int,
         transaction.requester ! PeerAnnounced()
     }
   }
-  
-  private def klosest(n: Int, target: Integer160) = {
-    val fromTable = this.reader.klosest(n, target)
-    if (fromTable.size < n) {
-      // routers are always last
-      fromTable ++ routersNodes
-    } else { 
-      fromTable
-    }
+
+  /// Wraps Reader's `klosest` method adding routers to the output if the table has not enough entries
+  private def klosest(n: Int, target: Integer160) = this.reader.klosest(n, target) match {
+    case nn: Seq[Node] if nn.size < n => nn ++ (this.routers map { ra => new Node(Integer160.zero, ra) })
+    case enough: Seq[Node] => enough
   }
 
   /// An instance of Responder to handle incoming queries
-  private lazy val responder =
-    new Responder(
-      this.K,
-      this.period,
-      this.lifetime,
-      this.reader,
-      this.writer)
+  private lazy val responder = new Responder(this.K, this.period, this.lifetime, this.reader, this.writer)
   
   val timerTasks = 
-    system.scheduler.schedule(Duration.Zero, this.period, self, RotateTokens) ::
-    system.scheduler.schedule(this.lifetime, this.lifetime, self, CleanupPeers) :: Nil
+    this.context.system.scheduler.schedule(Duration.Zero, this.period, self, RotateTokens) ::
+    this.context.system.scheduler.schedule(this.lifetime, this.lifetime, self, CleanupPeers) :: Nil
 
   /// Instantiate transaction ID factory
   private val factory = TIDFactory.random
@@ -295,11 +285,9 @@ class Controller(val K: Int,
 
   /// Collection of pending recursive procedures
   private val recursions = new mutable.HashMap[Integer160, Finder]
-  
-  /// Routers nodes marked with zero IDs to avoid adding them to routing tables
-  private val routersNodes = routers.map { ra => new Node(Integer160.zero, ra) }
-  
+
   /// Active plugins
+  /// XXX To be removed from Controller
   private val plugins = new mutable.HashMap[Long, ActorRef]
 }
 
@@ -415,13 +403,18 @@ object Controller {
                           implied: Boolean)
     extends Command
 
+  /// Base class for private commands which Controller sends to itself
   private trait SelfCommand extends Command
 
+  /// Command to self, which instructs TokenManager to rotate tokens
   private case object RotateTokens extends SelfCommand
+
+  /// Command to self, which causes old peers to be deleted form the storage
   private case object CleanupPeers extends SelfCommand
 
+
+  /// XXX These plugin-related messages will be removed soon
   case class SendPluginMessage(message: org.abovobo.dht.message.Plugin, node: Node) extends Command
-    
   case class PutPlugin(pid: PID, plugin: ActorRef) extends Command
   case class RemovePlugin(pid: PID) extends Command
 }
