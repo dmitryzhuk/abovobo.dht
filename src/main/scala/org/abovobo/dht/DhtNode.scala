@@ -20,7 +20,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   val storageT: Storage = null //H2Storage(dataSource.getConnection) // table
   val storageD: Storage = null //H2Storage(dataSource.getConnection) // node (self)
     
-  val controller = this.context.actorOf(Controller.props(routers, storageC, storageC), "controller")
+  val controller = this.context.actorOf(Controller.props(routers, storageC, storageC, null, null), "controller")
   val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")
   
   Thread.sleep(300) // Agent needs time to bind a socket and become an agent
@@ -39,7 +39,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
     case DhtNode.Stop => self ! PoisonPill
     case DhtNode.Describe => {
       if (storageD.id.isEmpty) {
-        this.context.system.scheduler.scheduleOnce(250 milliseconds, self, DhtNode.Describe)(this.context.system.dispatcher, sender())
+        this.context.system.scheduler.scheduleOnce(250.milliseconds, self, DhtNode.Describe)(this.context.system.dispatcher, sender())
       } else {
         sender ! DhtNode.NodeInfo(new Node(storageD.id.get, endpoint), controller, storageD.nodes)        
       }

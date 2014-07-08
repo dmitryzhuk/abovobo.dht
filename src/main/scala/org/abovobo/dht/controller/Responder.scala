@@ -13,7 +13,6 @@ package org.abovobo.dht.controller
 import java.net.InetSocketAddress
 
 import org.abovobo.dht._
-import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.{Query, Response}
 import org.abovobo.dht.persistence.{Reader, Writer}
 
@@ -140,9 +139,9 @@ class Responder(K: Int,
   }
 
   /** This method is executed periodically to remote expired infohash-peer associations */
-  def cleanupPeers() =
-    this.writer.cleanup(this.lifetime)
+  def cleanupPeers() = this.writer.cleanup(this.lifetime)
 
+  /// An instance of [[TokenProvider]]
   private val tp = new TokenProvider
 
   /// Collection of remote peers which received tokens

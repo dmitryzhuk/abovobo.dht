@@ -35,7 +35,7 @@ class ControllerTest(system: ActorSystem)
   private val reader = h2
   private val writer = h2
 
-  val controller = this.system.actorOf(Controller.props(Nil, reader, writer))
+  val controller = this.system.actorOf(Controller.props(Nil, reader, writer, null, null))
 
   override def afterAll() {
     h2.close()
