@@ -84,37 +84,22 @@ class Controller(val K: Int,
       this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
 
-    case FindNode(target: Integer160) =>
-      if (!this.recursions.contains(target)) {
-        this.recursions += target -> new Finder(target, this.K, this.alpha, klosest(this.alpha, target))
-      }
-      val finder = this.recursions(target)
-      finder.take(this.alpha).foreach { node =>
-        val query = new Query.FindNode(this.factory.next(), this.reader.id().get, target)
-        this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
-        this.agent ! Agent.Send(query, node.address)
-      }
-
-    case GetPeers(infohash: Integer160) =>
-      if (!this.recursions.contains(infohash)) {
-        this.recursions += infohash -> new Finder(infohash, this.K, this.alpha, klosest(this.alpha, infohash))
-      }
-      val finder = this.recursions(infohash)
-      val id = this.reader.id().get
-      finder.take(this.alpha).foreach { node =>
-        val query = new Query.GetPeers(this.factory.next(), id, infohash)
-        this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
-        this.agent ! Agent.Send(query, node.address)
-      }
-
     case AnnouncePeer(node, token, infohash, port, implied) =>
+      // Simply send Query.AnnouncePeer message to remote peer
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
       this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
 
-    case RotateTokens => responder.rotateTokens()
+    case FindNode(target: Integer160) => this.iterate(target, this.sender()) { () =>
+      new Query.FindNode(this.factory.next(), this.reader.id().get, target)
+    }
 
-    case CleanupPeers => responder.cleanupPeers()      
+    case GetPeers(infohash: Integer160) => this.iterate(infohash, this.sender()) { () =>
+      new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
+    }
+
+    case RotateTokens => responder.rotateTokens()
+    case CleanupPeers => responder.cleanupPeers()
 
     // -- HANDLE EVENTS
     // -- -------------
@@ -212,6 +197,36 @@ class Controller(val K: Int,
     case SendPluginMessage(message, node) => this.agent ! Agent.Send(message, node.address)
     case PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
     case RemovePlugin(pid) =>  this.plugins.remove(pid.value)
+  }
+
+  /**
+   * Performs next iteration of recursive lookup procedure.
+   *
+   * @param id     An id of interest (node id for FIND_NODE RPC or infohash for FIND_VALUE RPC).
+   * @param sender An original sender of the initial command which initiated recursion.
+   *
+   * @tparam T     Type of query to use (can be [[Query.FindNode]] or [[Query.GetPeers]])
+   */
+  private def iterate[T <: Query](id: Integer160, sender: ActorRef)(q: () => T) = {
+    val f = this.recursions.get(id) match {
+      case None =>
+        val finder = new Finder(id, this.K, this.alpha, klosest(this.alpha, id))
+        this.recursions.put(id, finder)
+        finder
+      case Some(finder) => finder
+    }
+    def round(n: Int) = f.take(n) foreach { node =>
+      val query = q()
+      this.transactions.put(query.tid, new Transaction(query, node, sender))
+      this.agent ! Agent.Send(query, node.address)
+    }
+    f.state match {
+      case Finder.State.Wait => // do nothing
+      case Finder.State.Continue => round(this.alpha)
+      case Finder.State.Finalize => round(this.K)
+      case Finder.State.Succeeded => // XXX TA-DAM
+      case Finder.State.Failed => // XXX Ouch
+    }
   }
 
   /**
@@ -352,7 +367,10 @@ object Controller {
    * @param peers   Collected peers (only for `get_peers` operation).
    * @param tokens  Collection of node id -> token associations (only for `get_peers` operation).
    */
-  case class Found(nodes: Traversable[Node], peers: Traversable[Peer], tokens: scala.collection.Map[Integer160, Token]) extends Event
+  case class Found(nodes: Traversable[Node],
+                   peers: Traversable[Peer],
+                   tokens: scala.collection.Map[Integer160, Token])
+    extends Event
 
   /** Indicates that recursive `find_node` or `get_peers` operation has failed. */
   case class NotFound() extends Event
