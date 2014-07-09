@@ -209,8 +209,8 @@ class Controller(val K: Int,
       case Finder.State.Wait => // do nothing
       case Finder.State.Continue => round(this.alpha)
       case Finder.State.Finalize => round(this.K)
-      case Finder.State.Succeeded => // XXX TA-DAM
-      case Finder.State.Failed => // XXX Ouch
+      case Finder.State.Succeeded => sender ! Controller.Found(f.nodes, f.peers, f.tokens)
+      case Finder.State.Failed => sender ! Controller.NotFound()
     }
   }
 
