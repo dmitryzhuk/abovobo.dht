@@ -103,81 +103,29 @@ class Controller(val K: Int,
 
     // -- HANDLE EVENTS
     // -- -------------
-    case Failed(query) =>
-      // when our query has failed just remove corresponding transaction
-      // and properly notify routing table about this failure
-      this.transactions.remove(query.tid) match {
-        case Some(transaction) =>
-          // don't notify table about routers activity
-          if (transaction.remote.id != Integer160.zero) {
-            this.table ! Table.Failed(transaction.remote)
-          }
-          transaction.query match {
-            case q: Query.FindNode =>
-              this.recursions.get(q.target).foreach { finder =>
-                finder.fail(transaction.remote)
-                //finder.iterate()
-              }
-            case q: Query.GetPeers =>
-              this.recursions.get(q.infohash).foreach { finder =>
-                finder.fail(transaction.remote)
-                //finder.iterate()
-              }
-            case _ => // do nothing for other queries
-          }
-        case None => // Error: invalid transaction
-          this.log.error("Failed event with invalid transaction: " + query)
-      }
+    // when our query has failed just remove corresponding transaction
+    // and properly notify routing table about this failure
+    case Failed(query) => this.transactions.remove(query.tid).foreach(this.fail)
 
     case Received(message, remote) =>
       // received message handled differently depending on message type
       message match {
 
+        // if query has been received
+        // notify routing table and then delegate execution to `Responder`
         case query: Query =>
-          // if query has been received
-          // notify routing table and then delegate execution to `Responder`
           val node = new Node(query.id, remote)
           this.table ! Table.Received(node, Message.Kind.Query)
           this.agent ! this.responder.respond(query, node)
 
-        case response: Response =>
-          // if response has been received
-          // close transaction, notify routing table and then
-          // delegate execution to private `process` method
-          this.transactions.remove(response.tid) match {
-            case Some(transaction) =>
-              // don't notify table about routers activity
-              if (transaction.remote.id != Integer160.zero) {
-                this.table ! Table.Received(transaction.remote, Message.Kind.Response)
-              } 
-              this.process(response, transaction)
-            case None => // Error: invalid transaction
-              this.log.error("Response message with invalid transaction: " + response)
-          }
+        // if response has been received
+        // close transaction, notify routing table and then
+        // delegate execution to private `process` method
+        case response: Response => this.transactions.remove(response.tid).foreach(this.process(response, _))
 
-        case error: dht.message.Error =>
-          // if error message has been received
-          // close transaction and notify routing table
-          this.transactions.remove(error.tid) match {
-            case Some(transaction) =>
-              // don't notify table about routers activity
-              if (transaction.remote.id != Integer160.zero) {
-                this.table ! Table.Received(transaction.remote, Message.Kind.Error)
-              }
-              transaction.query match {
-                case q: Query.FindNode =>
-                  this.recursions.get(q.target).foreach { finder =>
-                    finder.fail(transaction.remote)
-                  }
-                case q: Query.GetPeers =>
-                  this.recursions.get(q.infohash).foreach { finder =>
-                    finder.fail(transaction.remote)
-                  }
-                case _ => // do nothing for other queries
-              }
-            case None => // Error: invalid transaction
-              this.log.error("Error message with invalid transaction: " + error)
-          }
+        // if error message has been received
+        // close transaction and notify routing table
+        case error: dht.message.Error => this.transactions.remove(error.tid).foreach(this.fail)
 
         /// XXX To be removed
         case pm: dht.message.Plugin =>
@@ -197,6 +145,43 @@ class Controller(val K: Int,
     case SendPluginMessage(message, node) => this.agent ! Agent.Send(message, node.address)
     case PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
     case RemovePlugin(pid) =>  this.plugins.remove(pid.value)
+  }
+
+  /**
+   * Grabs target 160-bit ID for recursions or None if other query.
+   *
+   * @param q An instance of query to get target id from.
+   * @return Some id or None.
+   */
+  private def target(q: Query): Option[(Integer160, (TID, Integer160, Integer160) => Query)] = q match {
+    case fn: Query.FindNode =>
+      Some((fn.target, (tid: TID, id: Integer160, target: Integer160) => new Query.FindNode(tid, id, target)))
+    case gp: Query.GetPeers =>
+      Some((gp.infohash, (tid: TID, id: Integer160, infohash: Integer160) => new Query.GetPeers(tid, id, infohash)))
+    case _ => None
+  }
+
+  /**
+   * Handles failed transaction (by means of timeout or received Error message).
+   * Notifies Table actor about failure and reports failure to Finder, if we are dealing with recursion.
+   *
+   * @param transaction Transaction instance to handle fail for.
+   */
+  private def fail(transaction: Transaction) = {
+    // don't notify table about routers activity
+    if (transaction.remote.id != Integer160.zero) {
+      this.table ! Table.Received(transaction.remote, Message.Kind.Error)
+    }
+    // if we are dealing with recursion, get target id and
+    // fail it in finder and finally trigger next iteration
+    this.target(transaction.query).foreach { target =>
+      this.recursions.get(target._1) foreach { finder =>
+        finder.fail(transaction.remote)
+        this.iterate(target._1, transaction.requester) { () =>
+          target._2(this.factory.next(), this.reader.id().get, target._1)
+        }
+      }
+    }
   }
 
   /**
@@ -236,44 +221,41 @@ class Controller(val K: Int,
    * @param transaction A transaction instance that response was received for.
    */
   private def process(response: Response, transaction: Transaction) = {
+    if (transaction.remote.id != Integer160.zero) {
+      this.table ! Table.Received(transaction.remote, Message.Kind.Response)
+    }
     response match {
+
       case ping: Response.Ping =>
         transaction.requester ! Pinged()
+
       case fn: Response.FindNode =>
-        this.recursions.get(transaction.query.asInstanceOf[Query.FindNode].target) match {
-          case Some(finder) =>
-            finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
-            //finder.iterate()
-          case None =>
-            this.log.warning(
-              "For reply to mine message {} from {}: failed to match recursion for target {}",
-              transaction.query.name,
-              transaction.remote,
-              transaction.query.asInstanceOf[Query.FindNode].target)
+        val target = transaction.query.asInstanceOf[Query.FindNode].target
+        this.recursions.get(target).foreach { finder =>
+          finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
+          this.iterate(target, transaction.requester) { () =>
+            new Query.FindNode(this.factory.next(), this.reader.id().get, target)
+          }
         }
+
       case gp: Response.GetPeersWithNodes =>
-        this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
-          case Some(finder) =>
-            finder.report(transaction.remote, gp.nodes, Nil, gp.token)
-            //finder.iterate()
-          case None =>
-            this.log.warning(
-              "For message {} from {}: failed to match recursion for target {}",
-              transaction.query.name,
-              transaction.remote,
-              transaction.query.asInstanceOf[Query.FindNode].target)
+        val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
+        this.recursions.get(infohash).foreach { finder =>
+          finder.report(transaction.remote, gp.nodes, Nil, gp.token)
+          this.iterate(infohash, transaction.requester) { () =>
+            new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
+          }
         }
+
       case gp: Response.GetPeersWithValues =>
-        this.recursions.get(transaction.query.asInstanceOf[Query.GetPeers].infohash) match {
-          case Some(finder) =>
-            finder.report(transaction.remote, Nil, gp.values, gp.token)
-          case None =>
-            this.log.warning(
-              "For message {} from {}: failed to match recursion for target {}",
-              transaction.query.name,
-              transaction.remote,
-              transaction.query.asInstanceOf[Query.FindNode].target)
+        val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
+        this.recursions.get(infohash).foreach { finder =>
+          finder.report(transaction.remote, Nil, gp.values, gp.token)
+          this.iterate(infohash, transaction.requester) { () =>
+            new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
+          }
         }
+
       case ap: Response.AnnouncePeer =>
         transaction.requester ! PeerAnnounced()
     }
