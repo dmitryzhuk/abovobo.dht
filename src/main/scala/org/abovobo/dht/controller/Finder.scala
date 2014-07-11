@@ -176,8 +176,8 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
 
     // case #2: Either currently pending request has improved collection of seen nodes or
     //          (if there are no pending requests) the most recent of completed ones did that.
-    else if ((this._pending.nonEmpty && this._pending.front.improved > alpha) ||
-      (this._pending.isEmpty && this._completed.nonEmpty && this._completed.last.improved > alpha))
+    else if ((this._pending.nonEmpty && this._pending.front.improved >= this.alpha) ||
+      (this._pending.isEmpty && this._completed.nonEmpty && this._completed.last.improved > 0))
       Finder.State.Continue
 
     // case #3: There are more than `K` succeeded responses AND: all `K` of succeeded nodes are
@@ -199,7 +199,8 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
       Finder.State.Wait
 
     // Otherwise throw an exception. In theory this must never happen.
-    else throw new RuntimeException("Invalid Finder State")
+    else
+      throw new RuntimeException("Invalid Finder State")
 
   /**
    * Takes maximum `n` nodes which were not given yet.
