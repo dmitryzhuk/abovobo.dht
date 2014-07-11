@@ -205,6 +205,7 @@ class Controller(val K: Int,
       this.transactions.put(query.tid, new Transaction(query, node, sender))
       this.agent ! Agent.Send(query, node.address)
     }
+    this.log.debug("Finder state when #iterate: " + f.state)
     f.state match {
       case Finder.State.Wait => // do nothing
       case Finder.State.Continue => round(this.alpha)

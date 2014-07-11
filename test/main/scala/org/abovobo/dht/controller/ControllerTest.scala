@@ -78,6 +78,7 @@ class ControllerTest(system: ActorSystem)
   val controller = this.system.actorOf(Controller.props(List(remote0), reader, writer, agent.getRef(), table.getRef()))
 
   override def beforeAll() {
+    this.writer.drop()
     println()
     println(this.self)
   }
@@ -96,7 +97,7 @@ class ControllerTest(system: ActorSystem)
 
       "instruct Agent to send Ping message to remote peer" in {
         this.controller ! Controller.Ping(new Node(id, this.remote1))
-        this.agent.receive(1.second) match {
+        this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
               case ping: Query.Ping =>
@@ -110,7 +111,7 @@ class ControllerTest(system: ActorSystem)
 
       "and when received response from Agent, report this to Table and then respond to original requester" in {
         this.controller ! Controller.Received(new Response.Ping(tid, id), this.remote1)
-        this.table.receive(1.second) match {
+        this.table.receive(10.seconds) match {
           case Table.Received(node, kind) =>
             node.id should equal(id)
             node.address should equal(this.remote1)
@@ -130,7 +131,7 @@ class ControllerTest(system: ActorSystem)
       "instruct Agent to send AnnouncePeer message to remote peer" in {
         this.controller ! Controller.AnnouncePeer(
           new Node(id, this.remote1), new dht.Token(2), infohash, 1, implied = true)
-        this.agent.receive(1.second) match {
+        this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
               case ap: Query.AnnouncePeer =>
@@ -144,7 +145,7 @@ class ControllerTest(system: ActorSystem)
 
       "and when received response from Agent, report this to Table and then respond to original requester" in {
         this.controller ! Controller.Received(new Response.AnnouncePeer(tid, id), this.remote1)
-        this.table.receive(1.second) match {
+        this.table.receive(10.seconds) match {
           case Table.Received(node, kind) =>
             node.id should equal(id)
             node.address should equal(this.remote1)
@@ -164,7 +165,7 @@ class ControllerTest(system: ActorSystem)
 
       "instruct Agent to send FindNode message to router(s)" in {
         this.controller ! Controller.FindNode(target)
-        this.agent.receive(1.second) match {
+        this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
               case fn: Query.FindNode =>
@@ -187,7 +188,7 @@ class ControllerTest(system: ActorSystem)
         this.controller ! Controller.Received(new Response.FindNode(tid, id, nodes), this.remote0)
 
         for (i <- 0 until 3) {
-          this.agent.receive(1.second) match {
+          this.agent.receive(10.seconds) match {
             case Agent.Send(message, remote) =>
               message match {
                 case fn: Query.FindNode =>
@@ -204,7 +205,7 @@ class ControllerTest(system: ActorSystem)
         }
 
         for (i <- 0 until 3) {
-          this.agent.receive(1.second) match {
+          this.agent.receive(10.seconds) match {
             case Agent.Send(message, remote) =>
               message match {
                 case fn: Query.FindNode =>
@@ -221,7 +222,7 @@ class ControllerTest(system: ActorSystem)
         }
 
         for (i <- 0 until 8) {
-          this.agent.receive(1.second) match {
+          this.agent.receive(10.seconds) match {
             case Agent.Send(message, remote) =>
               message match {
                 case fn: Query.FindNode =>
@@ -237,7 +238,7 @@ class ControllerTest(system: ActorSystem)
           }
         }
 
-        expectMsgPF(2.seconds) {
+        expectMsgPF(20.seconds) {
           case Controller.Found(nn, peers, tokens) =>
             nn should not be empty
             peers shouldBe empty
@@ -247,6 +248,96 @@ class ControllerTest(system: ActorSystem)
         }
       }
     }
+
+    //----
+    "command GetPeers was issued" must {
+
+      var tid: TID = null
+      val id = Integer160.random
+      val infohash = Integer160.random
+      val seed = new Node(Integer160.random, remote0)
+
+      "instruct Agent to send GetPeers message to router(s)" in {
+        this.controller ! Controller.GetPeers(infohash)
+        this.agent.receive(10.seconds) match {
+          case Agent.Send(message, remote) =>
+            message match {
+              case gp: Query.GetPeers =>
+                gp.id should equal(this.reader.id().get)
+                gp.infohash should equal(infohash)
+                tid = gp.tid
+              case _ => this.fail("Invalid message type")
+            }
+            remote should equal(this.remote0)
+        }
+      }
+
+      "and when received response from Agent, continue iterations until FindNode exhausted" in {
+        val distanceFromSeed = infohash ^ seed.id
+        val lowerDistanceBound = distanceFromSeed / 1000
+        val distanceRange = distanceFromSeed - lowerDistanceBound
+        val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ infohash
+        val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+
+        this.controller ! Controller.Received(new Response.GetPeersWithNodes(tid, id, new dht.Token(2), nodes), this.remote0)
+
+        for (i <- 0 until 3) {
+          this.agent.receive(10.seconds) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case gp: Query.GetPeers =>
+                  gp.infohash should equal(infohash)
+                  val distanceFromReporter = infohash ^ gp.id
+                  val lowerDistanceBound = distanceFromReporter / 1000
+                  val distanceRange = distanceFromReporter - lowerDistanceBound
+                  val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ infohash
+                  val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+                  this.controller ! Controller.Received(new Response.GetPeersWithNodes(gp.tid, id, new dht.Token(2), nodes), remote)
+                case _ => this.fail("Invalid message type")
+              }
+          }
+        }
+
+        for (i <- 0 until 3) {
+          this.agent.receive(10.seconds) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case gp: Query.GetPeers =>
+                  gp.infohash should equal(infohash)
+                  val distanceFromReporter = infohash ^ gp.id
+                  val upperDistanceBound = distanceFromReporter + 1000
+                  val distanceRange = upperDistanceBound - distanceFromReporter
+                  val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ infohash
+                  val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+                  this.controller ! Controller.Received(new Response.GetPeersWithNodes(gp.tid, id, new dht.Token(2), nodes), remote)
+                case _ => this.fail("Invalid message type")
+              }
+          }
+        }
+
+        for (i <- 0 until 8) {
+          this.agent.receive(10.seconds) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case gp: Query.GetPeers =>
+                  gp.infohash should equal(infohash)
+                  this.controller ! Controller.Received(new Response.GetPeersWithValues(gp.tid, id, new dht.Token(2), List(new dht.Peer(0), new dht.Peer(0))), remote)
+                case _ => this.fail("Invalid message type")
+              }
+          }
+        }
+
+        expectMsgPF(20.seconds) {
+          case Controller.Found(nn, peers, tokens) =>
+            nn should not be empty
+            peers should not be empty
+            tokens should not be empty
+          case _ =>
+            this.fail("Invalid message type")
+        }
+      }
+    }
+    // --
 
   }
 }
