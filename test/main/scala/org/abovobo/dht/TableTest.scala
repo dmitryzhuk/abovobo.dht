@@ -197,7 +197,7 @@ class TableTest(system: ActorSystem)
       "send Refresh events and cause FindNode received by Controller" in {
         this.controllerInbox.receive(70.seconds) match {
           case Controller.FindNode(target) =>
-            for (i <- 0 until 159) this.controllerInbox.receive(1.second)
+            for (i <- 0 until 157) this.controllerInbox.receive(1.second)
           case _ => this.fail("Unexpected message to controller")
         }
       }

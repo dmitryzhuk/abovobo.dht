@@ -48,7 +48,7 @@ class Reader(connection: Connection) extends persistence.Storage(connection) wit
       "nodeById" -> c.prepareStatement("select * from node where id=?"),
       "nodesByBucket" -> c.prepareStatement("select * from node where bucket=?"),
 
-      "allBuckets" -> c.prepareStatement("select * from bucket order by id"),
+      "allBuckets" -> c.prepareStatement("select * from bucket"),
 
       "peers" -> c.prepareStatement("select * from peer where infohash=?"))
   }
