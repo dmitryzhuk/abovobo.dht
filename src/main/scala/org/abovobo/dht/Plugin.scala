@@ -18,7 +18,6 @@ import akka.actor.Actor
  * @param value Value representing Plugin identifier.
  */
 class PID(val value: Long) {
-
   /// Check that value actually fits in Byte
   if (value < 0 || value > 255) {
     throw new IllegalArgumentException()
@@ -27,12 +26,3 @@ class PID(val value: Long) {
   /** @inheritdoc */
   override def toString = this.value.toString
 }
-
-abstract class Plugin(protected val pid: PID) extends Actor
-
-/*
-object Plugin {
-
-  val SearchPluginId = new PID(1)
-}
-*/

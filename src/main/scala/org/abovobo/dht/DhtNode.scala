@@ -32,7 +32,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
     storageC.close()
     storageT.close()
     storageD.close()
-    // dataSource will be disposed when all connections are closed
+    dataSource.close()
   }
   
   override def receive() = {
@@ -61,16 +61,10 @@ object DhtNode {
     system.actorOf(DhtNode.props(endpoint, routers), "Node-" + endpoint.getPort)
   }
     
-  def spawnNodes[A](system: ActorSystem, portBase: Int, count: Int)(f: (InetSocketAddress, ActorRef) => A): Seq[A] = {
-    
-    val routerEp = new InetSocketAddress(InetAddress.getLocalHost, portBase)
-        
-    val router = createNode(system, routerEp)
-    
-    val eps = for (i <- 1 until count) yield new InetSocketAddress(InetAddress.getLocalHost, portBase + i)
-
-    Seq(f(routerEp, router)) ++ eps.map { ep => 
-      f(ep, createNode(system, ep, List(routerEp)))
+  def spawnNodes[A](system: ActorSystem, portBase: Int, count: Int, routers: List[InetSocketAddress])(f: (InetSocketAddress, ActorRef) => A): Seq[A] = {
+    (1 until count) map { i =>
+      val ep = new InetSocketAddress(InetAddress.getLocalHost, portBase + i)
+      f(ep, createNode(system, ep, routers))
     }
   }
 }

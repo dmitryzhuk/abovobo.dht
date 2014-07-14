@@ -7,6 +7,8 @@ import scala.concurrent.Await
 import akka.pattern.ask
 import akka.util.Timeout
 import scala.concurrent.duration._
+import java.net.InetSocketAddress
+import java.net.InetAddress
 
 
 object DhtBuildingSmokeTest extends App {
@@ -29,8 +31,11 @@ object DhtBuildingSmokeTest extends App {
   
   val timeoutDuration = 10.seconds
   implicit val timeout = Timeout(timeoutDuration)
+  
+  val routerEp = new InetSocketAddress(InetAddress.getLocalHost, 10000)
+  val router = DhtNode.createNode(system, routerEp)
 
-  val nodes = DhtNode.spawnNodes(system, 20000, 30) { (ep, n) => 
+  val nodes = DhtNode.spawnNodes(system, 20000, 30, List(routerEp)) { (ep, n) => 
     Thread.sleep(500) 
     ep -> n
   }
