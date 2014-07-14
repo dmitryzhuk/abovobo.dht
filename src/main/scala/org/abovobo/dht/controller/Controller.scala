@@ -210,8 +210,12 @@ class Controller(val K: Int,
       case Finder.State.Wait => // do nothing
       case Finder.State.Continue => round(this.alpha)
       case Finder.State.Finalize => round(this.K)
-      case Finder.State.Succeeded => sender ! Controller.Found(f.nodes, f.peers, f.tokens)
-      case Finder.State.Failed => sender ! Controller.NotFound()
+      case Finder.State.Succeeded =>
+        this.log.debug("Sending SUCCEEDED to " + sender)
+        sender ! Controller.Found(f.nodes, f.peers, f.tokens)
+      case Finder.State.Failed =>
+        this.log.debug("Sending SUCCEEDED to " + sender)
+        sender ! Controller.NotFound()
     }
   }
 

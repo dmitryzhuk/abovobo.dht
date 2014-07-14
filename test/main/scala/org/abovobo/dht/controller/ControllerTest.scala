@@ -17,10 +17,10 @@ import akka.io.{Udp, IO}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.message.{Message, Response, Query}
-import org.abovobo.dht.persistence.h2.{DataSource, Storage}
+import org.abovobo.dht.persistence.h2.{DataSource, Reader, Writer}
 import org.abovobo.integer.Integer160
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
-import org.abovobo.dht.{TID, Agent, Node, Table}
+import org.abovobo.dht._
 import scala.concurrent.duration._
 import org.abovobo.dht
 
@@ -65,9 +65,8 @@ class ControllerTest(system: ActorSystem)
   def this() = this(ActorSystem("ControllerTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
   private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  private val h2 = new Storage(ds.connection)
-  private val reader = h2
-  private val writer = h2
+  private val reader = new Reader(ds.connection)
+  private val writer = new Writer(ds.connection)
 
   val remote0 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
   val remote1 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
@@ -84,8 +83,9 @@ class ControllerTest(system: ActorSystem)
   }
 
   override def afterAll() {
-    h2.close()
-    ds.close()
+    this.reader.close()
+    this.writer.close()
+    this.ds.close()
     TestKit.shutdownActorSystem(this.system)
   }
 
@@ -249,7 +249,6 @@ class ControllerTest(system: ActorSystem)
       }
     }
 
-    //----
     "command GetPeers was issued" must {
 
       var tid: TID = null
@@ -337,8 +336,22 @@ class ControllerTest(system: ActorSystem)
         }
       }
     }
-    // --
 
+    "message Ping was received" must {
+      "respond with own Ping response" in {
+        val id = Integer160.random
+        val tid = TIDFactory.random.next()
+        val message = new Query.Ping(tid, id)
+        this.controller ! Controller.Received(message, this.remote1)
+        this.agent.receive(10.seconds) match {
+          case Agent.Send(msg, address) =>
+            msg.tid should equal(tid)
+            msg.kind should equal(Message.Kind.Response)
+            address should equal(this.remote1)
+          case _ => this.fail("Invalid message")
+        }
+      }
+    }
   }
 }
 

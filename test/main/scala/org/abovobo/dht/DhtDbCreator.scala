@@ -1,7 +1,6 @@
 package org.abovobo.dht
 
-import java.sql.Connection
-import org.abovobo.dht.persistence.h2.Storage
+import org.abovobo.dht.persistence.h2.{Reader, Writer}
 import org.h2.tools.RunScript
 import java.sql.DriverManager
 import java.io.FileReader

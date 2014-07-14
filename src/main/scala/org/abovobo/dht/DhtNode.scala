@@ -4,7 +4,8 @@ import akka.actor.Actor
 import java.net.InetSocketAddress
 import akka.actor.actorRef2Scala
 import org.abovobo.dht.controller.Controller
-import org.abovobo.dht.persistence.h2.Storage
+import org.abovobo.dht.persistence.Storage
+import org.abovobo.dht.persistence.h2.{Reader, Writer}
 import scala.concurrent.duration._
 import akka.actor.ActorRef
 import akka.actor.Props
@@ -18,14 +19,14 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   
   val storageC: Storage = null //H2Storage(dataSource.getConnection) // controller
   val storageT: Storage = null //H2Storage(dataSource.getConnection) // table
-  val storageD: Storage = null //H2Storage(dataSource.getConnection) // node (self)
+  val storageD: Reader = null //H2Storage(dataSource.getConnection) // node (self)
     
-  val controller = this.context.actorOf(Controller.props(routers, storageC, storageC, null, null), "controller")
+  val controller = null //this.context.actorOf(Controller.props(routers, storageC, storageC, null, null), "controller")
   val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")
   
   Thread.sleep(300) // Agent needs time to bind a socket and become an agent
 
-  val table = this.context.actorOf(Table.props(storageT, storageT, controller), "table")
+  val table = null //this.context.actorOf(Table.props(storageT, storageT, controller), "table")
     
   override def postStop() {
     super.postStop()
@@ -44,7 +45,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
         sender ! DhtNode.NodeInfo(new Node(storageD.id.get, endpoint), controller, storageD.nodes)        
       }
     }
-    case msg => this.controller.forward(msg)
+    case msg => //this.controller.forward(msg)
   }
 }
 

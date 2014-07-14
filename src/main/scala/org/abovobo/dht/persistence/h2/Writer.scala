@@ -11,50 +11,17 @@
 package org.abovobo.dht.persistence.h2
 
 import java.sql.Connection
-
-import org.abovobo.dht.message.Message
-import Message.Kind.Kind
-import org.abovobo.dht.persistence
-import org.abovobo.dht.{Node, Peer, KnownNode}
+import org.abovobo.dht.message.Message.Kind._
+import org.abovobo.dht._
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Transaction
 
 import scala.concurrent.duration.FiniteDuration
 
 /**
- * Actual implementation of [[org.abovobo.dht.persistence.Storage]] which uses H2.
- *
- * @author Dmitry Zhuk
+ * Actual implementation of [[persistence.Writer]] trait.
  */
-class Storage(connection: Connection)
-  extends persistence.Storage(connection)
-  with persistence.Reader with persistence.Writer {
-
-  /////////////////
-  // READER METHODS
-  /////////////////
-
-  /** @inheritdoc */
-  override def id() = this.id(this.statements("getId"))
-
-  /** @inheritdoc */
-  override def nodes() = this.nodes(this.statements("allNodes"))
-
-  /** @inheritdoc */
-  override def node(id: Integer160) = this.node(this.statements("nodeById"), id)
-
-  /** @inheritdoc */
-  override def bucket(id: Integer160) = this.bucket(this.statements("nodesByBucket"), id)
-
-  /** @inheritdoc */
-  override def buckets() = this.buckets(this.statements("allBuckets"))
-
-  /** @inheritdoc */
-  override def peers(infohash: Integer160) = this.peers(this.statements("peers"), infohash)
-
-  /////////////////
-  // WRITER METHODS
-  /////////////////
+class Writer(connection: Connection) extends persistence.Storage(connection) with persistence.Writer  {
 
   /** @inheritdoc */
   override def id(id: Integer160) =
@@ -113,11 +80,7 @@ class Storage(connection: Connection)
     Map(
       "setId" -> c.prepareStatement("insert into self(id) values(?)"),
       "dropId" -> c.prepareStatement("delete from self"),
-      "getId" -> c.prepareStatement("select * from self"),
 
-      "allNodes" -> c.prepareStatement("select * from node"),
-      "nodeById" -> c.prepareStatement("select * from node where id=?"),
-      "nodesByBucket" -> c.prepareStatement("select * from node where bucket=?"),
       "insertNode" -> c.prepareStatement(
         "insert into node(id, bucket, address, replied, queried) values(?, ?, ?, ?, ?)"),
       "updateNode" -> c.prepareStatement(
@@ -125,12 +88,10 @@ class Storage(connection: Connection)
       "moveNode" -> c.prepareStatement("update node set bucket=? where id=?"),
       "deleteNode" -> c.prepareStatement("delete from node where id=?"),
 
-      "allBuckets" -> c.prepareStatement("select * from bucket order by id"),
       "insertBucket" -> c.prepareStatement("insert into bucket(id, seen) values(?, now())"),
       "touchBucket" -> c.prepareStatement("update bucket set seen=now() where id=?"),
       "deleteAllBuckets" -> c.prepareStatement("delete from bucket"),
 
-      "peers" -> c.prepareStatement("select * from peer where infohash=?"),
       "announcePeer" -> c.prepareStatement("merge into peer(infohash, address, announced) values(?, ?, now())"),
       "deletePeer" -> c.prepareStatement("delete from peer where infohash=? and address=?"),
       "cleanupPeers" -> c.prepareStatement("delete from peer where dateadd('SECOND', ?, announced) < now()"))

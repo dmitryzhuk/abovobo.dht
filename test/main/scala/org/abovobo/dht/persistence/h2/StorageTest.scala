@@ -31,16 +31,16 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
     DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
   }
 
-  val storage = new Storage(ds.connection)
-  val reader = storage
-  val writer = storage
+  val writer = new Writer(this.ds.connection)
+  val reader = new Reader(this.ds.connection)
 
   override def beforeAll() = {
   }
 
   override def afterAll() = {
-    this.storage.commit()
-    this.storage.close()
+    this.writer.commit()
+    this.writer.close()
+    this.reader.close()
     this.ds.close()
   }
 
