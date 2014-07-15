@@ -9,6 +9,9 @@ import akka.util.Timeout
 import scala.concurrent.duration._
 import java.net.InetSocketAddress
 import java.net.InetAddress
+import java.nio.file.Paths
+import java.nio.file.Path
+import akka.actor.ActorRef
 
 
 object DhtBuildingSmokeTest extends App {
@@ -32,10 +35,19 @@ object DhtBuildingSmokeTest extends App {
   val timeoutDuration = 10.seconds
   implicit val timeout = Timeout(timeoutDuration)
   
+  val homeDir = Paths.get("~/db/dht-building-smoke")
   val routerEp = new InetSocketAddress(InetAddress.getLocalHost, 10000)
-  val router = DhtNode.createNode(system, routerEp)
+  val router = DhtNode.createNode(homeDir.resolve("router"), system, routerEp)
+  
+  def spawnNodes[A](homeDir: Path, system: ActorSystem, portBase: Int, count: Int, routers: List[InetSocketAddress])(f: (InetSocketAddress, ActorRef) => A): Seq[A] = {
+    (1 until count) map { i =>
+      val ep = new InetSocketAddress(InetAddress.getLocalHost, portBase + i)
+      val home = homeDir.resolve("node-" + i)
+      f(ep, DhtNode.createNode(home, system, ep, routers))
+    }
+  }
 
-  val nodes = DhtNode.spawnNodes(system, 20000, 30, List(routerEp)) { (ep, n) => 
+  val nodes = spawnNodes(homeDir, system, 20000, 30, List(routerEp)) { (ep, n) => 
     Thread.sleep(500) 
     ep -> n
   }

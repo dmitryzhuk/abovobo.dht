@@ -11,10 +11,12 @@ import java.net.InetAddress
 import akka.actor.PoisonPill
 import org.abovobo.dht.persistence.h2.DataUtils
 import org.abovobo.dht.persistence.h2.Storage
+import java.nio.file.Path
 
-class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) extends Actor {
+class DhtNode(homeDir: Path, endpoint: InetSocketAddress, routers: List[InetSocketAddress]) extends Actor {  
+  homeDir.toFile.mkdirs
   
-  val dataSource = DataUtils.openDatabase("~/db/dht-" + self.path.name, true)
+  val dataSource = DataUtils.openDatabase(homeDir.resolve("dht").toString, true)
   
   val storageC = new Storage(dataSource.connection) // controller
   val storageT = new Storage(dataSource.connection) // table
@@ -54,17 +56,10 @@ object DhtNode {
   
   case class NodeInfo(self: Node, controller: ActorRef, nodes: Traversable[Node])
   
-  def props(endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()) = 
-    Props(classOf[DhtNode], endpoint, routers)
+  def props(homeDir: Path, endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()) = 
+    Props(classOf[DhtNode], homeDir, endpoint, routers)
     
-  def createNode(system: ActorSystem, endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()): ActorRef = {
-    system.actorOf(DhtNode.props(endpoint, routers), "Node-" + endpoint.getPort)
-  }
-    
-  def spawnNodes[A](system: ActorSystem, portBase: Int, count: Int, routers: List[InetSocketAddress])(f: (InetSocketAddress, ActorRef) => A): Seq[A] = {
-    (1 until count) map { i =>
-      val ep = new InetSocketAddress(InetAddress.getLocalHost, portBase + i)
-      f(ep, createNode(system, ep, routers))
-    }
-  }
+  def createNode(homeDir: Path, system: ActorSystem, endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()): ActorRef = {
+    system.actorOf(DhtNode.props(homeDir, endpoint, routers), "Node-" + endpoint.getPort)
+  }    
 }

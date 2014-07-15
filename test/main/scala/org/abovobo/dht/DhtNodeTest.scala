@@ -10,6 +10,8 @@ import java.net.InetSocketAddress
 import java.net.InetAddress
 import scala.concurrent.duration._
 import org.abovobo.integer.Integer160
+import java.nio.file.Path
+import java.nio.file.Paths
 
 
 class DhtNodeTest(system: ActorSystem) extends TestKit(system) with ImplicitSender
@@ -19,7 +21,7 @@ class DhtNodeTest(system: ActorSystem) extends TestKit(system) with ImplicitSend
 
   def this() = this(ActorSystem("DhtNodeTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
-  val node = system.actorOf(DhtNode.props(new InetSocketAddress(InetAddress.getLocalHost, 10000)))
+  val node = system.actorOf(DhtNode.props(Paths.get("~/db/dht-test"), new InetSocketAddress(InetAddress.getLocalHost, 10000)))
   
   "DhtNode" when {
     "got Describe message" must {
