@@ -32,7 +32,7 @@ class TableTest(system: ActorSystem)
   with Matchers
   with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("RoutingTableTest", ConfigFactory.parseString("akka.loglevel=debug")))
+  def this() = this(ActorSystem("RoutingTableTest"/*, ConfigFactory.parseString("akka.loglevel=debug")*/))
 
   private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
   private val reader = new Reader(this.ds.connection)
@@ -196,8 +196,7 @@ class TableTest(system: ActorSystem)
     "timeout expires" must {
       "send Refresh events and cause FindNode received by Controller" in {
         this.controllerInbox.receive(70.seconds) match {
-          case Controller.FindNode(target) =>
-            for (i <- 0 until 157) this.controllerInbox.receive(1.second)
+          case Controller.FindNode(target) => // for (i <- 0 until 156) this.controllerInbox.receive(1.second)
           case _ => this.fail("Unexpected message to controller")
         }
       }

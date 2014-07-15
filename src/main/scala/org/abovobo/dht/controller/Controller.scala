@@ -90,11 +90,11 @@ class Controller(val K: Int,
       this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
 
-    case FindNode(target: Integer160) => this.iterate(target, this.sender()) { () =>
+    case FindNode(target: Integer160) => this.iterate(target, None, this.sender()) { () =>
       new Query.FindNode(this.factory.next(), this.reader.id().get, target)
     }
 
-    case GetPeers(infohash: Integer160) => this.iterate(infohash, this.sender()) { () =>
+    case GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender()) { () =>
       new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
     }
 
@@ -177,7 +177,7 @@ class Controller(val K: Int,
     this.target(transaction.query).foreach { target =>
       this.recursions.get(target._1) foreach { finder =>
         finder.fail(transaction.remote)
-        this.iterate(target._1, transaction.requester) { () =>
+        this.iterate(target._1, Some(finder), transaction.requester) { () =>
           target._2(this.factory.next(), this.reader.id().get, target._1)
         }
       }
@@ -192,20 +192,18 @@ class Controller(val K: Int,
    *
    * @tparam T     Type of query to use (can be [[Query.FindNode]] or [[Query.GetPeers]])
    */
-  private def iterate[T <: Query](id: Integer160, sender: ActorRef)(q: () => T) = {
-    val f = this.recursions.get(id) match {
-      case None =>
-        val finder = new Finder(id, this.K, this.alpha, klosest(this.alpha, id))
-        this.recursions.put(id, finder)
-        finder
-      case Some(finder) => finder
-    }
+  private def iterate[T <: Query](id: Integer160, finder: Option[Finder], sender: ActorRef)(q: () => T) = {
+    val f = finder.getOrElse({
+      val finder = new Finder(id, this.K, this.alpha, klosest(this.alpha, id))
+      this.recursions.put(id, finder)
+      finder
+    })
     def round(n: Int) = f.take(n) foreach { node =>
       val query = q()
       this.transactions.put(query.tid, new Transaction(query, node, sender))
       this.agent ! Agent.Send(query, node.address)
     }
-    this.log.debug("Finder state when #iterate: " + f.state)
+    this.log.debug("Finder state before #iterate: " + f.state)
     f.state match {
       case Finder.State.Wait => // do nothing
       case Finder.State.Continue => round(this.alpha)
@@ -214,9 +212,10 @@ class Controller(val K: Int,
         this.log.debug("Sending SUCCEEDED to " + sender)
         sender ! Controller.Found(f.nodes, f.peers, f.tokens)
       case Finder.State.Failed =>
-        this.log.debug("Sending SUCCEEDED to " + sender)
+        this.log.debug("Sending FAILED to " + sender)
         sender ! Controller.NotFound()
     }
+    this.log.debug("Finder state after #iterate: " + f.state)
   }
 
   /**
@@ -238,7 +237,7 @@ class Controller(val K: Int,
         val target = transaction.query.asInstanceOf[Query.FindNode].target
         this.recursions.get(target).foreach { finder =>
           finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
-          this.iterate(target, transaction.requester) { () =>
+          this.iterate(target, Some(finder), transaction.requester) { () =>
             new Query.FindNode(this.factory.next(), this.reader.id().get, target)
           }
         }
@@ -247,7 +246,7 @@ class Controller(val K: Int,
         val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
         this.recursions.get(infohash).foreach { finder =>
           finder.report(transaction.remote, gp.nodes, Nil, gp.token)
-          this.iterate(infohash, transaction.requester) { () =>
+          this.iterate(infohash, Some(finder), transaction.requester) { () =>
             new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
           }
         }
@@ -256,7 +255,7 @@ class Controller(val K: Int,
         val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
         this.recursions.get(infohash).foreach { finder =>
           finder.report(transaction.remote, Nil, gp.values, gp.token)
-          this.iterate(infohash, transaction.requester) { () =>
+          this.iterate(infohash, Some(finder), transaction.requester) { () =>
             new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
           }
         }

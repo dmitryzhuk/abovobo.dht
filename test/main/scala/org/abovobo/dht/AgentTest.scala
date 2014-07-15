@@ -34,22 +34,22 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
 
   override def receive = {
     case Udp.Bound(l) =>
-      this.log.info("Bound with local address {}", l)
+      this.log.debug("Bound with local address {}", l)
       this.context.become(this.ready(this.sender()))
   }
 
   def ready(socket: ActorRef): Actor.Receive = {
     case Udp.Send(data, r, ack) =>
-      this.log.info("Sending to " + r + ": " + data.toString())
+      this.log.debug("Sending to " + r + ": " + data.toString())
       socket ! Udp.Send(data, r, ack)
     case Udp.Received(data, r) =>
-      this.log.info("Received from " + r + ": " + data.toString())
+      this.log.debug("Received from " + r + ": " + data.toString())
       this.context.actorSelection("../../system/testActor*") ! Udp.Received(data, r)
     case Udp.Unbind =>
-      this.log.info("Unbinding")
+      this.log.debug("Unbinding")
       socket ! Udp.Unbind
     case Udp.Unbound =>
-      this.log.info("Unbound")
+      this.log.debug("Unbound")
   }
 }
 
@@ -63,7 +63,7 @@ class AgentTest(system: ActorSystem)
   with Matchers
   with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("AgentTest", ConfigFactory.parseString("akka.loglevel=debug")))
+  def this() = this(ActorSystem("AgentTest"/*, ConfigFactory.parseString("akka.loglevel=debug")*/))
 
   val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
   val local = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
@@ -79,6 +79,7 @@ class AgentTest(system: ActorSystem)
   override def afterAll() = {
     this.peer ! Udp.Unbind
     this.agent ! Udp.Unbind
+    Thread.sleep(1000)
     TestKit.shutdownActorSystem(this.system)
   }
 
@@ -139,7 +140,7 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after not receiving network response" in {
-        controllerInbox.receive(10.seconds) match {
+        controllerInbox.receive(15.seconds) match {
           case Controller.Failed(q: Query) =>
             q should be theSameInstanceAs query
           case a: Any =>

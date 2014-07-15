@@ -32,8 +32,8 @@ class FinderTest(system: ActorSystem)
   def this() = this(ActorSystem("FinderTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
   val target = Integer160.random
-  val seed = new Node(Integer160.random, new InetSocketAddress(0))
-  val finder = new Finder(target, 8, 3, List(seed))
+  val seed = new Node(Integer160.zero, new InetSocketAddress(0))
+  val finder = new Finder(this.target, 8, 3, List(this.seed))
 
   override def beforeAll() {}
 
@@ -58,13 +58,14 @@ class FinderTest(system: ActorSystem)
       }
     }
 
+    val distanceFromSeed = this.target ^ this.seed.id
+    var k = 0
+
     "got report with valid nodes from the initial seed" must {
       "have state Finder.State.Continue" in {
 
-        val distanceFromSeed = this.target ^ this.seed.id
-        val lowerDistanceBound = distanceFromSeed / 1000
-        val distanceRange = distanceFromSeed - lowerDistanceBound
-        val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ this.target
+        val ids = for (i <- 0 until 8) yield (distanceFromSeed - (8 * k) - (i + 1)) ^ this.target
+        k += 1
         val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
         // -----
         this.finder.report(seed, nodes, Nil, Array.empty)
@@ -75,10 +76,8 @@ class FinderTest(system: ActorSystem)
     "given alpha nodes and got report with even closer nodes form them" must {
       "have state Finder.State.Continue after taken nodes reported" in {
         this.finder.take(3) foreach { reporter =>
-          val distanceFromReporter = this.target ^ reporter.id
-          val lowerDistanceBound = distanceFromReporter / 1000
-          val distanceRange = distanceFromReporter - lowerDistanceBound
-          val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ this.target
+          val ids = for (i <- 0 until 8) yield (distanceFromSeed - (8 * k) - (i + 1)) ^ this.target
+          k += 1
           val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
           // -----
           this.finder.report(reporter, nodes, Nil, Array.empty)
@@ -90,11 +89,10 @@ class FinderTest(system: ActorSystem)
     "given alpha nodes and got report" must {
       "have state Finder.State.Wait after the first node reported no closer nodes and Finder.State.Finalize after all round reported no closer nodes" in {
         val more = this.finder.take(3).toArray
+        k = 0
         def report(node: Node) {
-          val distanceFromReporter = this.target ^ node.id
-          val upperDistanceBound = distanceFromReporter + 1000
-          val distanceRange = upperDistanceBound - distanceFromReporter
-          val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ this.target
+          val ids = for (i <- 0 until 8) yield (distanceFromSeed + (8 * k) + (i + 1)) ^ this.target
+          k += 1
           val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
           this.finder.report(node, nodes, Nil, Array.empty)
         }
@@ -112,10 +110,8 @@ class FinderTest(system: ActorSystem)
         while (this.finder.state == Finder.State.Finalize) {
           val more = this.finder.take(8).toArray
           def report(node: Node) {
-            val distanceFromReporter = this.target ^ node.id
-            val upperDistanceBound = distanceFromReporter + 1000
-            val distanceRange = upperDistanceBound - distanceFromReporter
-            val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ this.target
+            val ids = for (i <- 0 until 8) yield (distanceFromSeed + (8 * k) + (i + 1)) ^ this.target
+            k += 1
             val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
             this.finder.report(node, nodes, Nil, Array.empty)
           }
@@ -124,8 +120,6 @@ class FinderTest(system: ActorSystem)
             this.finder.state should be(Finder.State.Wait)
           }
           report(more(7))
-          println()
-          println("Finalizing...")
         }
         this.finder.state should be(Finder.State.Succeeded)
       }

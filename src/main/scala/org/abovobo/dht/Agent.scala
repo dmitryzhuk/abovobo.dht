@@ -107,7 +107,7 @@ class Agent(val endpoint: InetSocketAddress, val timeout: FiniteDuration, val co
           this.log.debug("Starting transaction " + query.tid)
           this.queries.put(
             query.tid,
-            query -> system.scheduler.scheduleOnce(this.timeout)(self ! Agent.Timeout(query, remote)))
+            query -> system.scheduler.scheduleOnce(this.timeout, self, Agent.Timeout(query, remote)))
         case _ => // do nothing
       }
       // send serialized message to remote address

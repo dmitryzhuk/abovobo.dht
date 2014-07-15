@@ -70,6 +70,7 @@ class ControllerTest(system: ActorSystem)
 
   val remote0 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
   val remote1 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
+  val dummy = new InetSocketAddress(0)
 
   val table = Inbox.create(this.system)
   val agent = Inbox.create(this.system)
@@ -158,86 +159,141 @@ class ControllerTest(system: ActorSystem)
 
     "command FindNode was issued" must {
 
-      var tid: TID = null
       val id = Integer160.random
       val target = Integer160.random
-      val seed = new Node(Integer160.random, remote0)
+      val zero = Integer160.zero
+      val origin = target ^ zero
+
+      var ck = 0
+      var fk = 0
+
+      // generates nodes with ids which are closer to target than given
+      def closer() = {
+        val ids = for (i <- 0 until 8) yield (origin - (8 * ck) - (i + 1)) ^ target
+        ck += 1
+        ids.map(new Node(_, this.dummy))
+      }
+
+      // generates nodes with ids which are more distant from target than given
+      def farther() = {
+        val ids = for (i <- 0 until 8) yield (origin + (8 * fk) + (i + 1)) ^ target
+        fk += 1
+        ids.map(new Node(_, this.dummy))
+      }
 
       "instruct Agent to send FindNode message to router(s)" in {
+        // issue a command to Controller
         this.controller ! Controller.FindNode(target)
-        this.agent.receive(10.seconds) match {
+
+        // receive the command that Controller has sent to network Agent
+        val tid = this.agent.receive(1.second) match {
           case Agent.Send(message, remote) =>
+            remote should equal(this.remote0)
             message match {
               case fn: Query.FindNode =>
                 fn.id should equal(this.reader.id().get)
                 fn.target should equal(target)
-                tid = fn.tid
+                fn.tid
               case _ => this.fail("Invalid message type")
             }
-            remote should equal(this.remote0)
+          case _ => this.fail("Invalid command type")
         }
-      }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
-      "and when received response from Agent, continue iterations until FindNode exhausted" in {
-        val distanceFromSeed = target ^ seed.id
-        val lowerDistanceBound = distanceFromSeed / 1000
-        val distanceRange = distanceFromSeed - lowerDistanceBound
-        val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ target
-        val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+        // -- at this point a finder corresponding to this recursion must have "Wait" state
 
-        this.controller ! Controller.Received(new Response.FindNode(tid, id, nodes), this.remote0)
+        // notify Controller that response message with closer nodes
+        this.controller ! Controller.Received(new Response.FindNode(tid, id, closer()), this.remote0)
 
-        for (i <- 0 until 3) {
+        // -- at this point a finder corresponding to this recursion must have "Continue" state
+        // -- and produce "alpha" requests to a network agent as a next round of requests
+
+        // receive all requests from the new round
+        val q1: Traversable[Query.FindNode] = for (i <- 0 until 3) yield
+          this.agent.receive(1.second) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case fn: Query.FindNode =>
+                  fn.target should equal(target)
+                  fn
+                case _ => this.fail("Invalid message type")
+              }
+            case _ => this.fail("Invalid command type")
+          }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // generate response for the first query with even closer nodes
+        this.controller ! Controller.Received(new Response.FindNode(q1.head.tid, id, closer()), this.dummy)
+
+        // -- at this point a finder must have "Continue" state and again
+        // -- produce "alpha" more requests to a network agent as a next round of requests
+
+        val q2: Traversable[Query.FindNode] = for (i <- 0 until 3) yield
+          this.agent.receive(1.second) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case fn: Query.FindNode =>
+                  fn.target should equal(target)
+                  fn
+                case _ => this.fail("Invalid message type")
+              }
+            case _ => this.fail("Invalid command type")
+          }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // now get back to round 1:
+        // complete second query with closer nodes which must cause 3 more queries
+        // which we will complete with no closer nodes
+        this.controller ! Controller.Received(new Response.FindNode(q1.drop(1).head.tid, id, closer()), this.dummy)
+        val qx: Traversable[Query.FindNode] = for (i <- 0 until 3) yield {
+          this.agent.receive(1.second) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case fn: Query.FindNode =>
+                  fn.target should equal(target)
+                  fn
+                case _ => this.fail("Invalid message type")
+              }
+            case _ => this.fail("Invalid command type")
+          }
+        }
+
+        // and now complete the last query from round 1 which must not produce more queries
+        this.controller ! Controller.Received(new Response.FindNode(q1.drop(2).head.tid, id, closer()), this.dummy)
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // now complete queries produced by the completion of second item from round 1
+        qx.foreach { q =>
+          this.controller ! Controller.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+        }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // now complete second round with nodes which are not closer then already seen
+        // these must not produce any additional queries after first 2 reports,
+        // as corresponding Finder will be in Wait state and on the last report in the round
+        // it should produce K (8) new queries to finalize lookup procedure
+        q2.take(2).foreach { q =>
+          this.controller ! Controller.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+        }
+        this.controller ! Controller.Received(new Response.FindNode(q2.last.tid, id, farther()), this.dummy)
+        val q3: Traversable[Query.FindNode] = for (i <- 0 until 8) yield
           this.agent.receive(10.seconds) match {
             case Agent.Send(message, remote) =>
               message match {
                 case fn: Query.FindNode =>
                   fn.target should equal(target)
-                  val distanceFromReporter = target ^ fn.id
-                  val lowerDistanceBound = distanceFromReporter / 1000
-                  val distanceRange = distanceFromReporter - lowerDistanceBound
-                  val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ target
-                  val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
-                  this.controller ! Controller.Received(new Response.FindNode(fn.tid, id, nodes), remote)
+                  fn
                 case _ => this.fail("Invalid message type")
               }
           }
-        }
 
-        for (i <- 0 until 3) {
-          this.agent.receive(10.seconds) match {
-            case Agent.Send(message, remote) =>
-              message match {
-                case fn: Query.FindNode =>
-                  fn.target should equal(target)
-                  val distanceFromReporter = target ^ fn.id
-                  val upperDistanceBound = distanceFromReporter + 1000
-                  val distanceRange = upperDistanceBound - distanceFromReporter
-                  val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ target
-                  val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
-                  this.controller ! Controller.Received(new Response.FindNode(fn.tid, id, nodes), remote)
-                case _ => this.fail("Invalid message type")
-              }
-          }
+        // now complete all 8 new queries bringing no new nodes again which must cause
+        // Controller to complete the whole procedure and send back Found message.
+        q3.foreach { q =>
+          this.controller ! Controller.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
-
-        for (i <- 0 until 8) {
-          this.agent.receive(10.seconds) match {
-            case Agent.Send(message, remote) =>
-              message match {
-                case fn: Query.FindNode =>
-                  fn.target should equal(target)
-                  val distanceFromReporter = target ^ fn.id
-                  val upperDistanceBound = distanceFromReporter + 1000
-                  val distanceRange = upperDistanceBound - distanceFromReporter
-                  val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ target
-                  val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
-                  this.controller ! Controller.Received(new Response.FindNode(fn.tid, id, nodes), remote)
-                case _ => this.fail("Invalid message type")
-              }
-          }
-        }
-
         expectMsgPF(20.seconds) {
           case Controller.Found(nn, peers, tokens) =>
             nn should not be empty
@@ -249,83 +305,151 @@ class ControllerTest(system: ActorSystem)
       }
     }
 
+
     "command GetPeers was issued" must {
 
-      var tid: TID = null
       val id = Integer160.random
-      val infohash = Integer160.random
-      val seed = new Node(Integer160.random, remote0)
+      val target = Integer160.random
+      val zero = Integer160.zero
+      val origin = target ^ zero
+      val token = new dht.Token(2)
+
+      var ck = 0
+      var fk = 0
+
+      // generates nodes with ids which are closer to target than given
+      def closer() = {
+        val ids = for (i <- 0 until 8) yield (origin - (8 * ck) - (i + 1)) ^ target
+        ck += 1
+        ids.map(new Node(_, this.dummy))
+      }
+
+      // generates nodes with ids which are more distant from target than given
+      def farther() = {
+        val ids = for (i <- 0 until 8) yield (origin + (8 * fk) + (i + 1)) ^ target
+        fk += 1
+        ids.map(new Node(_, this.dummy))
+      }
 
       "instruct Agent to send GetPeers message to router(s)" in {
-        this.controller ! Controller.GetPeers(infohash)
-        this.agent.receive(10.seconds) match {
+        // issue a command to Controller
+        this.controller ! Controller.GetPeers(target)
+
+        // receive the command that Controller has sent to network Agent
+        val tid = this.agent.receive(1.second) match {
           case Agent.Send(message, remote) =>
+            remote should equal(this.remote0)
             message match {
               case gp: Query.GetPeers =>
                 gp.id should equal(this.reader.id().get)
-                gp.infohash should equal(infohash)
-                tid = gp.tid
+                gp.infohash should equal(target)
+                gp.tid
               case _ => this.fail("Invalid message type")
             }
-            remote should equal(this.remote0)
+          case _ => this.fail("Invalid command type")
         }
-      }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
-      "and when received response from Agent, continue iterations until FindNode exhausted" in {
-        val distanceFromSeed = infohash ^ seed.id
-        val lowerDistanceBound = distanceFromSeed / 1000
-        val distanceRange = distanceFromSeed - lowerDistanceBound
-        val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ infohash
-        val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
+        // -- at this point a finder corresponding to this recursion must have "Wait" state
 
-        this.controller ! Controller.Received(new Response.GetPeersWithNodes(tid, id, new dht.Token(2), nodes), this.remote0)
+        // notify Controller that response message with closer nodes
+        this.controller ! Controller.Received(new Response.GetPeersWithNodes(tid, id, token, closer()), this.remote0)
 
-        for (i <- 0 until 3) {
+        // -- at this point a finder corresponding to this recursion must have "Continue" state
+        // -- and produce "alpha" requests to a network agent as a next round of requests
+
+        // receive all requests from the new round
+        val q1: Traversable[Query.GetPeers] = for (i <- 0 until 3) yield
+          this.agent.receive(1.second) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case gp: Query.GetPeers =>
+                  gp.infohash should equal(target)
+                  gp
+                case _ => this.fail("Invalid message type")
+              }
+            case _ => this.fail("Invalid command type")
+          }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // generate response for the first query with even closer nodes
+        this.controller ! Controller.Received(new Response.GetPeersWithNodes(q1.head.tid, id, token, closer()), this.dummy)
+
+        // -- at this point a finder must have "Continue" state and again
+        // -- produce "alpha" more requests to a network agent as a next round of requests
+
+        val q2: Traversable[Query.GetPeers] = for (i <- 0 until 3) yield
+          this.agent.receive(1.second) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case gp: Query.GetPeers =>
+                  gp.infohash should equal(target)
+                  gp
+                case _ => this.fail("Invalid message type")
+              }
+            case _ => this.fail("Invalid command type")
+          }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // now get back to round 1:
+        // complete second query with closer nodes which must cause 3 more queries
+        // which we will complete with no closer nodes
+        this.controller ! Controller.Received(
+          new Response.GetPeersWithNodes(q1.drop(1).head.tid, id, token, closer()), this.dummy)
+        val qx: Traversable[Query.GetPeers] = for (i <- 0 until 3) yield {
+          this.agent.receive(1.second) match {
+            case Agent.Send(message, remote) =>
+              message match {
+                case gp: Query.GetPeers =>
+                  gp.infohash should equal(target)
+                  gp
+                case _ => this.fail("Invalid message type")
+              }
+            case _ => this.fail("Invalid command type")
+          }
+        }
+
+        // and now complete the last query from round 1 which must not produce more queries
+        this.controller ! Controller.Received(
+          new Response.GetPeersWithNodes(q1.drop(2).head.tid, id, token, closer()), this.dummy)
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // now complete queries produced by the completion of second item from round 1
+        qx.foreach { q =>
+          this.controller ! Controller.Received(
+            new Response.GetPeersWithValues(q.tid, id, token, Seq(new dht.Peer(0), new dht.Peer(1))), this.dummy)
+        }
+        an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+
+        // now complete second round with nodes which are not closer then already seen
+        // these must not produce any additional queries after first 2 reports,
+        // as corresponding Finder will be in Wait state and on the last report in the round
+        // it should produce K (8) new queries to finalize lookup procedure
+        q2.take(2).foreach { q =>
+          this.controller ! Controller.Received(
+            new Response.GetPeersWithNodes(q.tid, id, token, farther()), this.dummy)
+          an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
+        }
+        this.controller ! Controller.Received(
+          new Response.GetPeersWithValues(q2.last.tid, id, token, Seq(new dht.Peer(0))), this.dummy)
+        val q3: Traversable[Query.GetPeers] = for (i <- 0 until 8) yield
           this.agent.receive(10.seconds) match {
             case Agent.Send(message, remote) =>
               message match {
                 case gp: Query.GetPeers =>
-                  gp.infohash should equal(infohash)
-                  val distanceFromReporter = infohash ^ gp.id
-                  val lowerDistanceBound = distanceFromReporter / 1000
-                  val distanceRange = distanceFromReporter - lowerDistanceBound
-                  val ids = for (i <- 0 until 8) yield (lowerDistanceBound + Integer160.random % distanceRange) ^ infohash
-                  val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
-                  this.controller ! Controller.Received(new Response.GetPeersWithNodes(gp.tid, id, new dht.Token(2), nodes), remote)
+                  gp.infohash should equal(target)
+                  gp
                 case _ => this.fail("Invalid message type")
               }
           }
-        }
 
-        for (i <- 0 until 3) {
-          this.agent.receive(10.seconds) match {
-            case Agent.Send(message, remote) =>
-              message match {
-                case gp: Query.GetPeers =>
-                  gp.infohash should equal(infohash)
-                  val distanceFromReporter = infohash ^ gp.id
-                  val upperDistanceBound = distanceFromReporter + 1000
-                  val distanceRange = upperDistanceBound - distanceFromReporter
-                  val ids = for (i <- 0 until 8) yield (distanceFromReporter + Integer160.random % distanceRange) ^ infohash
-                  val nodes = ids.map(new Node(_, new InetSocketAddress(0)))
-                  this.controller ! Controller.Received(new Response.GetPeersWithNodes(gp.tid, id, new dht.Token(2), nodes), remote)
-                case _ => this.fail("Invalid message type")
-              }
-          }
+        // now complete all 8 new queries bringing no new nodes again which must cause
+        // Controller to complete the whole procedure and send back Found message.
+        q3.foreach { q =>
+          this.controller ! Controller.Received(
+            new Response.GetPeersWithValues(q.tid, id, token, Seq(new dht.Peer(1))), this.dummy)
+          an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
-
-        for (i <- 0 until 8) {
-          this.agent.receive(10.seconds) match {
-            case Agent.Send(message, remote) =>
-              message match {
-                case gp: Query.GetPeers =>
-                  gp.infohash should equal(infohash)
-                  this.controller ! Controller.Received(new Response.GetPeersWithValues(gp.tid, id, new dht.Token(2), List(new dht.Peer(0), new dht.Peer(0))), remote)
-                case _ => this.fail("Invalid message type")
-              }
-          }
-        }
-
         expectMsgPF(20.seconds) {
           case Controller.Found(nn, peers, tokens) =>
             nn should not be empty
@@ -336,6 +460,7 @@ class ControllerTest(system: ActorSystem)
         }
       }
     }
+
 
     "message Ping was received" must {
       "respond with own Ping response" in {

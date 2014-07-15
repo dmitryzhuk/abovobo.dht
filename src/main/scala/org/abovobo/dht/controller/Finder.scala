@@ -80,7 +80,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   private val _peers = new mutable.HashSet[Peer]
 
   // Dump all seeds into `untaken` and `seen`
-  this._seen ++= this.seeds
+  this._seen ++= this.seeds.filterNot(_.id == Integer160.zero)
   this._untaken ++= this.seeds
 
   /**
@@ -94,9 +94,12 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   def report(reporter: Node, nodes: Traversable[Node], peers: Traversable[Peer], token: Token) = {
 
     // detect if reporting node will improve collection of seen nodes
-    val improved = nodes.foldLeft(0) { (r, node) =>
-      if (this.ordering.compare(node, this._seen.head) == -1) r + 1 else r
-    }
+    val improved =
+      if (this._seen.isEmpty)
+        nodes.size
+      else nodes.foldLeft(0) { (r, node) =>
+        if (this.ordering.compare(node, this._seen.head) == -1) r + 1 else r
+      }
 
     // update request result value
     this._pending.get(reporter) match {
@@ -140,6 +143,8 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
         this._untaken += node
       }
     }
+
+    println("Improved count by current report: " + improved + "; target=" + this.target.toHexString)
   }
   
   /**
@@ -166,7 +171,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   def state =
 
     // case #0: The beginning of Finder lifecycle: no nodes has been taken yet
-    if (this._pending.isEmpty && this._succeeded.isEmpty && this._untaken.nonEmpty && this._seen.nonEmpty)
+    if (this._pending.isEmpty && this._succeeded.isEmpty && this._untaken.nonEmpty)
       Finder.State.Continue
 
     // case #1: No pending requests, no untaken nodes, no succeeded nodes means
