@@ -91,6 +91,9 @@ class ControllerTest(system: ActorSystem)
   }
 
   "Controller actor " when {
+
+    /** Commands */
+
     "command Ping was issued" must {
 
       var tid: TID = null
@@ -305,7 +308,6 @@ class ControllerTest(system: ActorSystem)
       }
     }
 
-
     "command GetPeers was issued" must {
 
       val id = Integer160.random
@@ -461,6 +463,7 @@ class ControllerTest(system: ActorSystem)
       }
     }
 
+    /** Messages */
 
     "message Ping was received" must {
       "respond with own Ping response" in {
@@ -470,13 +473,82 @@ class ControllerTest(system: ActorSystem)
         this.controller ! Controller.Received(message, this.remote1)
         this.agent.receive(10.seconds) match {
           case Agent.Send(msg, address) =>
-            msg.tid should equal(tid)
-            msg.kind should equal(Message.Kind.Response)
-            address should equal(this.remote1)
+            msg match {
+              case ping: Response.Ping =>
+                msg.tid should equal(tid)
+                address should equal(this.remote1)
+              case _ => this.fail("Invalid message type")
+            }
           case _ => this.fail("Invalid message")
         }
       }
     }
+
+    "message FindNode was received" must {
+      "respond with FindNode response" in {
+        val id = Integer160.random
+        val tid = TIDFactory.random.next()
+        val message = new Query.FindNode(tid, id, Integer160.random)
+        this.controller ! Controller.Received(message, this.remote1)
+        this.agent.receive(10.seconds) match {
+          case Agent.Send(msg, address) =>
+            msg match {
+              case fn: Response.FindNode =>
+                msg.tid should equal(tid)
+                address should equal(this.remote1)
+                // XXX working with table with unknown content, no check here
+                // fn.nodes should not be empty
+              case _ => this.fail("Invalid message type: " + msg.getClass.getName)
+            }
+          case _ => this.fail("Invalid message")
+        }
+      }
+    }
+
+    var token: dht.Token = null
+
+    "message GetPeers was received" must {
+      "respond with GetPeersWithNodes assuming that no peers to respond with" in {
+        val id = Integer160.random
+        val tid = TIDFactory.random.next()
+        val message = new Query.GetPeers(tid, id, Integer160.random)
+        this.controller ! Controller.Received(message, this.remote1)
+        this.agent.receive(10.seconds) match {
+          case Agent.Send(msg, address) =>
+            msg match {
+              case gp: Response.GetPeersWithNodes =>
+                msg.tid should equal(tid)
+                address should equal(this.remote1)
+                // XXX working with table with unknown content, no check here
+                // fn.nodes should not be empty
+                gp.token should not be empty
+                token = gp.token
+              case _ => this.fail("Invalid message type: " + msg.getClass.getName)
+            }
+          case _ => this.fail("Invalid message")
+        }
+      }
+    }
+
+    "message AnnouncePeer was received" must {
+      "respond with Announced response" in {
+        val id = Integer160.random
+        val tid = TIDFactory.random.next()
+        val message = new Query.AnnouncePeer(tid, id, Integer160.random, 0, token, implied = false)
+        this.controller ! Controller.Received(message, this.remote1)
+        this.agent.receive(10.seconds) match {
+          case Agent.Send(msg, address) =>
+            msg match {
+              case ap: Response.AnnouncePeer =>
+                msg.tid should equal(tid)
+                address should equal(this.remote1)
+              case _ => this.fail("Invalid message type: " + msg.getClass.getName)
+            }
+          case _ => this.fail("Invalid message")
+        }
+      }
+    }
+
   }
 }
 
