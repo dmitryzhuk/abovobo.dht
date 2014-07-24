@@ -28,15 +28,15 @@ class Writer(connection: Connection) extends persistence.Storage(connection) wit
     this.id(this.statements("dropId"), this.statements("setId"), id)
 
   /** @inheritdoc */
-  override def insert(node: Node, bucket: Integer160, kind: Kind) =
+  override def insert(node: NodeInfo, bucket: Integer160, kind: Kind) =
     this.insert(this.statements("insertNode"), node, bucket, kind)
 
   /** @inheritdoc */
-  override def update(node: Node, pn: KnownNode, kind: Kind) =
+  override def update(node: NodeInfo, pn: KnownNodeInfo, kind: Kind) =
     this.update(this.statements("updateNode"), node, pn, kind)
 
   /** @inheritdoc */
-  override def move(node: KnownNode, bucket: Integer160) =
+  override def move(node: KnownNodeInfo, bucket: Integer160) =
     this.move(this.statements("moveNode"), node, bucket)
 
   /** @inheritdoc */

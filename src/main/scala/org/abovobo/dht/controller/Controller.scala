@@ -78,7 +78,7 @@ class Controller(val K: Int,
 
     // -- HANDLE COMMANDS
     // -- ---------------
-    case Ping(node: Node) =>
+    case Ping(node: NodeInfo) =>
       // Simply send Query.Ping to remote peer
       val query = new Query.Ping(this.factory.next(), this.reader.id().get)
       this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
@@ -114,7 +114,7 @@ class Controller(val K: Int,
         // if query has been received
         // notify routing table and then delegate execution to `Responder`
         case query: Query =>
-          val node = new Node(query.id, remote)
+          val node = new NodeInfo(query.id, remote)
           this.table ! Table.Received(node, Message.Kind.Query)
           this.agent ! this.responder.respond(query, node)
 
@@ -267,8 +267,8 @@ class Controller(val K: Int,
 
   /// Wraps Reader's `klosest` method adding routers to the output if the table has not enough entries
   private def klosest(n: Int, target: Integer160) = this.reader.klosest(n, target) match {
-    case nn: Seq[Node] if nn.size < n => nn ++ (this.routers map { ra => new Node(Integer160.zero, ra) })
-    case enough: Seq[Node] => enough
+    case nn: Seq[NodeInfo] if nn.size < n => nn ++ (this.routers map { ra => new NodeInfo(Integer160.zero, ra) })
+    case enough: Seq[NodeInfo] => enough
   }
 
   /// An instance of Responder to handle incoming queries
@@ -319,7 +319,7 @@ object Controller {
    * @param remote    Remote node.
    * @param requester An actor which has requested this transaction to begin.
    */
-  class Transaction(val query: Query, val remote: Node, val requester: ActorRef)
+  class Transaction(val query: Query, val remote: NodeInfo, val requester: ActorRef)
 
   /** Base trait for all events handled or initiated by this actor */
   sealed trait Event
@@ -353,7 +353,7 @@ object Controller {
    * @param peers   Collected peers (only for `get_peers` operation).
    * @param tokens  Collection of node id -> token associations (only for `get_peers` operation).
    */
-  case class Found(nodes: Traversable[Node],
+  case class Found(nodes: Traversable[NodeInfo],
                    peers: Traversable[Peer],
                    tokens: scala.collection.Map[Integer160, Token])
     extends Event
@@ -369,7 +369,7 @@ object Controller {
    *
    * @param node A node to send `ping` message to.
    */
-  case class Ping(node: Node) extends Command
+  case class Ping(node: NodeInfo) extends Command
 
   /**
    * This command initiates concurrent recursive process of locating the node with given ID.
@@ -400,7 +400,7 @@ object Controller {
    * @param port      A port at which the peer is listening for content exchange (torrent).
    * @param implied   Flag indicating if port should be implied.
    */
-  case class AnnouncePeer(node: Node,
+  case class AnnouncePeer(node: NodeInfo,
                           token: Token,
                           infohash: Integer160,
                           port: Int,
@@ -418,7 +418,7 @@ object Controller {
 
 
   /// XXX These plugin-related messages will be removed soon
-  case class SendPluginMessage(message: org.abovobo.dht.message.Plugin, node: Node) extends Command
+  case class SendPluginMessage(message: org.abovobo.dht.message.Plugin, node: NodeInfo) extends Command
   case class PutPlugin(pid: PID, plugin: ActorRef) extends Command
   case class RemovePlugin(pid: PID) extends Command
 }

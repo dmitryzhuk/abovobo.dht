@@ -223,12 +223,12 @@ object Agent {
       case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
-    def nodes(event: Bencode.Event): IndexedSeq[Node] = event match {
+    def nodes(event: Bencode.Event): IndexedSeq[NodeInfo] = event match {
       case Bencode.Bytestring(value) =>
         val sz = Integer160.bytesize
         val ez = sz + Endpoint.IPV4_ADDR_SIZE + 2
         val n = value.length / ez
-        for (i <- 0 until n) yield new Node(new Integer160(value.drop(i * ez).take(sz)), value.drop(i * ez).drop(sz).take(Endpoint.IPV4_ADDR_SIZE + 2))
+        for (i <- 0 until n) yield new NodeInfo(new Integer160(value.drop(i * ez).take(sz)), value.drop(i * ez).drop(sz).take(Endpoint.IPV4_ADDR_SIZE + 2))
       case _ => xthrow(message.Error.ERROR_CODE_PROTOCOL, "Malformed packet")
     }
 
@@ -381,14 +381,14 @@ object Agent {
             case r: Response.FindNode =>
               // "nodes" -> response.nodes
               buf += '5' += ':' ++= "nodes".getBytes("UTF-8")
-              val nodes = r.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: Node) =>
+              val nodes = r.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: NodeInfo) =>
                 array ++ node.id.toArray ++ Endpoint.isa2ba(node.address)
               }
               buf ++= nodes.length.toString.getBytes("UTF-8") += ':' ++= nodes
             case r: Response.GetPeersWithNodes =>
               // "nodes" -> response.nodes
               buf += '5' += ':' ++= "nodes".getBytes("UTF-8")
-              val nodes = r.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: Node) =>
+              val nodes = r.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: NodeInfo) =>
                 array ++ node.id.toArray ++ Endpoint.isa2ba(node.address)
               }
               buf ++= nodes.length.toString.getBytes("UTF-8") += ':' ++= nodes

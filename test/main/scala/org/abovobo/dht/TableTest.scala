@@ -49,7 +49,7 @@ class TableTest(system: ActorSystem)
       writer = this.writer,
       controller = controllerInbox.getRef()),
     "table")
-  lazy val node = new Node(Integer160.random, new InetSocketAddress(0))
+  lazy val node = new NodeInfo(Integer160.random, new InetSocketAddress(0))
 
   override def beforeAll() = {
     // Do nothing
@@ -166,7 +166,7 @@ class TableTest(system: ActorSystem)
         while (repeat) {
           // insert 8 nodes assuming they will be put into a current bucket
           for (i <- 0 to 7) {
-            val node = new Node(start + i, new InetSocketAddress(0))
+            val node = new NodeInfo(start + i, new InetSocketAddress(0))
             table ! Table.Received(node, Message.Kind.Query)
             expectMsg(Table.Inserted(bucket))
           }
@@ -174,7 +174,7 @@ class TableTest(system: ActorSystem)
           // try to insert 9th node which must cause
           // -- pair of messages Split, Reject if there is a more space for nodes in the table
           // -- single Reject message if there is no room to split buckets further
-          val node = new Node(start + 8, new InetSocketAddress(0))
+          val node = new NodeInfo(start + 8, new InetSocketAddress(0))
           table ! Table.Received(node, Message.Kind.Query)
           expectMsgType[Table.Result] match {
             case Table.Split(was, now) =>

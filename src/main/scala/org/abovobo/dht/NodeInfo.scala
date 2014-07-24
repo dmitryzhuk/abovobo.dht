@@ -18,15 +18,15 @@ import scala.concurrent.duration._
 /**
  * This class represents remote DHT node descriptor.
  *
- * @constructor     Creates new instance of Node.
+ * @constructor     Creates new instance of NodeInfo.
  *
  * @param id        SHA-1 identifier of the node.
  * @param address   Network address of remote node.
  */
-class Node(val id: Integer160, val address: InetSocketAddress) {
+class NodeInfo(val id: Integer160, val address: InetSocketAddress) {
 
   /** @inheritdoc */
   override def toString =
-    "Node [#" + id + "@" + address.getAddress.getHostAddress + ":" + address.getPort + "]"
+    "NodeInfo [#" + id + "@" + address.getAddress.getHostAddress + ":" + address.getPort + "]"
 
 }

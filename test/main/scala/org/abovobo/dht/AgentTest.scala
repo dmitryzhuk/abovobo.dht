@@ -169,7 +169,7 @@ class AgentTest(system: ActorSystem)
 
       "complete transaction and notify Controller after receiving network response" in {
         peer ! Udp.Send(Agent.serialize(new Response.FindNode(query.tid, Integer160.zero,
-          nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
+          nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
         controllerInbox.receive(10.seconds) match {
           case Controller.Received(message, address) =>
             message match {
@@ -209,7 +209,7 @@ class AgentTest(system: ActorSystem)
       "complete transaction and notify Controller after receiving network response" in {
         peer ! Udp.Send(Agent.serialize(new Response.GetPeersWithNodes(query.tid, Integer160.zero,
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
-          nodes = Array(new Node(Integer160.zero, new InetSocketAddress(0))))), local)
+          nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
         controllerInbox.receive(10.seconds) match {
           case Controller.Received(message, address) =>
             message match {

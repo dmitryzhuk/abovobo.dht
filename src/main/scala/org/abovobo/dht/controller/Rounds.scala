@@ -10,7 +10,7 @@
 
 package org.abovobo.dht.controller
 
-import org.abovobo.dht.Node
+import org.abovobo.dht.NodeInfo
 import scala.collection.mutable
 
 /**
@@ -60,11 +60,11 @@ class Rounds(val rounds: mutable.Queue[Round]) {
    * Looks for the request sent to a given node and returns both [[Request]] and
    * corresponding [[Round]] instances if found, [[None]] otherwise.
    *
-   * @param node An [[Node]] instance to find request to.
+   * @param node An [[NodeInfo]] instance to find request to.
    *
    * @return Pair of [[Round]] and [[Request]] instances or [[None]] if not found.
    */
-  def get(node: Node): Option[(Round, Request)] = this.rounds.flatMap(round => {
+  def get(node: NodeInfo): Option[(Round, Request)] = this.rounds.flatMap(round => {
     round.get(node) match {
       case Some(request) => Some((round, request))
       case _ => None

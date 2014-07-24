@@ -52,17 +52,17 @@ import scala.collection.mutable
  * @param alpha   System-wide parameter alpha defining typical number of requests per round.
  * @param seeds   A collection of nodes to start with.
  */
-class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Traversable[Node]) {
+class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Traversable[NodeInfo]) {
 
-  /// Defines implicit [[math.Ordering]] for [[org.abovobo.dht.Node]] instances.
+  /// Defines implicit [[math.Ordering]] for [[org.abovobo.dht.NodeInfo]] instances.
   private implicit val ordering = new NodeOrdering(this.target)
 
   /// Collection of all nodes which were seen by means of node information sent with responses.
   /// This collection is used to check if there were closer nodes learned from completed requests.
-  private val _seen = new mutable.TreeSet[Node]
+  private val _seen = new mutable.TreeSet[NodeInfo]
 
   /// Collection of nodes which were seen but not yet taken to be queried
-  private val _untaken = new mutable.TreeSet[Node]
+  private val _untaken = new mutable.TreeSet[NodeInfo]
 
   /// Collection of pending request rounds
   private val _pending = new Rounds()
@@ -71,7 +71,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   private val _completed = new Rounds()
 
   /// Collection of nodes which reported successfully
-  private val _succeeded = new mutable.TreeSet[Node]
+  private val _succeeded = new mutable.TreeSet[NodeInfo]
 
   /// Collection of node id -> token associations
   private val _tokens = new mutable.HashMap[Integer160, Token]
@@ -91,7 +91,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
    * @param peers     A collection of peers reported by queried node.
    * @param token     A token distributed by queried node.
    */
-  def report(reporter: Node, nodes: Traversable[Node], peers: Traversable[Peer], token: Token) = {
+  def report(reporter: NodeInfo, nodes: Traversable[NodeInfo], peers: Traversable[Peer], token: Token) = {
 
     // detect if reporting node will improve collection of seen nodes
     val improved =
@@ -152,7 +152,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
    *
    * @param node  A node which failed to respond in timely manner.
    */
-  def fail(node: Node) = {
+  def fail(node: NodeInfo) = {
     this._pending.get(node) match {
       case Some((round, request)) =>
         request.result = Request.Failed()
@@ -226,7 +226,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   /**
    * Returns token ([[scala.Option]]) for given node id.
    *
-   * @param id Node id to return token for.
+   * @param id NodeInfo id to return token for.
    * @return   token for given node id.
    */
   def token(id: Integer160) = this._tokens.get(id)
@@ -261,12 +261,12 @@ object Finder {
                     //  the closest already seen, the initiator resends the FIND_NODE to
                     //  all of the K closest nodes it has not already queried."
 
-        Succeeded,  // Node lookup is finished with results:
+        Succeeded,  // NodeInfo lookup is finished with results:
                     // -------------------------------------
                     // "The lookup terminates when the initiator has queried and gotten
                     //  responses from the k closest nodes it has seen."
 
-        Failed      // Node lookup is finished without results
+        Failed      // NodeInfo lookup is finished without results
 
 
     = Value

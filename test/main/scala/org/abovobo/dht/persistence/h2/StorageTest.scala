@@ -13,7 +13,7 @@ package org.abovobo.dht.persistence.h2
 import java.net.{InetAddress, InetSocketAddress}
 import java.sql.SQLException
 
-import org.abovobo.dht.Node
+import org.abovobo.dht.NodeInfo
 import org.abovobo.dht.message.Message
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
@@ -56,7 +56,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
 
     "node is being inserted in empty storage" must {
       "fail with SQLException" in {
-        val node = new Node(Integer160.random, new InetSocketAddress(0))
+        val node = new NodeInfo(Integer160.random, new InetSocketAddress(0))
         intercept[SQLException] {
           this.writer.insert(node, Integer160.zero, Message.Kind.Query)
         }
@@ -94,7 +94,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
     "node inserted into a bucket" must {
       "have node collection size of 1" in {
         this.writer.insert(
-          new Node(Integer160.maxval, new InetSocketAddress(0)),
+          new NodeInfo(Integer160.maxval, new InetSocketAddress(0)),
           Integer160.zero,
           Message.Kind.Query)
         this.reader.nodes() should have size 1
@@ -124,7 +124,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
         Thread.sleep(10)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        val node = new Node(original.get.id, original.get.address)
+        val node = new NodeInfo(original.get.id, original.get.address)
         this.writer.update(node, original.get, Message.Kind.Response)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
@@ -135,7 +135,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
         Thread.sleep(10)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        val node = new Node(original.get.id, original.get.address)
+        val node = new NodeInfo(original.get.id, original.get.address)
         this.writer.update(node, original.get, Message.Kind.Error)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
@@ -146,7 +146,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
         Thread.sleep(10)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        val node = new Node(original.get.id, original.get.address)
+        val node = new NodeInfo(original.get.id, original.get.address)
         this.writer.update(node, original.get, Message.Kind.Query)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
@@ -156,7 +156,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
       "increment failcount with Fail message kind" in {
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
-        val node = new Node(original.get.id, original.get.address)
+        val node = new NodeInfo(original.get.id, original.get.address)
         this.writer.update(node, original.get, Message.Kind.Fail)
         val updated = this.reader.node(Integer160.maxval)
         assume(updated.isDefined)
@@ -164,7 +164,7 @@ class StorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
       }
       "update address" in {
         val ip = new InetSocketAddress(InetAddress.getByAddress(Array[Byte](1, 0, 0, 0)), 1)
-        val node = new Node(Integer160.maxval, ip)
+        val node = new NodeInfo(Integer160.maxval, ip)
         val original = this.reader.node(Integer160.maxval)
         assume(original.isDefined)
         this.writer.update(node, original.get, Message.Kind.Error)

@@ -11,7 +11,7 @@
 package org.abovobo.dht.controller
 
 import org.abovobo.integer.Integer160
-import org.abovobo.dht.Node
+import org.abovobo.dht.NodeInfo
 
 /**
  * Defines simple class holding request round information. Round is represented by the collection
@@ -22,11 +22,11 @@ import org.abovobo.dht.Node
 private[controller] class Round(val requests: Traversable[Request]) {
 
   /**
-   * Instantiates new Round using collection [[Node]] objects.
+   * Instantiates new Round using collection [[NodeInfo]] objects.
    *
-   * @param nodes A collection of [[Node]] objects to create round of requests to.
+   * @param nodes A collection of [[NodeInfo]] objects to create round of requests to.
    */
-  def this(nodes: Seq[Node]) = this(nodes.map(new Request(_)))
+  def this(nodes: Seq[NodeInfo]) = this(nodes.map(new Request(_)))
 
   /**
    * Returns [[Request.Unknown]] if there is at least one request has this result.
@@ -66,12 +66,12 @@ private[controller] class Round(val requests: Traversable[Request]) {
   }
 
   /**
-   * Returns [[Some]] [[Request]] to given [[Node]] or [[Node]] if not found.
+   * Returns [[Some]] [[Request]] to given [[NodeInfo]] or [[NodeInfo]] if not found.
    *
-   * @param node An instance of [[Node]] to get request for.
+   * @param node An instance of [[NodeInfo]] to get request for.
    * @return Request to given node or [[None]].
    */
-  def get(node: Node): Option[Request] =
+  def get(node: NodeInfo): Option[Request] =
     if (node.id == Integer160.zero)
       // For node with zero id (router) test both id and address
       this.requests.find(r => r.node.id == node.id && r.node.address.equals(node.address))

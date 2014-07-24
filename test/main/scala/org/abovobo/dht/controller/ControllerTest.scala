@@ -100,7 +100,7 @@ class ControllerTest(system: ActorSystem)
       val id = Integer160.random
 
       "instruct Agent to send Ping message to remote peer" in {
-        this.controller ! Controller.Ping(new Node(id, this.remote1))
+        this.controller ! Controller.Ping(new NodeInfo(id, this.remote1))
         this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
@@ -134,7 +134,7 @@ class ControllerTest(system: ActorSystem)
 
       "instruct Agent to send AnnouncePeer message to remote peer" in {
         this.controller ! Controller.AnnouncePeer(
-          new Node(id, this.remote1), new dht.Token(2), infohash, 1, implied = true)
+          new NodeInfo(id, this.remote1), new dht.Token(2), infohash, 1, implied = true)
         this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
@@ -174,14 +174,14 @@ class ControllerTest(system: ActorSystem)
       def closer() = {
         val ids = for (i <- 0 until 8) yield (origin - (8 * ck) - (i + 1)) ^ target
         ck += 1
-        ids.map(new Node(_, this.dummy))
+        ids.map(new NodeInfo(_, this.dummy))
       }
 
       // generates nodes with ids which are more distant from target than given
       def farther() = {
         val ids = for (i <- 0 until 8) yield (origin + (8 * fk) + (i + 1)) ^ target
         fk += 1
-        ids.map(new Node(_, this.dummy))
+        ids.map(new NodeInfo(_, this.dummy))
       }
 
       "instruct Agent to send FindNode message to router(s)" in {
@@ -323,14 +323,14 @@ class ControllerTest(system: ActorSystem)
       def closer() = {
         val ids = for (i <- 0 until 8) yield (origin - (8 * ck) - (i + 1)) ^ target
         ck += 1
-        ids.map(new Node(_, this.dummy))
+        ids.map(new NodeInfo(_, this.dummy))
       }
 
       // generates nodes with ids which are more distant from target than given
       def farther() = {
         val ids = for (i <- 0 until 8) yield (origin + (8 * fk) + (i + 1)) ^ target
         fk += 1
-        ids.map(new Node(_, this.dummy))
+        ids.map(new NodeInfo(_, this.dummy))
       }
 
       "instruct Agent to send GetPeers message to router(s)" in {

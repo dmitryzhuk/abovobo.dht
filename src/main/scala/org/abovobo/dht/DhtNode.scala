@@ -42,7 +42,7 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
       if (storageD.id.isEmpty) {
         this.context.system.scheduler.scheduleOnce(250.milliseconds, self, DhtNode.Describe)(this.context.system.dispatcher, sender())
       } else {
-        sender ! DhtNode.NodeInfo(new Node(storageD.id.get, endpoint), controller, storageD.nodes)        
+        sender ! DhtNode.NodeInfo(new NodeInfo(storageD.id.get, endpoint), controller, storageD.nodes)
       }
     }
     case msg => //this.controller.forward(msg)
@@ -53,13 +53,13 @@ object DhtNode {
   object Stop
   object Describe
   
-  case class NodeInfo(self: Node, controller: ActorRef, nodes: Traversable[Node])
+  case class NodeInfo(self: NodeInfo, controller: ActorRef, nodes: Traversable[NodeInfo])
   
   def props(endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()) = 
     Props(classOf[DhtNode], endpoint, routers)
     
   def createNode(system: ActorSystem, endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()): ActorRef = {
-    system.actorOf(DhtNode.props(endpoint, routers), "Node-" + endpoint.getPort)
+    system.actorOf(DhtNode.props(endpoint, routers), "NodeInfo-" + endpoint.getPort)
   }
     
   def spawnNodes[A](system: ActorSystem, portBase: Int, count: Int)(f: (InetSocketAddress, ActorRef) => A): Seq[A] = {

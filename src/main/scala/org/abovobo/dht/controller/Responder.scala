@@ -43,7 +43,7 @@ class Responder(K: Int,
    * @param query   A query to respond to.
    * @param remote  An address of the remote peer to send response to.
    */
-  def respond(query: Query, remote: Node): Agent.Send = query match {
+  def respond(query: Query, remote: NodeInfo): Agent.Send = query match {
     case ping: Query.Ping => this.ping(ping, remote)
     case fn: Query.FindNode => this.findNode(fn, remote)
     case gp: Query.GetPeers => this.getPeers(gp, remote)
@@ -51,13 +51,13 @@ class Responder(K: Int,
   }
 
   /** Response to `ping` query */
-  private def ping(q: Query.Ping, remote: Node) = {
+  private def ping(q: Query.Ping, remote: NodeInfo) = {
     // simply send response `ping` message
     Agent.Send(new Response.Ping(q.tid, this.id), remote.address)
   }
 
   /** Responds to `find_node` query */
-  private def findNode(q: Query.FindNode, remote: Node) = {
+  private def findNode(q: Query.FindNode, remote: NodeInfo) = {
     // get `K` closest nodes from own routing table
     val nodes = this.reader.klosest(this.K + 1, q.target).filter(_.id != remote.id).take(this.K)
     // now respond with proper message
@@ -65,7 +65,7 @@ class Responder(K: Int,
   }
 
   /** Responds to `get_peers` query */
-  private def getPeers(q: Query.GetPeers, remote: Node) = {
+  private def getPeers(q: Query.GetPeers, remote: NodeInfo) = {
     // get current token to return to querier
     val token = this.tp.get
     // remember that we sent the token to this remote peer

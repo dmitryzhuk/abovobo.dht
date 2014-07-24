@@ -10,7 +10,7 @@
 
 package org.abovobo.dht.controller
 
-import org.abovobo.dht.Node
+import org.abovobo.dht.NodeInfo
 
 /**
  * Defines simple class holding request information used by [[Finder]] class.
@@ -18,7 +18,7 @@ import org.abovobo.dht.Node
  * @param node   A node which is being requested
  * @param result A result of request
  */
-private[controller] class Request(val node: Node, var result: Request.Result = Request.Unknown())
+private[controller] class Request(val node: NodeInfo, var result: Request.Result = Request.Unknown())
 
 /**
  * Accompanying object holding request result enumeration definition

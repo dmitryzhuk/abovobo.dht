@@ -224,7 +224,7 @@ class Table(val K: Int,
    * @param node    A node to process network message from.
    * @param kind    A kind of network message received from the node.
    */
-  def process(node: Node, kind: Message.Kind.Kind): Result = {
+  def process(node: NodeInfo, kind: Message.Kind.Kind): Result = {
 
     import Message.Kind
 
@@ -260,12 +260,12 @@ class Table(val K: Int,
    * Attempts to insert a new node into this table. The whole method is wrapped into
    * [[org.abovobo.dht.persistence.Writer#transaction]] block.
    *
-   * @param node    An instance of [[org.abovobo.dht.Node]] to insert
+   * @param node    An instance of [[org.abovobo.dht.NodeInfo]] to insert
    * @param kind    A kind network message received from node.
    * @return        Result of operation, as listed in [[org.abovobo.dht.Table.Result]]
    *                excluding `Updated` value.
    */
-  private def insert(node: Node, kind: Message.Kind.Kind): Result = this.writer.transaction {
+  private def insert(node: NodeInfo, kind: Message.Kind.Kind): Result = this.writer.transaction {
 
     val buckets = this.reader.buckets().toArray.sortWith(_._1 < _._1)
 
@@ -423,23 +423,23 @@ object Table {
   case class Split(was: Integer160, now: Integer160) extends Result
 
   /**
-   * Indicates that new Node has been inserted into a table.
+   * Indicates that new NodeInfo has been inserted into a table.
    *
-   * @param bucket Lower bound of the bucket in which new Node has been inserted.
+   * @param bucket Lower bound of the bucket in which new NodeInfo has been inserted.
    */
   case class Inserted(bucket: Integer160) extends Result
 
   /**
-   * Indicates that existing (bad) Node has been replaced with new Node.
+   * Indicates that existing (bad) NodeInfo has been replaced with new NodeInfo.
    *
    * @param old An old node instance which has been replaced with the new one.
    */
-  case class Replaced(old: KnownNode) extends Result
+  case class Replaced(old: KnownNodeInfo) extends Result
 
-  /** Indicates that Node has already been in the table, so its info has just been updated. */
+  /** Indicates that NodeInfo has already been in the table, so its info has just been updated. */
   case object Updated extends Result
 
-  /** Indicates that there was no room for the new Node in the table. */
+  /** Indicates that there was no room for the new NodeInfo in the table. */
   case object Rejected extends Result
 
   /**
@@ -467,18 +467,18 @@ object Table {
    * This class represents a case when network message has been received
    * from the given node.
    *
-   * @param node A Node from which a network message has been received.
+   * @param node A NodeInfo from which a network message has been received.
    * @param kind A kind of message received from the node.
    */
-  case class Received(node: Node, kind: Message.Kind.Kind) extends Event
+  case class Received(node: NodeInfo, kind: Message.Kind.Kind) extends Event
 
   /**
    * This class represents a case when remote peer represented by node has failed
    * to respond to our request in timely manner.
    *
-   * @param node A Node which has failed to respond to our query.
+   * @param node A NodeInfo which has failed to respond to our query.
    */
-  case class Failed(node: Node) extends Event
+  case class Failed(node: NodeInfo) extends Event
 
   /** Basic trait for all commands supported by [[org.abovobo.dht.Table]] actor. */
   sealed trait Command
