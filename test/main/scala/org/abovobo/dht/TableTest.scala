@@ -32,7 +32,7 @@ class TableTest(system: ActorSystem)
   with Matchers
   with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("RoutingTableTest"/*, ConfigFactory.parseString("akka.loglevel=debug")*/))
+  def this() = this(ActorSystem("RoutingTableTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
   private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
   private val reader = new Reader(this.ds.connection)

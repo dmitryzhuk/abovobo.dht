@@ -121,7 +121,7 @@ class Table(val K: Int,
    *
    * Handles RoutingTable Actor specific messages.
    */
-  def receive = {
+  override def receive = {
     case Refresh(min, max)    =>          this.refresh(min, max)
     case Reset()              => sender ! this.reset()
     case Set(id)              => sender ! this.set(id)

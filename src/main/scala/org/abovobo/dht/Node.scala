@@ -1,6 +1,48 @@
+/**
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
+ */
+
 package org.abovobo.dht
 
-import akka.actor.Actor
+
+import akka.actor.{Actor, ActorRef}
+
+/**
+ * This class represents general wrapper over major components of DHT node: Table, Agent and Controller.
+ *
+ * @param table       Reference to Table actor to be used within this Node.
+ * @param agent       Reference to Agent actor to be used within this Node.
+ * @param controller  Reference to Controller actor to be used within this Node.
+ */
+class Node(val table: ActorRef, val agent: ActorRef, val controller: ActorRef) extends Actor {
+
+  override def preStart() = {
+    // --
+  }
+
+  override def postStop() = {
+    // --
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Handles received messages.
+   */
+  override def receive = {
+    case _ =>
+  }
+
+
+}
+
+/*
 import java.net.InetSocketAddress
 import akka.actor.actorRef2Scala
 import org.abovobo.dht.controller.Controller
@@ -75,3 +117,4 @@ object DhtNode {
     }
   }
 }
+*/
