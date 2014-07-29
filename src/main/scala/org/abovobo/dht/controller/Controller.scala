@@ -27,16 +27,16 @@ import scala.concurrent.duration._
  *
  * @constructor     Creates new instance of controller with provided parameters.
  *
- * @param K         Max number of entries to send back to querier.
- * @param alpha     Number of concurrent lookup threads.
- * @param period    A period of rotating the token.
- * @param lifetime  A lifetime of the peer info.
- * @param timeout   @see Actor.timeout
- * @param routers   A collection of addresses which can be used as inital seeds when own routing table is empty.
- * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
- * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
- * @param agent     Reference to an Agent actor.
- * @param table     Reference to a Table actor.
+ * @param K           System wide metric which is used to define size of the DHT table bucket.
+ * @param alpha       Number of concurrent lookup threads in recursive FIND_NODE RPCs.
+ * @param period      A period of rotating the token.
+ * @param lifetime    A lifetime of the peer info.
+ * @param timeout     A period in time during which the remote party must respond to a query.
+ * @param routers     A collection of addresses which can be used as inital seeds when own routing table is empty.
+ * @param reader      Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
+ * @param writer      Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+ * @param agentProps  Properly configured Props for creating [[Agent]] actor.
+ * @param tableProps  Properly configured Props object for creating [[Table]] actor.
  *
  * @author Dmitry Zhuk
  */
@@ -48,21 +48,24 @@ class Controller(val K: Int,
                  val routers: Traversable[InetSocketAddress],
                  val reader: Reader,
                  val writer: Writer,
-                 val agent: ActorRef,
-                 val table: ActorRef)
+                 val agentProps: Props,
+                 val tableProps: Props)
   extends Actor with ActorLogging {
-  
-  import this.context.dispatcher
-  import Controller._
 
+  import this.context.dispatcher
+  import this.context.system
+
+  /** Initialize reference to an Agent actor */
+  val agent = system.actorOf(this.agentProps, "agent")
+
+  /** Initialize reference to a Table actor */
+  val table = system.actorOf(this.tableProps, "table")
+
+  /** @inheritdoc */
   override def preStart() = {}
-  
-  override def postRestart(reason: Throwable): Unit = {
-    log.warning("Restarting controller due to " + reason)
-    // not calling preStart and sending messages again, facility makes actor restarting transparent
-  }
-  
-  override def postStop() {
+
+  /** @inheritdoc */
+  override def postStop() = {
     this.timerTasks.foreach(_.cancel())
   }
 
@@ -74,40 +77,41 @@ class Controller(val K: Int,
   override def receive = {
 
     // To avoid "unhandled message" logging
-    case r: Table.Result =>   
+    case r: Table.Result =>
 
     // -- HANDLE COMMANDS
     // -- ---------------
-    case Ping(node: NodeInfo) =>
+    case Controller.Ping(node: NodeInfo) =>
       // Simply send Query.Ping to remote peer
       val query = new Query.Ping(this.factory.next(), this.reader.id().get)
-      this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
+      this.transactions.put(query.tid, new Controller.Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
 
-    case AnnouncePeer(node, token, infohash, port, implied) =>
+    case Controller.AnnouncePeer(node, token, infohash, port, implied) =>
       // Simply send Query.AnnouncePeer message to remote peer
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
-      this.transactions.put(query.tid, new Transaction(query, node, this.sender()))
+      this.transactions.put(query.tid, new Controller.Transaction(query, node, this.sender()))
       this.agent ! Agent.Send(query, node.address)
 
-    case FindNode(target: Integer160) => this.iterate(target, None, this.sender()) { () =>
+    case Controller.FindNode(target: Integer160) => this.iterate(target, None, this.sender()) { () =>
       new Query.FindNode(this.factory.next(), this.reader.id().get, target)
     }
 
-    case GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender()) { () =>
+    case Controller.GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender()) { () =>
       new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
     }
 
-    case RotateTokens => responder.rotateTokens()
-    case CleanupPeers => responder.cleanupPeers()
+    case Controller.RotateTokens => this.responder.rotateTokens()
+    case Controller.CleanupPeers => this.responder.cleanupPeers()
 
     // -- HANDLE EVENTS
     // -- -------------
     // when our query has failed just remove corresponding transaction
     // and properly notify routing table about this failure
-    case Failed(query) => this.transactions.remove(query.tid).foreach(this.fail)
+    case Agent.Failed(query) =>
+      this.transactions.remove(query.tid).foreach(this.fail)
 
-    case Received(message, remote) =>
+    case Agent.Received(message, remote) =>
       // received message handled differently depending on message type
       message match {
 
@@ -130,7 +134,7 @@ class Controller(val K: Int,
         /// XXX To be removed
         case pm: dht.message.Plugin =>
           this.plugins.get(pm.pid.value) match {
-            case Some(plugin) => plugin ! Received(pm, remote)
+            case Some(plugin) => plugin ! Agent.Received(pm, remote)
             case None =>
               this.log.error("Error, message to non-existing plugin.")
               this.agent ! Agent.Send(
@@ -142,9 +146,9 @@ class Controller(val K: Int,
     // maybe its possible to reuse plugins query->response style traffic for DHT state update
     // then, tid field and timeouts should be managed by this DHT Controller and Agent
     /// XXX To be removed
-    case SendPluginMessage(message, node) => this.agent ! Agent.Send(message, node.address)
-    case PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
-    case RemovePlugin(pid) =>  this.plugins.remove(pid.value)
+    case Controller.SendPluginMessage(message, node) => this.agent ! Agent.Send(message, node.address)
+    case Controller.PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
+    case Controller.RemovePlugin(pid) =>  this.plugins.remove(pid.value)
   }
 
   /**
@@ -167,7 +171,7 @@ class Controller(val K: Int,
    *
    * @param transaction Transaction instance to handle fail for.
    */
-  private def fail(transaction: Transaction) = {
+  private def fail(transaction: Controller.Transaction) = {
     // don't notify table about routers activity
     if (transaction.remote.id != Integer160.zero) {
       this.table ! Table.Received(transaction.remote, Message.Kind.Error)
@@ -200,7 +204,7 @@ class Controller(val K: Int,
     })
     def round(n: Int) = f.take(n) foreach { node =>
       val query = q()
-      this.transactions.put(query.tid, new Transaction(query, node, sender))
+      this.transactions.put(query.tid, new Controller.Transaction(query, node, sender))
       this.agent ! Agent.Send(query, node.address)
     }
     this.log.debug("Finder state before #iterate: " + f.state)
@@ -224,14 +228,14 @@ class Controller(val K: Int,
    * @param response    A [[Response]] message from remote peer.
    * @param transaction A transaction instance that response was received for.
    */
-  private def process(response: Response, transaction: Transaction) = {
+  private def process(response: Response, transaction: Controller.Transaction) = {
     if (transaction.remote.id != Integer160.zero) {
       this.table ! Table.Received(transaction.remote, Message.Kind.Response)
     }
     response match {
 
       case ping: Response.Ping =>
-        transaction.requester ! Pinged()
+        transaction.requester ! Controller.Pinged()
 
       case fn: Response.FindNode =>
         val target = transaction.query.asInstanceOf[Query.FindNode].target
@@ -261,7 +265,7 @@ class Controller(val K: Int,
         }
 
       case ap: Response.AnnouncePeer =>
-        transaction.requester ! PeerAnnounced()
+        transaction.requester ! Controller.PeerAnnounced()
     }
   }
 
@@ -273,16 +277,16 @@ class Controller(val K: Int,
 
   /// An instance of Responder to handle incoming queries
   private lazy val responder = new Responder(this.K, this.period, this.lifetime, this.reader, this.writer)
-  
-  val timerTasks = 
-    this.context.system.scheduler.schedule(Duration.Zero, this.period, self, RotateTokens) ::
-    this.context.system.scheduler.schedule(this.lifetime, this.lifetime, self, CleanupPeers) :: Nil
+
+  val timerTasks =
+    this.context.system.scheduler.schedule(Duration.Zero, this.period, self, Controller.RotateTokens) ::
+    this.context.system.scheduler.schedule(this.lifetime, this.lifetime, self, Controller.CleanupPeers) :: Nil
 
   /// Instantiate transaction ID factory
   private val factory = TIDFactory.random
 
   /// Collection of pending transactions
-  private val transactions = new mutable.HashMap[TID, Transaction]
+  private val transactions = new mutable.HashMap[TID, Controller.Transaction]
 
   /// Collection of pending recursive procedures
   private val recursions = new mutable.HashMap[Integer160, Finder]
@@ -323,22 +327,6 @@ object Controller {
 
   /** Base trait for all events handled or initiated by this actor */
   sealed trait Event
-  
-  /**
-   * This event indicates that there was a query sent to remote peer, but remote peer failed to respond
-   * in timely manner.
-   *
-   * @param query A query which has been sent initially.
-   */
-  case class Failed(query: Query) extends Event
-
-  /**
-   * This event indicates that there was a message received from the remote peer.
-   *
-   * @param message A message received.
-   * @param remote  An address of the remote peer which sent us that message.
-   */
-  case class Received(message: Message, remote: InetSocketAddress) extends Event
 
   /** Indicates that node has been successfully pinged */
   case class Pinged() extends Event

@@ -114,7 +114,7 @@ class ControllerTest(system: ActorSystem)
       }
 
       "and when received response from Agent, report this to Table and then respond to original requester" in {
-        this.controller ! Controller.Received(new Response.Ping(tid, id), this.remote1)
+        this.controller ! Agent.Received(new Response.Ping(tid, id), this.remote1)
         this.table.receive(10.seconds) match {
           case Table.Received(node, kind) =>
             node.id should equal(id)
@@ -148,7 +148,7 @@ class ControllerTest(system: ActorSystem)
       }
 
       "and when received response from Agent, report this to Table and then respond to original requester" in {
-        this.controller ! Controller.Received(new Response.AnnouncePeer(tid, id), this.remote1)
+        this.controller ! Agent.Received(new Response.AnnouncePeer(tid, id), this.remote1)
         this.table.receive(10.seconds) match {
           case Table.Received(node, kind) =>
             node.id should equal(id)
@@ -206,7 +206,7 @@ class ControllerTest(system: ActorSystem)
         // -- at this point a finder corresponding to this recursion must have "Wait" state
 
         // notify Controller that response message with closer nodes
-        this.controller ! Controller.Received(new Response.FindNode(tid, id, closer()), this.remote0)
+        this.controller ! Agent.Received(new Response.FindNode(tid, id, closer()), this.remote0)
 
         // -- at this point a finder corresponding to this recursion must have "Continue" state
         // -- and produce "alpha" requests to a network agent as a next round of requests
@@ -226,7 +226,7 @@ class ControllerTest(system: ActorSystem)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // generate response for the first query with even closer nodes
-        this.controller ! Controller.Received(new Response.FindNode(q1.head.tid, id, closer()), this.dummy)
+        this.controller ! Agent.Received(new Response.FindNode(q1.head.tid, id, closer()), this.dummy)
 
         // -- at this point a finder must have "Continue" state and again
         // -- produce "alpha" more requests to a network agent as a next round of requests
@@ -247,7 +247,7 @@ class ControllerTest(system: ActorSystem)
         // now get back to round 1:
         // complete second query with closer nodes which must cause 3 more queries
         // which we will complete with no closer nodes
-        this.controller ! Controller.Received(new Response.FindNode(q1.drop(1).head.tid, id, closer()), this.dummy)
+        this.controller ! Agent.Received(new Response.FindNode(q1.drop(1).head.tid, id, closer()), this.dummy)
         val qx: Traversable[Query.FindNode] = for (i <- 0 until 3) yield {
           this.agent.receive(1.second) match {
             case Agent.Send(message, remote) =>
@@ -262,12 +262,12 @@ class ControllerTest(system: ActorSystem)
         }
 
         // and now complete the last query from round 1 which must not produce more queries
-        this.controller ! Controller.Received(new Response.FindNode(q1.drop(2).head.tid, id, closer()), this.dummy)
+        this.controller ! Agent.Received(new Response.FindNode(q1.drop(2).head.tid, id, closer()), this.dummy)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // now complete queries produced by the completion of second item from round 1
         qx.foreach { q =>
-          this.controller ! Controller.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          this.controller ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
         }
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
@@ -276,10 +276,10 @@ class ControllerTest(system: ActorSystem)
         // as corresponding Finder will be in Wait state and on the last report in the round
         // it should produce K (8) new queries to finalize lookup procedure
         q2.take(2).foreach { q =>
-          this.controller ! Controller.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          this.controller ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
-        this.controller ! Controller.Received(new Response.FindNode(q2.last.tid, id, farther()), this.dummy)
+        this.controller ! Agent.Received(new Response.FindNode(q2.last.tid, id, farther()), this.dummy)
         val q3: Traversable[Query.FindNode] = for (i <- 0 until 8) yield
           this.agent.receive(10.seconds) match {
             case Agent.Send(message, remote) =>
@@ -294,7 +294,7 @@ class ControllerTest(system: ActorSystem)
         // now complete all 8 new queries bringing no new nodes again which must cause
         // Controller to complete the whole procedure and send back Found message.
         q3.foreach { q =>
-          this.controller ! Controller.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          this.controller ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
         expectMsgPF(20.seconds) {
@@ -355,7 +355,7 @@ class ControllerTest(system: ActorSystem)
         // -- at this point a finder corresponding to this recursion must have "Wait" state
 
         // notify Controller that response message with closer nodes
-        this.controller ! Controller.Received(new Response.GetPeersWithNodes(tid, id, token, closer()), this.remote0)
+        this.controller ! Agent.Received(new Response.GetPeersWithNodes(tid, id, token, closer()), this.remote0)
 
         // -- at this point a finder corresponding to this recursion must have "Continue" state
         // -- and produce "alpha" requests to a network agent as a next round of requests
@@ -375,7 +375,7 @@ class ControllerTest(system: ActorSystem)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // generate response for the first query with even closer nodes
-        this.controller ! Controller.Received(new Response.GetPeersWithNodes(q1.head.tid, id, token, closer()), this.dummy)
+        this.controller ! Agent.Received(new Response.GetPeersWithNodes(q1.head.tid, id, token, closer()), this.dummy)
 
         // -- at this point a finder must have "Continue" state and again
         // -- produce "alpha" more requests to a network agent as a next round of requests
@@ -396,7 +396,7 @@ class ControllerTest(system: ActorSystem)
         // now get back to round 1:
         // complete second query with closer nodes which must cause 3 more queries
         // which we will complete with no closer nodes
-        this.controller ! Controller.Received(
+        this.controller ! Agent.Received(
           new Response.GetPeersWithNodes(q1.drop(1).head.tid, id, token, closer()), this.dummy)
         val qx: Traversable[Query.GetPeers] = for (i <- 0 until 3) yield {
           this.agent.receive(1.second) match {
@@ -412,13 +412,13 @@ class ControllerTest(system: ActorSystem)
         }
 
         // and now complete the last query from round 1 which must not produce more queries
-        this.controller ! Controller.Received(
+        this.controller ! Agent.Received(
           new Response.GetPeersWithNodes(q1.drop(2).head.tid, id, token, closer()), this.dummy)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // now complete queries produced by the completion of second item from round 1
         qx.foreach { q =>
-          this.controller ! Controller.Received(
+          this.controller ! Agent.Received(
             new Response.GetPeersWithValues(q.tid, id, token, Seq(new dht.Peer(0), new dht.Peer(1))), this.dummy)
         }
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
@@ -428,11 +428,11 @@ class ControllerTest(system: ActorSystem)
         // as corresponding Finder will be in Wait state and on the last report in the round
         // it should produce K (8) new queries to finalize lookup procedure
         q2.take(2).foreach { q =>
-          this.controller ! Controller.Received(
+          this.controller ! Agent.Received(
             new Response.GetPeersWithNodes(q.tid, id, token, farther()), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
-        this.controller ! Controller.Received(
+        this.controller ! Agent.Received(
           new Response.GetPeersWithValues(q2.last.tid, id, token, Seq(new dht.Peer(0))), this.dummy)
         val q3: Traversable[Query.GetPeers] = for (i <- 0 until 8) yield
           this.agent.receive(10.seconds) match {
@@ -448,7 +448,7 @@ class ControllerTest(system: ActorSystem)
         // now complete all 8 new queries bringing no new nodes again which must cause
         // Controller to complete the whole procedure and send back Found message.
         q3.foreach { q =>
-          this.controller ! Controller.Received(
+          this.controller ! Agent.Received(
             new Response.GetPeersWithValues(q.tid, id, token, Seq(new dht.Peer(1))), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
@@ -470,7 +470,7 @@ class ControllerTest(system: ActorSystem)
         val id = Integer160.random
         val tid = TIDFactory.random.next()
         val message = new Query.Ping(tid, id)
-        this.controller ! Controller.Received(message, this.remote1)
+        this.controller ! Agent.Received(message, this.remote1)
         this.agent.receive(10.seconds) match {
           case Agent.Send(msg, address) =>
             msg match {
@@ -489,7 +489,7 @@ class ControllerTest(system: ActorSystem)
         val id = Integer160.random
         val tid = TIDFactory.random.next()
         val message = new Query.FindNode(tid, id, Integer160.random)
-        this.controller ! Controller.Received(message, this.remote1)
+        this.controller ! Agent.Received(message, this.remote1)
         this.agent.receive(10.seconds) match {
           case Agent.Send(msg, address) =>
             msg match {
@@ -512,7 +512,7 @@ class ControllerTest(system: ActorSystem)
         val id = Integer160.random
         val tid = TIDFactory.random.next()
         val message = new Query.GetPeers(tid, id, Integer160.random)
-        this.controller ! Controller.Received(message, this.remote1)
+        this.controller ! Agent.Received(message, this.remote1)
         this.agent.receive(10.seconds) match {
           case Agent.Send(msg, address) =>
             msg match {
@@ -535,7 +535,7 @@ class ControllerTest(system: ActorSystem)
         val id = Integer160.random
         val tid = TIDFactory.random.next()
         val message = new Query.AnnouncePeer(tid, id, Integer160.random, 0, token, implied = false)
-        this.controller ! Controller.Received(message, this.remote1)
+        this.controller ! Agent.Received(message, this.remote1)
         this.agent.receive(10.seconds) match {
           case Agent.Send(msg, address) =>
             msg match {

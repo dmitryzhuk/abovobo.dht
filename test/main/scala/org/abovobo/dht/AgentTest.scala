@@ -17,7 +17,6 @@ import akka.testkit.{ImplicitSender, TestKit}
 import java.net.{InetAddress, InetSocketAddress}
 
 import org.abovobo.dht
-import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.{Response, Query}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
@@ -54,7 +53,7 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
 }
 
 /**
- * Unit test for [[org.abovobo.dht.Agent]]
+ * Unit test for [[Agent]]
  */
 class AgentTest(system: ActorSystem)
   extends TestKit(system)
@@ -63,29 +62,52 @@ class AgentTest(system: ActorSystem)
   with Matchers
   with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("AgentTest"/*, ConfigFactory.parseString("akka.loglevel=debug")*/))
+  def this() = this(ActorSystem("AgentTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
   val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
   val local = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
 
   val controllerInbox = Inbox.create(system)
 
-  val agent = this.system.actorOf(Agent.props(local, 10.seconds, controllerInbox.getRef()), "agent")
   val peer = this.system.actorOf(Props(classOf[RemotePeer], remote), "peer")
+  val agent = this.system.actorOf(Agent.props(local, 10.seconds, 2.seconds, controllerInbox.getRef()), "agent")
+
+  this.watch(this.agent)
 
   override def beforeAll() = {
   }
 
   override def afterAll() = {
-    this.peer ! Udp.Unbind
-    this.agent ! Udp.Unbind
-    Thread.sleep(1000)
+    //this.peer ! Udp.Unbind
+    //this.agent ! Agent.Stop()
+    Thread.sleep(2000)
     TestKit.shutdownActorSystem(this.system)
   }
 
   val factory = new TIDFactory
 
   "Agent Actor" when {
+
+    "just created" must {
+      "notify controller about this" in {
+        controllerInbox.receive(1.second) match {
+          case Agent.Bound(l) =>
+            l should be(this.local)
+          case _ => this.fail("Inavlid message type")
+        }
+      }
+    }
+
+    "exception is sent to it" must {
+      "fail and then recover" in {
+        agent ! new RuntimeException("Crashing Agent")
+        controllerInbox.receive(10.seconds) match {
+          case Agent.Bound(l) =>
+            l should be(this.local)
+          case _ => this.fail("Inavlid message type")
+        }
+      }
+    }
 
     "command Send(Query.Ping) is issued" must {
       val tid = factory.next()
@@ -106,7 +128,7 @@ class AgentTest(system: ActorSystem)
       "complete transaction and notify Controller after receiving network response" in {
         peer ! Udp.Send(Agent.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
         controllerInbox.receive(1.second) match {
-          case Controller.Received(message, address) =>
+          case Agent.Received(message, address) =>
             message match {
               case ping: Response.Ping =>
                 ping.id should be(Integer160.zero)
@@ -141,7 +163,7 @@ class AgentTest(system: ActorSystem)
 
       "complete transaction and notify Controller after not receiving network response" in {
         controllerInbox.receive(15.seconds) match {
-          case Controller.Failed(q: Query) =>
+          case Agent.Failed(q: Query) =>
             q should be theSameInstanceAs query
           case a: Any =>
             fail("Wrong message type " + a.getClass)
@@ -171,7 +193,7 @@ class AgentTest(system: ActorSystem)
         peer ! Udp.Send(Agent.serialize(new Response.FindNode(query.tid, Integer160.zero,
           nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
         controllerInbox.receive(10.seconds) match {
-          case Controller.Received(message, address) =>
+          case Agent.Received(message, address) =>
             message match {
               case fn: Response.FindNode =>
                 fn.id should be(Integer160.zero)
@@ -211,7 +233,7 @@ class AgentTest(system: ActorSystem)
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
         controllerInbox.receive(10.seconds) match {
-          case Controller.Received(message, address) =>
+          case Agent.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithNodes =>
                 gp.id should be(Integer160.zero)
@@ -252,7 +274,7 @@ class AgentTest(system: ActorSystem)
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           values = Array(new InetSocketAddress(0)))), local)
         controllerInbox.receive(10.seconds) match {
-          case Controller.Received(message, address) =>
+          case Agent.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithValues =>
                 gp.id should be(Integer160.zero)
@@ -298,7 +320,7 @@ class AgentTest(system: ActorSystem)
       "complete transaction and notify Controller after receiving network response" in {
         peer ! Udp.Send(Agent.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
         controllerInbox.receive(10.seconds) match {
-          case Controller.Received(message, address) =>
+          case Agent.Received(message, address) =>
             message match {
               case ap: Response.AnnouncePeer =>
                 ap.id should be(Integer160.zero)
@@ -347,6 +369,7 @@ class AgentTest(system: ActorSystem)
             this.fail("Wrong message type " + a.getClass)
         }
       }
+
     }
   }
 }

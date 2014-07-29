@@ -10,14 +10,16 @@
 
 package org.abovobo.dht
 
+import scala.concurrent.duration._
+import scala.collection.mutable
+import scala.util.Random
+
+import akka.actor.{ActorLogging, Cancellable, Props, Actor, ActorRef}
+
 import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.Message
 import org.abovobo.integer.Integer160
-import akka.actor.{ActorLogging, Cancellable, Props, Actor}
-import scala.concurrent.duration._
-import scala.collection.mutable
 import org.abovobo.dht.persistence.{Writer, Reader}
-import akka.actor.ActorRef
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -134,11 +136,13 @@ class Table(val K: Int,
     // check if the table already has assigned ID and reset if not
     // in any case initial FindNode will be issued to controller
     this.reader.id() match {
-      case None     => this.reset()
+      case None     =>
+        // fresh start (no node id in storage yet): resetting id to random value
+        this.reset()
+
       case Some(id) =>
-        //this.controller ! Controller.FindNode(id)
-        // AY: Sending first FindNode with delay to make batch nodes startup easier
-        system.scheduler.scheduleOnce(15.seconds, this.controller, Controller.FindNode(id))
+        // Sending first FindNode with random delay (5-15 seconds) to make batch nodes startup easier
+        system.scheduler.scheduleOnce((new Random().nextInt(10) + 5).seconds, this.controller, Controller.FindNode(id))
     }
 
     // upon start also perform refresh procedure for every existing bucket

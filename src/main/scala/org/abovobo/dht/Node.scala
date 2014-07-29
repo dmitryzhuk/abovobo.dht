@@ -10,24 +10,54 @@
 
 package org.abovobo.dht
 
+import java.net.InetSocketAddress
+
+import scala.concurrent.duration._
 
 import akka.actor.{Actor, ActorRef}
+import org.abovobo.dht.controller.Controller
+import org.abovobo.dht.persistence.{Storage, Writer, Reader}
+import org.abovobo.dht.persistence.h2
 
 /**
  * This class represents general wrapper over major components of DHT node: Table, Agent and Controller.
+ * Note, that enclosed actors only exist while Node actor exists.
  *
- * @param table       Reference to Table actor to be used within this Node.
- * @param agent       Reference to Agent actor to be used within this Node.
- * @param controller  Reference to Controller actor to be used within this Node.
+ * @param storage   An instance of [[Storage]] class to be used by enclosed actors.
+ * @param endpoint  An endpoint to listen for network messages at.
+ * @param routers   Collection of initial routers used to start building DHT.
+ * @param id        Optional parameter allowing to specify some unique identifier for this node.
  */
-class Node(val table: ActorRef, val agent: ActorRef, val controller: ActorRef) extends Actor {
+class Node(val storage: Storage,
+           val endpoint: InetSocketAddress,
+           val routers: Traversable[InetSocketAddress],
+           private val id: Long = 0L)
+  extends Actor {
+
+  import this.context.system
+
+  private val readerC = new h2.Reader(this.storage.connection)
+  private val writerC = new h2.Writer(this.storage.connection)
+  private val readerT = new h2.Reader(this.storage.connection)
+  private val writerT = new h2.Writer(this.storage.connection)
+
+  /*
+  val controller = system.actorOf(
+    Controller.props(this.routers, this.readerC, this.writerC, this.agent, this.table),
+    "controller" + this.id)
+
+  val table = system.actorOf(Table.props(this.readerT, this.writerT, this.controller), "table" + this.id)
+
+  val agent = system.actorOf(Agent.props(this.endpoint, 3.seconds, this.controller), "agent" + this.id)
+  */
 
   override def preStart() = {
     // --
   }
 
   override def postStop() = {
-    // --
+    //this.reader.close()
+    //this.writer.close()
   }
 
   /**
@@ -39,6 +69,20 @@ class Node(val table: ActorRef, val agent: ActorRef, val controller: ActorRef) e
     case _ =>
   }
 
+
+}
+
+/** Accompanying object */
+object Node {
+
+  def apply(reader: Reader, writer: Writer, endpoint: InetSocketAddress, routers: Traversable[InetSocketAddress]): Node = {
+    null
+  }
+
+  def apply(storage: Storage, endpoint: InetSocketAddress, routers: Traversable[InetSocketAddress]): Node = {
+    //this.apply(new h2.Reader(storage.connection))
+    null
+  }
 
 }
 

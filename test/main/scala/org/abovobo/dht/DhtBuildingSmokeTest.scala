@@ -31,10 +31,10 @@ object DhtBuildingSmokeTest extends App {
   val timeoutDuration = 10.seconds
   implicit val timeout = Timeout(timeoutDuration)
 
-  val nodes = DhtNode.spawnNodes(system, 20000, 30) { (ep, n) => 
+  val nodes = Nil /*DhtNode.spawnNodes(system, 20000, 30) { (ep, n) =>
     Thread.sleep(500) 
     ep -> n
-  }
+  }*/
   
   println("---------- waiting -------- ")
 
@@ -43,25 +43,25 @@ object DhtBuildingSmokeTest extends App {
 
   for (i <- 1 to 20) {
     println("---------- tables -------- ")
-    nodes.foreach { case (ep, node) =>
+    //nodes.foreach { case (ep, node) =>
       
-      val info = Await.result(node ? DhtNode.Describe, timeoutDuration).asInstanceOf[DhtNode.NodeInfo]
+      //val info = Await.result(node ? DhtNode.Describe, timeoutDuration).asInstanceOf[DhtNode.NodeInfo]
       
-      println("dht table for: " + info.self.id + "@" + info.self.address)
-      info.nodes.foreach { entry => println("\t" + entry)}
-    }    
+      //println("dht table for: " + info.self.id + "@" + info.self.address)
+      //info.nodes.foreach { entry => println("\t" + entry)}
+    ///}
 
     Thread.sleep(30 * 1000)
     
     println("---------- FIND NODE -------- ")
     
-    nodes.foreach { case (_, n) =>
-      n ! Controller.FindNode(Integer160.random)
-      Thread.sleep(2 * 1000)
-    }
+    //nodes.foreach { case (_, n) =>
+      //n ! Controller.FindNode(Integer160.random)
+      //Thread.sleep(2 * 1000)
+    //}
   }
 
-  nodes.foreach { case (_, n) => n ! DhtNode.Stop }
+  //nodes.foreach { case (_, n) => n ! DhtNode.Stop }
 
   Thread.sleep(3 * 1000)
   
