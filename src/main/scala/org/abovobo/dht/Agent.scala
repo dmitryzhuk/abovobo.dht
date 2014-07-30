@@ -14,6 +14,7 @@ import java.net.InetSocketAddress
 
 import akka.actor._
 import akka.io.{IO, Udp}
+import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.{Message, Query, Response}
 
 import scala.collection.mutable
@@ -79,8 +80,8 @@ class Agent(val endpoint: InetSocketAddress,
       this.socket = Some(this.sender())
       // sign a death pact
       this.context.watch(this.sender())
-      // notify controller that agent is ready to go
-      this.controller ! Agent.Bound(local)
+      // identify itself with controller
+      this.controller ! Controller.IdentifyAgent(this.self)
 
     case Udp.Unbound =>
       this.log.debug("Agent unbound")
@@ -196,13 +197,6 @@ object Agent {
    * Base trait for all events handled or initiated by this actor
    */
   sealed trait Event
-
-  /**
-   * Indicates that this agent has successfully bound to particular UDP socket.
-   *
-   * @param local An address actor has bound to.
-   */
-  case class Bound(local: InetSocketAddress) extends Event
 
   /**
    * This event indicates that there was a query sent to remote peer, but remote peer failed to respond

@@ -40,7 +40,7 @@ class TableTest(system: ActorSystem)
 
   val controllerInbox = Inbox.create(system)
 
-  lazy val table = this.system.actorOf(Table.props(
+  val table = this.system.actorOf(Table.props(
       K = 8,
       timeout = 60.seconds,
       delay = 30.seconds,
@@ -63,6 +63,16 @@ class TableTest(system: ActorSystem)
   }
 
   "RoutingTable Actor" when {
+
+    "just created" must {
+      "notify controller about this" in {
+        controllerInbox.receive(10.seconds) match {
+          case Controller.IdentifyTable(ref) =>
+            ref should be(this.table)
+          case _ => this.fail("Inavlid message type")
+        }
+      }
+    }
 
     "message Set is received" must {
       "set provided ID and purge routing table storage" in {

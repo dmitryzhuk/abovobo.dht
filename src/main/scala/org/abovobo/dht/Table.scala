@@ -118,21 +118,10 @@ class Table(val K: Int,
   import this.context.system
   import this.context.dispatcher
 
-  /**
-   * @inheritdoc
-   *
-   * Handles RoutingTable Actor specific messages.
-   */
-  override def receive = {
-    case Refresh(min, max)    =>          this.refresh(min, max)
-    case Reset()              => sender ! this.reset()
-    case Set(id)              => sender ! this.set(id)
-    case Purge()              => sender ! this.purge()
-    case Received(node, kind) => sender ! this.process(node, kind)
-    case Failed(node)         => sender ! this.process(node, Message.Kind.Fail)
-  }  
-  
   override def preStart() = {
+    // identify itself with controller
+    this.controller ! Controller.IdentifyTable(this.self)
+
     // check if the table already has assigned ID and reset if not
     // in any case initial FindNode will be issued to controller
     this.reader.id() match {
@@ -160,7 +149,7 @@ class Table(val K: Int,
       this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, Integer160.maxval)))
     }
   }
-    
+
   /**
    * @inheritdoc
    *
@@ -169,6 +158,22 @@ class Table(val K: Int,
   override def postStop() {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
+  }
+
+  /**
+   * @inheritdoc
+   *
+   * Handles RoutingTable Actor specific messages.
+   */
+  override def receive = {
+    case Refresh(min, max)    =>          this.refresh(min, max)
+    case Reset()              => sender ! this.reset()
+    case Set(id)              => sender ! this.set(id)
+    case Purge()              => sender ! this.purge()
+    case Received(node, kind) => sender ! this.process(node, kind)
+    case Failed(node)         => sender ! this.process(node, Message.Kind.Fail)
+    // To debug crashes
+    case t: Throwable => throw t
   }
 
   /**

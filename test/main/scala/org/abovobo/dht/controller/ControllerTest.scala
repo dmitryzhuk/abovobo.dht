@@ -13,6 +13,7 @@ package org.abovobo.dht.controller
 import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor._
+import akka.pattern.ask
 import akka.io.{Udp, IO}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
@@ -75,10 +76,16 @@ class ControllerTest(system: ActorSystem)
   val table = Inbox.create(this.system)
   val agent = Inbox.create(this.system)
 
-  val controller = this.system.actorOf(Controller.props(List(remote0), reader, writer, agent.getRef(), table.getRef()))
+  val controller = this.system.actorOf(Controller.props(List(remote0), reader, writer))
+
+  implicit val timeout: akka.util.Timeout = 5.seconds
 
   override def beforeAll() {
     this.writer.drop()
+
+    this.controller ? Controller.IdentifyAgent(this.agent.getRef())
+    this.controller ? Controller.IdentifyTable(this.table.getRef())
+
     println()
     println(this.self)
   }

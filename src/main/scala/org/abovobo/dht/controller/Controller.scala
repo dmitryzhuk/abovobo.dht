@@ -31,12 +31,9 @@ import scala.concurrent.duration._
  * @param alpha       Number of concurrent lookup threads in recursive FIND_NODE RPCs.
  * @param period      A period of rotating the token.
  * @param lifetime    A lifetime of the peer info.
- * @param timeout     A period in time during which the remote party must respond to a query.
  * @param routers     A collection of addresses which can be used as inital seeds when own routing table is empty.
  * @param reader      Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  * @param writer      Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
- * @param agentProps  Properly configured Props for creating [[Agent]] actor.
- * @param tableProps  Properly configured Props object for creating [[Table]] actor.
  *
  * @author Dmitry Zhuk
  */
@@ -44,22 +41,19 @@ class Controller(val K: Int,
                  val alpha: Int,
                  val period: FiniteDuration,
                  val lifetime: FiniteDuration,
-                 val timeout: FiniteDuration,
                  val routers: Traversable[InetSocketAddress],
                  val reader: Reader,
-                 val writer: Writer,
-                 val agentProps: Props,
-                 val tableProps: Props)
+                 val writer: Writer)
   extends Actor with ActorLogging {
 
   import this.context.dispatcher
   import this.context.system
 
-  /** Initialize reference to an Agent actor */
-  val agent = system.actorOf(this.agentProps, "agent")
+  /** Initialize reference to [[org.abovobo.dht.Agent]] actor with system.deadLetters actor */
+  var agent = system.deadLetters
 
-  /** Initialize reference to a Table actor */
-  val table = system.actorOf(this.tableProps, "table")
+  /** Initialize reference to [[org.abovobo.dht.Table]] actor with system.deadLetters actor */
+  var table = system.deadLetters
 
   /** @inheritdoc */
   override def preStart() = {}
@@ -101,8 +95,17 @@ class Controller(val K: Int,
       new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
     }
 
+    // Invokes tokens rotation procedure
     case Controller.RotateTokens => this.responder.rotateTokens()
+
+    // Invokes peer cleanup procedure
     case Controller.CleanupPeers => this.responder.cleanupPeers()
+
+    // Replace ActorRef pointing Agent actor
+    case Controller.IdentifyAgent(ref) => this.agent = ref
+
+    // Replace ActorRef pointing Table actor
+    case Controller.IdentifyTable(ref) => this.table = ref
 
     // -- HANDLE EVENTS
     // -- -------------
@@ -278,7 +281,8 @@ class Controller(val K: Int,
   /// An instance of Responder to handle incoming queries
   private lazy val responder = new Responder(this.K, this.period, this.lifetime, this.reader, this.writer)
 
-  val timerTasks =
+  /// Collection of scheduled tasks sending periodic internal commands to self
+  private val timerTasks =
     this.context.system.scheduler.schedule(Duration.Zero, this.period, self, Controller.RotateTokens) ::
     this.context.system.scheduler.schedule(this.lifetime, this.lifetime, self, Controller.CleanupPeers) :: Nil
 
@@ -304,17 +308,14 @@ object Controller {
             alpha: Int,
             period: FiniteDuration,
             lifetime: FiniteDuration,
-            timeout: FiniteDuration,
             routers: Traversable[InetSocketAddress],
             reader: Reader,
-            writer: Writer,
-            agent: ActorRef,
-            table: ActorRef) =
-    Props(classOf[Controller], K, alpha, period, lifetime, timeout, routers, reader, writer, agent, table)
+            writer: Writer) =
+    Props(classOf[Controller], K, alpha, period, lifetime, routers, reader, writer)
 
   /** Generates [[akka.actor.Props]] instance with most parameters set to their default values */
-  def props(routers: Traversable[InetSocketAddress], reader: Reader, writer: Writer, agent: ActorRef, table: ActorRef): Props =
-    this.props(8, 3, 5.minutes, 30.minutes, 10.seconds, routers, reader, writer, agent, table)
+  def props(routers: Traversable[InetSocketAddress], reader: Reader, writer: Writer): Props =
+    this.props(8, 3, 5.minutes, 30.minutes, routers, reader, writer)
 
   /**
    * This class defines transaction data.
@@ -351,6 +352,20 @@ object Controller {
 
   /** Base trait for all commands supported by this actor */
   sealed trait Command
+
+  /**
+   * Instructs controller to use given actor reference as a Table actor.
+   *
+   * @param table A reference to Table actor.
+   */
+  case class IdentifyTable(table: ActorRef) extends Command
+
+  /**
+   * Instructs controller to use given actor reference as an Agent actor.
+   *
+   * @param agent A reference to Agent actor.
+   */
+  case class IdentifyAgent(agent: ActorRef) extends Command
 
   /**
    * This command instructs controller to send `ping` message to the given address.

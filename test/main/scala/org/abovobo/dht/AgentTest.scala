@@ -17,6 +17,7 @@ import akka.testkit.{ImplicitSender, TestKit}
 import java.net.{InetAddress, InetSocketAddress}
 
 import org.abovobo.dht
+import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.{Message, Response, Query}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
@@ -89,8 +90,8 @@ class AgentTest(system: ActorSystem)
     "just created" must {
       "notify controller about this" in {
         controllerInbox.receive(1.second) match {
-          case Agent.Bound(l) =>
-            l should be(this.local)
+          case Controller.IdentifyAgent(ref) =>
+            ref should be(this.agent)
           case _ => this.fail("Inavlid message type")
         }
       }
@@ -100,8 +101,8 @@ class AgentTest(system: ActorSystem)
       "fail and then recover" in {
         agent ! new RuntimeException("Crashing Agent")
         controllerInbox.receive(10.seconds) match {
-          case Agent.Bound(l) =>
-            l should be(this.local)
+          case Controller.IdentifyAgent(ref) =>
+            ref should be(this.agent)
           case _ => this.fail("Inavlid message type")
         }
       }
