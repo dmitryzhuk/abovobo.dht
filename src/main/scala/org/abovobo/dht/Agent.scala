@@ -14,11 +14,7 @@ import java.net.InetSocketAddress
 
 import akka.actor._
 import akka.io.{IO, Udp}
-import akka.util.{ByteString, ByteStringBuilder}
-import org.abovobo.conversions.Bencode
-import org.abovobo.dht
 import org.abovobo.dht.message.{Message, Query, Response}
-import org.abovobo.integer.Integer160
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
@@ -48,14 +44,12 @@ class Agent(val endpoint: InetSocketAddress,
   /** @inheritdoc */
   override def preStart() = {
     this.log.debug("Agent#preStart (sending `Start` message)")
-    //self ! Agent.Start()
     IO(Udp) ! Udp.Bind(self, this.endpoint)
   }
 
   /** @inheritdoc */
   override def postRestart(reason: Throwable) = {
     this.log.debug("Agent#postRestart (scheduling `Start` message)")
-    //system.scheduler.scheduleOnce(this.retry, self, Agent.Start())
     system.scheduler.scheduleOnce(this.retry, IO(Udp), Udp.Bind(self, this.endpoint))
   }
 
