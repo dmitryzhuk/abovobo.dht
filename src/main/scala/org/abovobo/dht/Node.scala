@@ -16,19 +16,18 @@ import scala.concurrent.duration._
 
 import akka.actor.{Actor, ActorRef}
 import org.abovobo.dht.controller.Controller
-import org.abovobo.dht.persistence.{Storage, Writer, Reader}
-import org.abovobo.dht.persistence.h2
+import org.abovobo.dht.persistence._
 
 /**
  * This class represents general wrapper over major components of DHT node: Table, Agent and Controller.
  * Note, that enclosed actors only exist while Node actor exists.
  *
- * @param storage   An instance of [[Storage]] class to be used by enclosed actors.
+ * @param ds        An instance of [[DataSource]] class to be used by enclosed actors.
  * @param endpoint  An endpoint to listen for network messages at.
  * @param routers   Collection of initial routers used to start building DHT.
  * @param id        Optional parameter allowing to specify some unique identifier for this node.
  */
-class Node(val storage: Storage,
+class Node(val ds: DataSource,
            val endpoint: InetSocketAddress,
            val routers: Traversable[InetSocketAddress],
            private val id: Long = 0L)
@@ -36,28 +35,45 @@ class Node(val storage: Storage,
 
   import this.context.system
 
-  private val readerC = new h2.Reader(this.storage.connection)
-  private val writerC = new h2.Writer(this.storage.connection)
-  private val readerT = new h2.Reader(this.storage.connection)
-  private val writerT = new h2.Writer(this.storage.connection)
+  /// collection of readers and writers used within actors
+  val storages = Array[Storage](
+    new h2.Reader(this.ds.connection),
+    new h2.Writer(this.ds.connection),
+    new h2.Reader(this.ds.connection),
+    new h2.Writer(this.ds.connection)
+  )
 
-  /*
+  /// Reference to Controller actor
   val controller = system.actorOf(
-    Controller.props(this.routers, this.readerC, this.writerC, this.agent, this.table),
+    Controller.props(
+      this.routers,
+      this.storages(0).asInstanceOf[Reader],
+      this.storages(1).asInstanceOf[Writer]),
     "controller" + this.id)
 
-  val table = system.actorOf(Table.props(this.readerT, this.writerT, this.controller), "table" + this.id)
+  /// Reference to Table actor
+  val table = system.actorOf(
+    Table.props(
+      this.storages(2).asInstanceOf[Reader],
+      this.storages(3).asInstanceOf[Writer],
+      this.controller),
+    "table" + this.id)
 
-  val agent = system.actorOf(Agent.props(this.endpoint, 3.seconds, this.controller), "agent" + this.id)
-  */
+  /// Reference to Agent actor
+  val agent = system.actorOf(
+    Agent.props(
+      this.endpoint,
+      3.seconds,
+      3.seconds,
+      this.controller),
+    "agent" + this.id)
 
   override def preStart() = {
     // --
   }
 
   override def postStop() = {
-    //this.reader.close()
-    //this.writer.close()
+    this.storages.foreach(_.close())
   }
 
   /**
