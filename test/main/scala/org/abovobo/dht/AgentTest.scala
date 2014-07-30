@@ -17,7 +17,7 @@ import akka.testkit.{ImplicitSender, TestKit}
 import java.net.{InetAddress, InetSocketAddress}
 
 import org.abovobo.dht
-import org.abovobo.dht.message.{Response, Query}
+import org.abovobo.dht.message.{Message, Response, Query}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
 
@@ -78,8 +78,6 @@ class AgentTest(system: ActorSystem)
   }
 
   override def afterAll() = {
-    //this.peer ! Udp.Unbind
-    //this.agent ! Agent.Stop()
     Thread.sleep(2000)
     TestKit.shutdownActorSystem(this.system)
   }
@@ -126,7 +124,7 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        peer ! Udp.Send(Agent.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
+        peer ! Udp.Send(Message.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
         controllerInbox.receive(1.second) match {
           case Agent.Received(message, address) =>
             message match {
@@ -190,7 +188,7 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        peer ! Udp.Send(Agent.serialize(new Response.FindNode(query.tid, Integer160.zero,
+        peer ! Udp.Send(Message.serialize(new Response.FindNode(query.tid, Integer160.zero,
           nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
         controllerInbox.receive(10.seconds) match {
           case Agent.Received(message, address) =>
@@ -229,7 +227,7 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        peer ! Udp.Send(Agent.serialize(new Response.GetPeersWithNodes(query.tid, Integer160.zero,
+        peer ! Udp.Send(Message.serialize(new Response.GetPeersWithNodes(query.tid, Integer160.zero,
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
         controllerInbox.receive(10.seconds) match {
@@ -270,7 +268,7 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after receiving network response" in {
-        peer ! Udp.Send(Agent.serialize(new Response.GetPeersWithValues(query.tid, Integer160.zero,
+        peer ! Udp.Send(Message.serialize(new Response.GetPeersWithValues(query.tid, Integer160.zero,
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           values = Array(new InetSocketAddress(0)))), local)
         controllerInbox.receive(10.seconds) match {
@@ -318,7 +316,7 @@ class AgentTest(system: ActorSystem)
       }
       
       "complete transaction and notify Controller after receiving network response" in {
-        peer ! Udp.Send(Agent.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
+        peer ! Udp.Send(Message.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
         controllerInbox.receive(10.seconds) match {
           case Agent.Received(message, address) =>
             message match {
