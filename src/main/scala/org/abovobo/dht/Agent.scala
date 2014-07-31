@@ -136,7 +136,7 @@ class Agent(val endpoint: InetSocketAddress,
     case Agent.Timeout(q, r) =>
       this.log.debug("Completing transaction " + q.tid + " by means of failure (timeout) for " + r)
       this.queries.remove(q.tid).foreach { transaction =>
-        transaction._3 ! Agent.Failed(q)
+        transaction._3 ! Agent.Failed(q, r)
         transaction._2.cancel()
       }
 
@@ -228,7 +228,7 @@ object Agent {
    *
    * @param query A query which has been sent initially.
    */
-  case class Failed(query: Query) extends Event
+  case class Failed(query: Query, remote: InetSocketAddress) extends Event
 
   /**
    * This event indicates that there was a message received from the remote peer.

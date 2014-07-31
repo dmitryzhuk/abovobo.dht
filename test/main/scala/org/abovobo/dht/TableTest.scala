@@ -46,13 +46,12 @@ class TableTest(system: ActorSystem)
       delay = 30.seconds,
       threshold = 3,
       reader = this.reader,
-      writer = this.writer,
-      controller = controllerInbox.getRef()),
+      writer = this.writer),
     "table")
   lazy val node = new NodeInfo(Integer160.random, new InetSocketAddress(0))
 
   override def beforeAll() = {
-    // Do nothing
+    table.tell(Controller.Ready, controllerInbox.getRef())
   }
 
   override def afterAll() = {
@@ -63,16 +62,6 @@ class TableTest(system: ActorSystem)
   }
 
   "RoutingTable Actor" when {
-
-    "just created" must {
-      "notify controller about this" in {
-        controllerInbox.receive(10.seconds) match {
-          case Controller.IdentifyTable(ref) =>
-            ref should be(this.table)
-          case _ => this.fail("Inavlid message type")
-        }
-      }
-    }
 
     "message Set is received" must {
       "set provided ID and purge routing table storage" in {

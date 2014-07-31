@@ -34,6 +34,7 @@ import scala.concurrent.duration._
  * @param routers     A collection of addresses which can be used as inital seeds when own routing table is empty.
  * @param reader      Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  * @param writer      Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+ * @param table       Reference to [[Table]] actor.
  *
  * @author Dmitry Zhuk
  */
@@ -43,32 +44,32 @@ class Controller(val K: Int,
                  val lifetime: FiniteDuration,
                  val routers: Traversable[InetSocketAddress],
                  val reader: Reader,
-                 val writer: Writer)
+                 val writer: Writer,
+                 val table: ActorRef)
   extends Actor with ActorLogging {
 
   import this.context.dispatcher
-  import this.context.system
-
-  /** Initialize reference to [[org.abovobo.dht.Agent]] actor with system.deadLetters actor */
-  var agent = system.deadLetters
-
-  /** Initialize reference to [[org.abovobo.dht.Table]] actor with system.deadLetters actor */
-  var table = system.deadLetters
 
   /** @inheritdoc */
-  override def preStart() = {}
+  override def preStart() = {
+    this.log.debug("Controller#preStart")
+    this.context.watch(this.table)
+  }
 
   /** @inheritdoc */
   override def postStop() = {
+    this.log.debug("Controller#postStop")
+    this.context.unwatch(this.table)
     this.timerTasks.foreach(_.cancel())
   }
 
-  /**
-   * @inheritdoc
-   *
-   * Implements handling of [[controller.Controller]]-specific events and commands.
-   */
-  override def receive = {
+  def waiting: Receive = {
+    case Agent.Bound =>
+      this.context.become(this.working(this.sender()))
+      this.table ! Controller.Ready
+  }
+
+  def working(agent: ActorRef): Receive = {
 
     // To avoid "unhandled message" logging
     case r: Table.Result =>
@@ -79,19 +80,19 @@ class Controller(val K: Int,
       // Simply send Query.Ping to remote peer
       val query = new Query.Ping(this.factory.next(), this.reader.id().get)
       this.transactions.put(query.tid, new Controller.Transaction(query, node, this.sender()))
-      this.agent ! Agent.Send(query, node.address)
+      agent ! Agent.Send(query, node.address)
 
     case Controller.AnnouncePeer(node, token, infohash, port, implied) =>
       // Simply send Query.AnnouncePeer message to remote peer
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
       this.transactions.put(query.tid, new Controller.Transaction(query, node, this.sender()))
-      this.agent ! Agent.Send(query, node.address)
+      agent ! Agent.Send(query, node.address)
 
-    case Controller.FindNode(target: Integer160) => this.iterate(target, None, this.sender()) { () =>
+    case Controller.FindNode(target: Integer160) => this.iterate(target, None, this.sender(), agent) { () =>
       new Query.FindNode(this.factory.next(), this.reader.id().get, target)
     }
 
-    case Controller.GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender()) { () =>
+    case Controller.GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender(), agent) { () =>
       new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
     }
 
@@ -101,18 +102,12 @@ class Controller(val K: Int,
     // Invokes peer cleanup procedure
     case Controller.CleanupPeers => this.responder.cleanupPeers()
 
-    // Replace ActorRef pointing Agent actor
-    case Controller.IdentifyAgent(ref) => this.agent = ref
-
-    // Replace ActorRef pointing Table actor
-    case Controller.IdentifyTable(ref) => this.table = ref
-
     // -- HANDLE EVENTS
     // -- -------------
     // when our query has failed just remove corresponding transaction
     // and properly notify routing table about this failure
-    case Agent.Failed(query) =>
-      this.transactions.remove(query.tid).foreach(this.fail)
+    case Agent.Failed(query, remote) =>
+      this.transactions.remove(query.tid).foreach(this.fail(_, agent))
 
     case Agent.Received(message, remote) =>
       // received message handled differently depending on message type
@@ -123,16 +118,16 @@ class Controller(val K: Int,
         case query: Query =>
           val node = new NodeInfo(query.id, remote)
           this.table ! Table.Received(node, Message.Kind.Query)
-          this.agent ! this.responder.respond(query, node)
+          agent ! this.responder.respond(query, node)
 
         // if response has been received
         // close transaction, notify routing table and then
         // delegate execution to private `process` method
-        case response: Response => this.transactions.remove(response.tid).foreach(this.process(response, _))
+        case response: Response => this.transactions.remove(response.tid).foreach(this.process(response, _, agent))
 
         // if error message has been received
         // close transaction and notify routing table
-        case error: dht.message.Error => this.transactions.remove(error.tid).foreach(this.fail)
+        case error: dht.message.Error => this.transactions.remove(error.tid).foreach(this.fail(_, agent))
 
         /// XXX To be removed
         case pm: dht.message.Plugin =>
@@ -140,7 +135,7 @@ class Controller(val K: Int,
             case Some(plugin) => plugin ! Agent.Received(pm, remote)
             case None =>
               this.log.error("Error, message to non-existing plugin.")
-              this.agent ! Agent.Send(
+              agent ! Agent.Send(
                 new dht.message.Error(pm.tid, dht.message.Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
           }
       }
@@ -149,10 +144,13 @@ class Controller(val K: Int,
     // maybe its possible to reuse plugins query->response style traffic for DHT state update
     // then, tid field and timeouts should be managed by this DHT Controller and Agent
     /// XXX To be removed
-    case Controller.SendPluginMessage(message, node) => this.agent ! Agent.Send(message, node.address)
+    case Controller.SendPluginMessage(message, node) => agent ! Agent.Send(message, node.address)
     case Controller.PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
     case Controller.RemovePlugin(pid) =>  this.plugins.remove(pid.value)
   }
+
+  /** @inheritdoc */
+  override def receive = this.waiting
 
   /**
    * Grabs target 160-bit ID for recursions or None if other query.
@@ -173,8 +171,9 @@ class Controller(val K: Int,
    * Notifies Table actor about failure and reports failure to Finder, if we are dealing with recursion.
    *
    * @param transaction Transaction instance to handle fail for.
+   * @param agent       A reference to [[Agent]] actor.
    */
-  private def fail(transaction: Controller.Transaction) = {
+  private def fail(transaction: Controller.Transaction, agent: ActorRef) = {
     // don't notify table about routers activity
     if (transaction.remote.id != Integer160.zero) {
       this.table ! Table.Received(transaction.remote, Message.Kind.Error)
@@ -184,7 +183,7 @@ class Controller(val K: Int,
     this.target(transaction.query).foreach { target =>
       this.recursions.get(target._1) foreach { finder =>
         finder.fail(transaction.remote)
-        this.iterate(target._1, Some(finder), transaction.requester) { () =>
+        this.iterate(target._1, Some(finder), transaction.requester, agent) { () =>
           target._2(this.factory.next(), this.reader.id().get, target._1)
         }
       }
@@ -195,11 +194,13 @@ class Controller(val K: Int,
    * Performs next iteration of recursive lookup procedure.
    *
    * @param id     An id of interest (node id for FIND_NODE RPC or infohash for FIND_VALUE RPC).
+   * @param finder Optional instance of finder associated with this recursion.
    * @param sender An original sender of the initial command which initiated recursion.
+   * @param agent  A reference to [[Agent]] actor.
    *
    * @tparam T     Type of query to use (can be [[Query.FindNode]] or [[Query.GetPeers]])
    */
-  private def iterate[T <: Query](id: Integer160, finder: Option[Finder], sender: ActorRef)(q: () => T) = {
+  private def iterate[T <: Query](id: Integer160, finder: Option[Finder], sender: ActorRef, agent: ActorRef)(q: () => T) = {
     val f = finder.getOrElse({
       val finder = new Finder(id, this.K, this.alpha, klosest(this.alpha, id))
       this.recursions.put(id, finder)
@@ -208,7 +209,7 @@ class Controller(val K: Int,
     def round(n: Int) = f.take(n) foreach { node =>
       val query = q()
       this.transactions.put(query.tid, new Controller.Transaction(query, node, sender))
-      this.agent ! Agent.Send(query, node.address)
+      agent ! Agent.Send(query, node.address)
     }
     this.log.debug("Finder state before #iterate: " + f.state)
     f.state match {
@@ -230,8 +231,9 @@ class Controller(val K: Int,
    *
    * @param response    A [[Response]] message from remote peer.
    * @param transaction A transaction instance that response was received for.
+   * @param agent       A reference to [[Agent]] actor.
    */
-  private def process(response: Response, transaction: Controller.Transaction) = {
+  private def process(response: Response, transaction: Controller.Transaction, agent: ActorRef) = {
     if (response.id == transaction.remote.id) {
       if (transaction.remote.id != Integer160.zero) {
         this.table ! Table.Received(transaction.remote, Message.Kind.Response)
@@ -245,7 +247,7 @@ class Controller(val K: Int,
           val target = transaction.query.asInstanceOf[Query.FindNode].target
           this.recursions.get(target).foreach { finder =>
             finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
-            this.iterate(target, Some(finder), transaction.requester) { () =>
+            this.iterate(target, Some(finder), transaction.requester, agent) { () =>
               new Query.FindNode(this.factory.next(), this.reader.id().get, target)
             }
           }
@@ -254,7 +256,7 @@ class Controller(val K: Int,
           val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
           this.recursions.get(infohash).foreach { finder =>
             finder.report(transaction.remote, gp.nodes, Nil, gp.token)
-            this.iterate(infohash, Some(finder), transaction.requester) { () =>
+            this.iterate(infohash, Some(finder), transaction.requester, agent) { () =>
               new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
             }
           }
@@ -263,7 +265,7 @@ class Controller(val K: Int,
           val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
           this.recursions.get(infohash).foreach { finder =>
             finder.report(transaction.remote, Nil, gp.values, gp.token)
-            this.iterate(infohash, Some(finder), transaction.requester) { () =>
+            this.iterate(infohash, Some(finder), transaction.requester, agent) { () =>
               new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
             }
           }
@@ -272,7 +274,7 @@ class Controller(val K: Int,
           transaction.requester ! Controller.PeerAnnounced()
       }
     } else {
-      this.fail(transaction)
+      this.fail(transaction, agent)
     }
 
   }
@@ -331,8 +333,11 @@ object Controller {
    */
   class Transaction(val query: Query, val remote: NodeInfo, val requester: ActorRef)
 
-  /** Base trait for all events handled or initiated by this actor */
+  /** Base trait for all events initiated by this actor */
   sealed trait Event
+
+  /* Indicates that Controller is initialized and ready to process requests */
+  case object Ready extends Event
 
   /** Indicates that node has been successfully pinged */
   case class Pinged() extends Event
@@ -357,20 +362,6 @@ object Controller {
 
   /** Base trait for all commands supported by this actor */
   sealed trait Command
-
-  /**
-   * Instructs controller to use given actor reference as a Table actor.
-   *
-   * @param table A reference to Table actor.
-   */
-  case class IdentifyTable(table: ActorRef) extends Command
-
-  /**
-   * Instructs controller to use given actor reference as an Agent actor.
-   *
-   * @param agent A reference to Agent actor.
-   */
-  case class IdentifyAgent(agent: ActorRef) extends Command
 
   /**
    * This command instructs controller to send `ping` message to the given address.

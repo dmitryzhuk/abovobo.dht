@@ -83,9 +83,6 @@ class ControllerTest(system: ActorSystem)
   override def beforeAll() {
     this.writer.drop()
 
-    this.controller ? Controller.IdentifyAgent(this.agent.getRef())
-    this.controller ? Controller.IdentifyTable(this.table.getRef())
-
     println()
     println(this.self)
   }
