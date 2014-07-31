@@ -13,7 +13,6 @@ package org.abovobo.dht.controller
 import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor._
-import akka.pattern.ask
 import akka.io.{Udp, IO}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
@@ -76,7 +75,7 @@ class ControllerTest(system: ActorSystem)
   val table = Inbox.create(this.system)
   val agent = Inbox.create(this.system)
 
-  val controller = this.system.actorOf(Controller.props(List(remote0), reader, writer))
+  val controller = this.system.actorOf(Controller.props(List(remote0), reader, writer, table.getRef()))
 
   implicit val timeout: akka.util.Timeout = 5.seconds
 
@@ -85,6 +84,8 @@ class ControllerTest(system: ActorSystem)
 
     println()
     println(this.self)
+
+    controller.tell(Agent.Bound, agent.getRef())
   }
 
   override def afterAll() {
@@ -95,6 +96,15 @@ class ControllerTest(system: ActorSystem)
   }
 
   "Controller actor " when {
+
+    "just created" must {
+      "send Ready event to table" in {
+        this.table.receive(10.seconds) match {
+          case Controller.Ready => //
+          case _ => this.fail("Invalid message type")
+        }
+      }
+    }
 
     /** Commands */
 
@@ -124,7 +134,7 @@ class ControllerTest(system: ActorSystem)
             node.id should equal(id)
             node.address should equal(this.remote1)
             kind should equal(Message.Kind.Response)
-          case _ => this.fail("Invalid message type")
+          case m: Any => this.fail("Invalid message type: " + m.getClass.getName)
         }
         expectMsg(Controller.Pinged())
       }
@@ -193,7 +203,7 @@ class ControllerTest(system: ActorSystem)
         this.controller ! Controller.FindNode(target)
 
         // receive the command that Controller has sent to network Agent
-        val tid = this.agent.receive(1.second) match {
+        val tid = this.agent.receive(10.second) match {
           case Agent.Send(message, remote) =>
             remote should equal(this.remote0)
             message match {
@@ -210,14 +220,14 @@ class ControllerTest(system: ActorSystem)
         // -- at this point a finder corresponding to this recursion must have "Wait" state
 
         // notify Controller that response message with closer nodes
-        this.controller ! Agent.Received(new Response.FindNode(tid, id, closer()), this.remote0)
+        this.controller ! Agent.Received(new Response.FindNode(tid, zero, closer()), this.remote0)
 
         // -- at this point a finder corresponding to this recursion must have "Continue" state
         // -- and produce "alpha" requests to a network agent as a next round of requests
 
         // receive all requests from the new round
         val q1: Traversable[Query.FindNode] = for (i <- 0 until 3) yield
-          this.agent.receive(1.second) match {
+          this.agent.receive(10.second) match {
             case Agent.Send(message, remote) =>
               message match {
                 case fn: Query.FindNode =>
@@ -236,7 +246,7 @@ class ControllerTest(system: ActorSystem)
         // -- produce "alpha" more requests to a network agent as a next round of requests
 
         val q2: Traversable[Query.FindNode] = for (i <- 0 until 3) yield
-          this.agent.receive(1.second) match {
+          this.agent.receive(10.second) match {
             case Agent.Send(message, remote) =>
               message match {
                 case fn: Query.FindNode =>
@@ -253,7 +263,7 @@ class ControllerTest(system: ActorSystem)
         // which we will complete with no closer nodes
         this.controller ! Agent.Received(new Response.FindNode(q1.drop(1).head.tid, id, closer()), this.dummy)
         val qx: Traversable[Query.FindNode] = for (i <- 0 until 3) yield {
-          this.agent.receive(1.second) match {
+          this.agent.receive(10.second) match {
             case Agent.Send(message, remote) =>
               message match {
                 case fn: Query.FindNode =>

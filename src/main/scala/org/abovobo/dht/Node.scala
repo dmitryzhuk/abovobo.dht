@@ -43,20 +43,21 @@ class Node(val ds: DataSource,
     new h2.Writer(this.ds.connection)
   )
 
-  /// Reference to Controller actor
-  val controller = system.actorOf(
-    Controller.props(
-      this.routers,
-      this.storages(0).asInstanceOf[Reader],
-      this.storages(1).asInstanceOf[Writer]),
-    "controller" + this.id)
-
   /// Reference to Table actor
   val table = system.actorOf(
     Table.props(
       this.storages(2).asInstanceOf[Reader],
       this.storages(3).asInstanceOf[Writer]),
     "table" + this.id)
+
+  /// Reference to Controller actor
+  val controller = system.actorOf(
+    Controller.props(
+      this.routers,
+      this.storages(0).asInstanceOf[Reader],
+      this.storages(1).asInstanceOf[Writer],
+      this.table),
+    "controller" + this.id)
 
   /// Reference to Agent actor
   val agent = system.actorOf(

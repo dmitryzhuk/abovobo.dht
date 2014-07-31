@@ -17,7 +17,6 @@ import akka.testkit.{ImplicitSender, TestKit}
 import java.net.{InetAddress, InetSocketAddress}
 
 import org.abovobo.dht
-import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.{Message, Response, Query}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
@@ -160,7 +159,7 @@ class AgentTest(system: ActorSystem)
 
       "complete transaction and notify Controller after not receiving network response" in {
         expectMsgPF(15.seconds)  {
-          case Agent.Failed(q: Query) =>
+          case Agent.Failed(q: Query, remote: InetSocketAddress) =>
             q should be theSameInstanceAs query
           case a: Any =>
             fail("Wrong message type " + a.getClass)

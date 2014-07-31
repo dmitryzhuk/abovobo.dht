@@ -63,12 +63,21 @@ class Controller(val K: Int,
     this.timerTasks.foreach(_.cancel())
   }
 
+  /**
+   * Defines initial event loop which only handles [[Agent.Bound]] event and immediately
+   * switches to [[Controller.working()]] function.
+   */
   def waiting: Receive = {
     case Agent.Bound =>
       this.context.become(this.working(this.sender()))
       this.table ! Controller.Ready
   }
 
+  /**
+   * General message handling function.
+   *
+   * @param agent Reference to Bound [[Agent]] actor.
+   */
   def working(agent: ActorRef): Receive = {
 
     // To avoid "unhandled message" logging
@@ -174,6 +183,7 @@ class Controller(val K: Int,
    * @param agent       A reference to [[Agent]] actor.
    */
   private def fail(transaction: Controller.Transaction, agent: ActorRef) = {
+    this.log.debug("Failing transaction {}", transaction.query)
     // don't notify table about routers activity
     if (transaction.remote.id != Integer160.zero) {
       this.table ! Table.Received(transaction.remote, Message.Kind.Error)
@@ -234,49 +244,47 @@ class Controller(val K: Int,
    * @param agent       A reference to [[Agent]] actor.
    */
   private def process(response: Response, transaction: Controller.Transaction, agent: ActorRef) = {
-    if (response.id == transaction.remote.id) {
-      if (transaction.remote.id != Integer160.zero) {
-        this.table ! Table.Received(transaction.remote, Message.Kind.Response)
-      }
-      response match {
-
-        case ping: Response.Ping =>
-          transaction.requester ! Controller.Pinged()
-
-        case fn: Response.FindNode =>
-          val target = transaction.query.asInstanceOf[Query.FindNode].target
-          this.recursions.get(target).foreach { finder =>
-            finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
-            this.iterate(target, Some(finder), transaction.requester, agent) { () =>
-              new Query.FindNode(this.factory.next(), this.reader.id().get, target)
-            }
-          }
-
-        case gp: Response.GetPeersWithNodes =>
-          val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
-          this.recursions.get(infohash).foreach { finder =>
-            finder.report(transaction.remote, gp.nodes, Nil, gp.token)
-            this.iterate(infohash, Some(finder), transaction.requester, agent) { () =>
-              new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
-            }
-          }
-
-        case gp: Response.GetPeersWithValues =>
-          val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
-          this.recursions.get(infohash).foreach { finder =>
-            finder.report(transaction.remote, Nil, gp.values, gp.token)
-            this.iterate(infohash, Some(finder), transaction.requester, agent) { () =>
-              new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
-            }
-          }
-
-        case ap: Response.AnnouncePeer =>
-          transaction.requester ! Controller.PeerAnnounced()
-      }
-    } else {
-      this.fail(transaction, agent)
+    if (response.id != transaction.remote.id) {
+      this.log.warning("Response ID: {}, but requested not had ID: {}", response.id, transaction.remote.id)
     }
+    if (transaction.remote.id != Integer160.zero) {
+      this.table ! Table.Received(transaction.remote, Message.Kind.Response)
+    }
+    response match {
 
+      case ping: Response.Ping =>
+        transaction.requester ! Controller.Pinged()
+
+      case fn: Response.FindNode =>
+        val target = transaction.query.asInstanceOf[Query.FindNode].target
+        this.recursions.get(target).foreach { finder =>
+          finder.report(transaction.remote, fn.nodes, Nil, Array.empty)
+          this.iterate(target, Some(finder), transaction.requester, agent) { () =>
+            new Query.FindNode(this.factory.next(), this.reader.id().get, target)
+          }
+        }
+
+      case gp: Response.GetPeersWithNodes =>
+        val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
+        this.recursions.get(infohash).foreach { finder =>
+          finder.report(transaction.remote, gp.nodes, Nil, gp.token)
+          this.iterate(infohash, Some(finder), transaction.requester, agent) { () =>
+            new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
+          }
+        }
+
+      case gp: Response.GetPeersWithValues =>
+        val infohash = transaction.query.asInstanceOf[Query.GetPeers].infohash
+        this.recursions.get(infohash).foreach { finder =>
+          finder.report(transaction.remote, Nil, gp.values, gp.token)
+          this.iterate(infohash, Some(finder), transaction.requester, agent) { () =>
+            new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
+          }
+        }
+
+      case ap: Response.AnnouncePeer =>
+        transaction.requester ! Controller.PeerAnnounced()
+    }
   }
 
   /// Wraps Reader's `klosest` method adding routers to the output if the table has not enough entries
@@ -317,12 +325,13 @@ object Controller {
             lifetime: FiniteDuration,
             routers: Traversable[InetSocketAddress],
             reader: Reader,
-            writer: Writer) =
-    Props(classOf[Controller], K, alpha, period, lifetime, routers, reader, writer)
+            writer: Writer,
+            table: ActorRef) =
+    Props(classOf[Controller], K, alpha, period, lifetime, routers, reader, writer, table)
 
   /** Generates [[akka.actor.Props]] instance with most parameters set to their default values */
-  def props(routers: Traversable[InetSocketAddress], reader: Reader, writer: Writer): Props =
-    this.props(8, 3, 5.minutes, 30.minutes, routers, reader, writer)
+  def props(routers: Traversable[InetSocketAddress], reader: Reader, writer: Writer, table: ActorRef): Props =
+    this.props(8, 3, 5.minutes, 30.minutes, routers, reader, writer, table)
 
   /**
    * This class defines transaction data.
