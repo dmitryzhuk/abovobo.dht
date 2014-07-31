@@ -47,6 +47,7 @@ class Agent(val endpoint: InetSocketAddress,
   /** @inheritdoc */
   override def preStart() = {
     this.log.debug("Agent#preStart (sending `Start` message)")
+    this.context.watch(this.handler)
     IO(Udp) ! Udp.Bind(self, this.endpoint)
   }
 
@@ -59,8 +60,9 @@ class Agent(val endpoint: InetSocketAddress,
   /** @inheritdoc */
   override def postStop() = {
     this.log.debug("Agent#postStop (unbinding socket and cancelling queries)")
-    this.unbind()
+    this.context.unwatch(this.handler)
     this.queries foreach { _._2._2.cancel() }
+    this.unbind()
   }
 
   /** @inheritdoc */
