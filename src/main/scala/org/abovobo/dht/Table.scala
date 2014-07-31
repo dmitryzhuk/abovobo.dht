@@ -128,6 +128,11 @@ class Table(val K: Int,
     this.cancellables.clear()
   }
 
+  /**
+   * Defines initial event handler, which only handles [[Controller.Ready]] event.
+   * As soon, as this event has occurred, Table switches event loop to [[Table.working()]]
+   * function and initiates recursive lookup procedures as required by DHT specification.
+   */
   def waiting: Receive = {
     case Controller.Ready =>
       // switch event loop to the one which is able to actually handle events
@@ -162,6 +167,11 @@ class Table(val K: Int,
     case t: Throwable => throw t
   }
 
+  /**
+   * Defines general event handler.
+   *
+   * @param controller A reference to [[Controller]] actor.
+   */
   def working(controller: ActorRef): Receive = {
     case Refresh(min, max)    =>          this.refresh(min, max, controller)
     case Reset()              => sender ! this.reset(controller)
@@ -185,7 +195,7 @@ class Table(val K: Int,
    * @param max Upper bound of bucket
    * @param controller  Reference to [[Controller]] actor.
    */
-  def refresh(min: Integer160, max: Integer160, controller: ActorRef): Unit = {
+  private def refresh(min: Integer160, max: Integer160, controller: ActorRef): Unit = {
     // request refreshing `find_node` by means of `Controller`
     controller ! Controller.FindNode(min + Integer160.random % (max - min))
     // cancel existing bucket task if exists
@@ -199,7 +209,7 @@ class Table(val K: Int,
    *
    * @param controller  Reference to [[Controller]] actor.
    */
-  def reset(controller: ActorRef): Result = this.set(Integer160.random, controller)
+  private def reset(controller: ActorRef): Result = this.set(Integer160.random, controller)
 
   /**
    * Drops all data and saves new id in the storage.
@@ -219,7 +229,7 @@ class Table(val K: Int,
   /**
    * Deletes all data from database.
    */
-  def purge(): Result = this.writer.transaction {
+  private def purge(): Result = this.writer.transaction {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
     this.writer.drop()
@@ -238,7 +248,7 @@ class Table(val K: Int,
    * @param kind        A kind of network message received from the node.
    * @param controller  Reference to [[Controller]] actor.
    */
-  def process(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Result = {
+  private def process(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Result = {
 
     import Message.Kind
 
