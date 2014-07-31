@@ -14,30 +14,32 @@ import java.net.InetSocketAddress
 
 import akka.actor._
 import akka.io.{IO, Udp}
-import org.abovobo.dht.controller.Controller
-import org.abovobo.dht.message.{Message, Query, Response}
+import org.abovobo.dht.message.{Message, Query, Response, Error}
 
 import scala.collection.mutable
+import scala.concurrent.duration._
 import scala.concurrent.duration.FiniteDuration
 
 /**
- * This actor is responsible for sending Kademlia UDP messages and receiving them.
- * It also manages Kademlia queries: when some sender initiates a query, this actor
- * will keep record about that fact and if remote party failed to respond in timely
- * manner, this actor will produce [[Agent.Failed]] command.
+ * This actor represents network agent which uses UDP listener to receive packets
+ * from remote nodes and to send packets to remote nodes. It's main functionality
+ * is to translate [[Message]] instances into sequences of bencoded bytes suitable
+ * for transmitting over network. It also controls request/reply pairs: if this
+ * actor is requested to send [[Query]] message, it will wait for and recognize
+ * corresponding [[Response]] message received from the remote peer. Note that
+ * received [[Response]] message will be sent to the same actor which initiated
+ * original [[Query]], while incoming [[Query]] messages receieved from remote
+ * peers will be sent to registered handler actor.
  *
- * In order to properly manage network connection(s), this actor must be properly managed
- * by its supervisor.
- *
- * @param endpoint   An endpoint at which this agent must listen.
- * @param timeout    A period in time during which the remote party must respond to a query.
- * @param retry      Time interval between bind attempts.
- * @param controller Reference to [[org.abovobo.dht.controller.Controller]] actor.
+ * @param endpoint  An endpoint at which this agent must listen.
+ * @param timeout   A period in time during which the remote party must respond to a query.
+ * @param retry     Time interval between bind attempts.
+ * @param handler   Reference to actor which will receive incoming [[Query]] messages.
  */
 class Agent(val endpoint: InetSocketAddress,
             val timeout: FiniteDuration,
             val retry: FiniteDuration,
-            val controller: ActorRef)
+            val handler: ActorRef)
   extends Actor with ActorLogging {
 
   import context.{dispatcher, system}
@@ -80,8 +82,8 @@ class Agent(val endpoint: InetSocketAddress,
       this.socket = Some(this.sender())
       // sign a death pact
       this.context.watch(this.sender())
-      // identify itself with controller
-      this.controller ! Controller.IdentifyAgent(this.self)
+      // notify controller that Agent is ready to go
+      this.handler ! Agent.Bound
 
     case Udp.Unbound =>
       this.log.debug("Agent unbound")
@@ -99,13 +101,16 @@ class Agent(val endpoint: InetSocketAddress,
 
       // check if message completes pending transaction
       message match {
-        case response: Response =>
-          this.log.debug("Completing transaction " + response.tid + " by means of received response")
-          this.queries.remove(response.tid).foreach { _._2.cancel() }
-        case _ => // do nothing
+        case r @ (_: Response | _: Error) =>
+          this.log.debug("Completing transaction " + r.tid + " by means of received response")
+          this.queries.remove(r.tid).foreach { transaction =>
+            transaction._3 ! Agent.Received(message, remote)
+            transaction._2.cancel()
+          }
+        case q: Query =>
+          // forward received message to handler
+          this.handler ! Agent.Received(message, remote)
       }
-      // forward received message to controller
-      this.controller ! Agent.Received(message, remote)
     } catch {
       case e: Message.ParsingException =>
         this.self ! Agent.Send(e.error, remote)
@@ -119,7 +124,7 @@ class Agent(val endpoint: InetSocketAddress,
           this.log.debug("Starting transaction " + query.tid)
           this.queries.put(
             query.tid,
-            query -> system.scheduler.scheduleOnce(this.timeout, this.self, Agent.Timeout(query, remote)))
+            (query, system.scheduler.scheduleOnce(this.timeout, this.self, Agent.Timeout(query, remote)), this.sender()))
         case _ => // do nothing
       }
       // send serialized message to remote address
@@ -128,8 +133,10 @@ class Agent(val endpoint: InetSocketAddress,
     // `Timeout` event occurred
     case Agent.Timeout(q, r) =>
       this.log.debug("Completing transaction " + q.tid + " by means of failure (timeout) for " + r)
-      this.queries.remove(q.tid).foreach { _._2.cancel() }
-      this.controller ! Agent.Failed(q)
+      this.queries.remove(q.tid).foreach { transaction =>
+        transaction._3 ! Agent.Failed(q)
+        transaction._2.cancel()
+      }
 
     // To debug crashes
     case t: Throwable => throw t
@@ -151,7 +158,7 @@ class Agent(val endpoint: InetSocketAddress,
   /// Instantiates a map of associations between transaction identifiers
   /// and cancellable tasks which will produce failure command if remote peer
   /// failed to respond in timely manner.
-  private val queries = new mutable.HashMap[TID, (Query, Cancellable)]
+  private val queries = new mutable.HashMap[TID, (Query, Cancellable, ActorRef)]
 
   /// Optional reference to bound socket actor
   private var socket: Option[ActorRef] = None
@@ -163,14 +170,24 @@ object Agent {
   /**
    * Factory which creates [[Agent]] [[akka.actor.Props]] instance.
    *
-   * @param endpoint   An adress/port to bind to to receive incoming packets
-   * @param timeout    A period of time to wait for response from queried remote peer.
-   * @param retry      Time interval between bind attempts.
-   * @param controller Reference to [[org.abovobo.dht.controller.Controller]] actor.
-   * @return           Properly configured [[akka.actor.Props]] instance.
+   * @param endpoint  An adress/port to bind to to receive incoming packets
+   * @param timeout   A period of time to wait for response from queried remote peer.
+   * @param retry     Time interval between bind attempts.
+   * @param handler   Reference to [[org.abovobo.dht.controller.Controller]] actor.
+   * @return          Properly configured [[akka.actor.Props]] instance.
    */
-  def props(endpoint: InetSocketAddress, timeout: FiniteDuration, retry: FiniteDuration, controller: ActorRef): Props =
-    Props(classOf[Agent], endpoint, timeout, retry, controller)
+  def props(endpoint: InetSocketAddress, timeout: FiniteDuration, retry: FiniteDuration, handler: ActorRef): Props =
+    Props(classOf[Agent], endpoint, timeout, retry, handler)
+
+  /**
+   * Factory which creates [[Agent]] [[Props]] instance with default `timeout` and `retry` durations.
+   *
+   * @param endpoint  An adress/port to bind to to receive incoming packets
+   * @param handler   Reference to [[org.abovobo.dht.controller.Controller]] actor.
+   * @return          Properly configured [[akka.actor.Props]] instance.
+   */
+  def props(endpoint: InetSocketAddress, handler: ActorRef): Props =
+    this.props(endpoint, 5.seconds, 2.seconds, handler)
 
   /**
    * Base trait for all commands natively supported by [[Agent]] actor.
@@ -197,6 +214,11 @@ object Agent {
    * Base trait for all events handled or initiated by this actor
    */
   sealed trait Event
+
+  /**
+   * Fired when underlying UDP socket has properly been bound.
+   */
+  case object Bound extends Event
 
   /**
    * This event indicates that there was a query sent to remote peer, but remote peer failed to respond

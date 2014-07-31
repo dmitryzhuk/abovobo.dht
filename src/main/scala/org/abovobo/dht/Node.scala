@@ -14,7 +14,7 @@ import java.net.InetSocketAddress
 
 import scala.concurrent.duration._
 
-import akka.actor.{Actor, ActorRef}
+import akka.actor.{ActorSystem, Actor}
 import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.persistence._
 
@@ -91,15 +91,11 @@ class Node(val ds: DataSource,
 /** Accompanying object */
 object Node {
 
-  def apply(reader: Reader, writer: Writer, endpoint: InetSocketAddress, routers: Traversable[InetSocketAddress]): Node = {
-    null
-  }
+}
 
-  def apply(storage: Storage, endpoint: InetSocketAddress, routers: Traversable[InetSocketAddress]): Node = {
-    //this.apply(new h2.Reader(storage.connection))
-    null
-  }
+object NodeApp extends App {
 
+  val system = ActorSystem("AbovoboDhtNode")
 }
 
 /*

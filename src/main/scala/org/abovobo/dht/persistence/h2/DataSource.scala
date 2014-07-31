@@ -41,10 +41,17 @@ object DataSource {
    */
   def apply(url: String, script: java.io.Reader): DataSource = {
     val source = this.apply(url)
-    using(source.connection) { connection: Connection =>
+    val connection = source.connection
+    try {
       RunScript.execute(connection, script)
+      source
+    } catch {
+      case t: Throwable =>
+        source.close()
+        throw t
+    } finally {
+      connection.close()
     }
-    source
   }
 }
 

@@ -90,8 +90,7 @@ class AgentTest(system: ActorSystem)
     "just created" must {
       "notify controller about this" in {
         controllerInbox.receive(1.second) match {
-          case Controller.IdentifyAgent(ref) =>
-            ref should be(this.agent)
+          case Agent.Bound => //
           case _ => this.fail("Inavlid message type")
         }
       }
@@ -101,8 +100,7 @@ class AgentTest(system: ActorSystem)
       "fail and then recover" in {
         agent ! new RuntimeException("Crashing Agent")
         controllerInbox.receive(10.seconds) match {
-          case Controller.IdentifyAgent(ref) =>
-            ref should be(this.agent)
+          case Agent.Bound => //
           case _ => this.fail("Inavlid message type")
         }
       }
@@ -126,7 +124,7 @@ class AgentTest(system: ActorSystem)
 
       "complete transaction and notify Controller after receiving network response" in {
         peer ! Udp.Send(Message.serialize(new Response.Ping(query.tid, Integer160.zero)), local)
-        controllerInbox.receive(1.second) match {
+        expectMsgPF() {
           case Agent.Received(message, address) =>
             message match {
               case ping: Response.Ping =>
@@ -161,7 +159,7 @@ class AgentTest(system: ActorSystem)
       }
 
       "complete transaction and notify Controller after not receiving network response" in {
-        controllerInbox.receive(15.seconds) match {
+        expectMsgPF(15.seconds)  {
           case Agent.Failed(q: Query) =>
             q should be theSameInstanceAs query
           case a: Any =>
@@ -191,7 +189,7 @@ class AgentTest(system: ActorSystem)
       "complete transaction and notify Controller after receiving network response" in {
         peer ! Udp.Send(Message.serialize(new Response.FindNode(query.tid, Integer160.zero,
           nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
-        controllerInbox.receive(10.seconds) match {
+        expectMsgPF() {
           case Agent.Received(message, address) =>
             message match {
               case fn: Response.FindNode =>
@@ -231,7 +229,7 @@ class AgentTest(system: ActorSystem)
         peer ! Udp.Send(Message.serialize(new Response.GetPeersWithNodes(query.tid, Integer160.zero,
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           nodes = Array(new NodeInfo(Integer160.zero, new InetSocketAddress(0))))), local)
-        controllerInbox.receive(10.seconds) match {
+        expectMsgPF() {
           case Agent.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithNodes =>
@@ -272,7 +270,7 @@ class AgentTest(system: ActorSystem)
         peer ! Udp.Send(Message.serialize(new Response.GetPeersWithValues(query.tid, Integer160.zero,
           token = Array[Byte](0, 1, 2, 3, 4, 5, 6, 7, 8, 9),
           values = Array(new InetSocketAddress(0)))), local)
-        controllerInbox.receive(10.seconds) match {
+        expectMsgPF() {
           case Agent.Received(message, address) =>
             message match {
               case gp: Response.GetPeersWithValues =>
@@ -318,7 +316,7 @@ class AgentTest(system: ActorSystem)
       
       "complete transaction and notify Controller after receiving network response" in {
         peer ! Udp.Send(Message.serialize(new Response.AnnouncePeer(query.tid, Integer160.zero)), local)
-        controllerInbox.receive(10.seconds) match {
+        expectMsgPF() {
           case Agent.Received(message, address) =>
             message match {
               case ap: Response.AnnouncePeer =>
