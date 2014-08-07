@@ -510,8 +510,6 @@ class ControllerTest(system: ActorSystem)
               case fn: Response.FindNode =>
                 msg.tid should equal(tid)
                 address should equal(this.remote1)
-                // XXX working with table with unknown content, no check here
-                // fn.nodes should not be empty
               case _ => this.fail("Invalid message type: " + msg.getClass.getName)
             }
           case _ => this.fail("Invalid message")
@@ -533,8 +531,6 @@ class ControllerTest(system: ActorSystem)
               case gp: Response.GetPeersWithNodes =>
                 msg.tid should equal(tid)
                 address should equal(this.remote1)
-                // XXX working with table with unknown content, no check here
-                // fn.nodes should not be empty
                 gp.token should not be empty
                 token = gp.token
               case _ => this.fail("Invalid message type: " + msg.getClass.getName)

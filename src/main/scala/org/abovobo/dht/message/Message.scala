@@ -16,6 +16,8 @@ import org.abovobo.dht
 import org.abovobo.dht._
 import org.abovobo.integer.Integer160
 
+import scala.collection.mutable.ListBuffer
+
 /**
  * Base abstract class defining general contract for any message which
  * actually represents sendable Kademlia packet.
@@ -204,8 +206,8 @@ object Message {
    * @param message A message to serialize
    * @return [[akka.util.ByteString]] instance which can be sent via network.
    */
-  def serialize(message: Message): ByteString = {
-
+  // TODO Remove redundant method soon
+  def _serialize(message: Message): ByteString = {
     val buf = new ByteStringBuilder()
     buf += 'd'
 
@@ -316,6 +318,86 @@ object Message {
 
     buf += 'e'
     buf.result()
+  }
+
+  /**
+   * Serializes given message into a packet sendable via network.
+   *
+   * @param message A message to serialize
+   * @return [[akka.util.ByteString]] instance which can be sent via network.
+   */
+  def serialize(message: Message): ByteString = {
+    val events = new ListBuffer[Bencode.Event]
+    events += Bencode.DictionaryBegin
+    message match {
+      case error: dht.message.Error =>
+        // key 'e'
+        events += Bencode.Character('e')
+        // value (list)
+        events += Bencode.ListBegin
+        events += Bencode.Integer(error.code)
+        events += Bencode.JustString(error.message)
+        events += Bencode.ListEnd
+      case query: dht.message.Query =>
+        // key 'a'
+        events += Bencode.Character('a')
+        // value (dictionary)
+        events += Bencode.DictionaryBegin
+        events += Bencode.JustString("id") += Bencode.Bytestring(query.id.toArray)
+        query match {
+          case fn: Query.FindNode =>
+            events += Bencode.JustString("target") += Bencode.Bytestring(fn.target.toArray)
+          case gp: Query.GetPeers =>
+            events += Bencode.JustString("info_hash") += Bencode.Bytestring(gp.infohash.toArray)
+          case ap: Query.AnnouncePeer =>
+            events += Bencode.JustString("implied_port") += Bencode.Integer(if (ap.implied) 1 else 0)
+            events += Bencode.JustString("info_hash") += Bencode.Bytestring(ap.infohash.toArray)
+            events += Bencode.JustString("port") += Bencode.Integer(ap.port)
+            events += Bencode.JustString("token") += Bencode.Bytestring(ap.token)
+          case _ =>
+        }
+        events += Bencode.DictionaryEnd
+        events += Bencode.Character('q') += Bencode.JustString(query.name)
+      case response: dht.message.Response =>
+        // key 'r'
+        events += Bencode.Character('r')
+        // value (dictionary)
+        events += Bencode.DictionaryBegin
+        events += Bencode.JustString("id") += Bencode.Bytestring(response.id.toArray)
+        response match {
+          case fn: Response.FindNode =>
+            events += Bencode.JustString("nodes")
+            events += Bencode.Bytestring(fn.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: NodeInfo) =>
+              array ++ node.id.toArray ++ Endpoint.isa2ba(node.address)
+            })
+          case gpn: Response.GetPeersWithNodes =>
+            events += Bencode.JustString("nodes")
+            events += Bencode.Bytestring(gpn.nodes.foldLeft[Array[Byte]](Array.empty) { (array: Array[Byte], node: NodeInfo) =>
+              array ++ node.id.toArray ++ Endpoint.isa2ba(node.address)
+            })
+            events += Bencode.JustString("token") += Bencode.Bytestring(gpn.token)
+          case gpv: Response.GetPeersWithValues =>
+            events += Bencode.JustString("token") += Bencode.Bytestring(gpv.token)
+            events += Bencode.JustString("values")
+            events += Bencode.ListBegin
+            gpv.values foreach { peer => events += Bencode.Bytestring(Endpoint.isa2ba(peer)) }
+            events += Bencode.ListEnd
+          case _ =>
+        }
+        events += Bencode.DictionaryEnd
+      case plugin: dht.message.Plugin =>
+        events += Bencode.Character('p')
+        events += Bencode.ListBegin
+        events += Bencode.Bytestring(plugin.id.toArray)
+        events += Bencode.Integer(plugin.pid.value)
+        events += Bencode.Bytestring(plugin.payload.toArray)
+        events += Bencode.ListEnd
+    }
+    events += Bencode.Character('t') += Bencode.Bytestring(message.tid.toArray)
+    events += Bencode.Character('y') += Bencode.Character(message.y)
+    events += Bencode.DictionaryEnd
+
+    ByteString(Bencode.encode(events):_*)
   }
 
 }
