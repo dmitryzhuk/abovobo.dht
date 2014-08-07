@@ -189,7 +189,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
     //          closer than any of untaken ones OR there are no untaken nodes remaining.
     else if (this._pending.isEmpty && this._succeeded.size >= this.K &&
       (this._completed.nonEmpty && this._completed.last.improved == 0) &&
-      (this.ordering.compare(this._succeeded.take(this.K).last, this._untaken.head) == -1 || this._untaken.isEmpty))
+      (this._untaken.nonEmpty && this.ordering.compare(this._succeeded.take(this.K).last, this._untaken.head) == -1 || this._untaken.isEmpty))
       Finder.State.Succeeded
 
     // case #4: Last round did not bring any nodes which are closer than already seen ones,
