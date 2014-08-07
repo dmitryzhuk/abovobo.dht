@@ -44,7 +44,7 @@ class DHTTest(system: ActorSystem)
       new InetSocketAddress(InetAddress.getLoopbackAddress, this.startingPort)
 
   val routerDS =
-    if (this.system.settings.config.hasPath("router")) {
+    if (!this.system.settings.config.hasPath("router")) {
       using(new InputStreamReader(this.getClass.getResourceAsStream("/tables.sql"))) { reader =>
         DataSource("jdbc:h2:~/db/dht-router", reader).close()
 
@@ -74,7 +74,7 @@ class DHTTest(system: ActorSystem)
     TestKit.shutdownActorSystem(this.system)
   }
 
-  if (this.system.settings.config.hasPath("router")) {
+  if (!this.system.settings.config.hasPath("router")) {
     "Router node" when {
       "just created" must {
         "log FindNode failure" in {
