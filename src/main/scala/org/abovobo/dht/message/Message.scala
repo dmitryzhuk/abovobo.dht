@@ -328,21 +328,21 @@ object Message {
    */
   def serialize(message: Message): ByteString = {
     val events = new ListBuffer[Bencode.Event]
-    events += Bencode.DictionaryBegin
+    events += Bencode.DictionaryBegin()
     message match {
       case error: dht.message.Error =>
         // key 'e'
         events += Bencode.Character('e')
         // value (list)
-        events += Bencode.ListBegin
+        events += Bencode.ListBegin()
         events += Bencode.Integer(error.code)
         events += Bencode.JustString(error.message)
-        events += Bencode.ListEnd
+        events += Bencode.ListEnd()
       case query: dht.message.Query =>
         // key 'a'
         events += Bencode.Character('a')
         // value (dictionary)
-        events += Bencode.DictionaryBegin
+        events += Bencode.DictionaryBegin()
         events += Bencode.JustString("id") += Bencode.Bytestring(query.id.toArray)
         query match {
           case fn: Query.FindNode =>
@@ -356,13 +356,13 @@ object Message {
             events += Bencode.JustString("token") += Bencode.Bytestring(ap.token)
           case _ =>
         }
-        events += Bencode.DictionaryEnd
+        events += Bencode.DictionaryEnd()
         events += Bencode.Character('q') += Bencode.JustString(query.name)
       case response: dht.message.Response =>
         // key 'r'
         events += Bencode.Character('r')
         // value (dictionary)
-        events += Bencode.DictionaryBegin
+        events += Bencode.DictionaryBegin()
         events += Bencode.JustString("id") += Bencode.Bytestring(response.id.toArray)
         response match {
           case fn: Response.FindNode =>
@@ -379,23 +379,23 @@ object Message {
           case gpv: Response.GetPeersWithValues =>
             events += Bencode.JustString("token") += Bencode.Bytestring(gpv.token)
             events += Bencode.JustString("values")
-            events += Bencode.ListBegin
+            events += Bencode.ListBegin()
             gpv.values foreach { peer => events += Bencode.Bytestring(Endpoint.isa2ba(peer)) }
-            events += Bencode.ListEnd
+            events += Bencode.ListEnd()
           case _ =>
         }
-        events += Bencode.DictionaryEnd
+        events += Bencode.DictionaryEnd()
       case plugin: dht.message.Plugin =>
         events += Bencode.Character('p')
-        events += Bencode.ListBegin
+        events += Bencode.ListBegin()
         events += Bencode.Bytestring(plugin.id.toArray)
         events += Bencode.Integer(plugin.pid.value)
         events += Bencode.Bytestring(plugin.payload.toArray)
-        events += Bencode.ListEnd
+        events += Bencode.ListEnd()
     }
     events += Bencode.Character('t') += Bencode.Bytestring(message.tid.toArray)
     events += Bencode.Character('y') += Bencode.Character(message.y)
-    events += Bencode.DictionaryEnd
+    events += Bencode.DictionaryEnd()
 
     ByteString(Bencode.encode(events):_*)
   }
