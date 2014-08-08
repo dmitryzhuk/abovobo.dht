@@ -11,7 +11,7 @@
 package org.abovobo.dht.persistence
 
 import org.abovobo.dht.message.Message
-import org.abovobo.dht.{Peer, KnownNode, Node}
+import org.abovobo.dht.{Peer, KnownNodeInfo, NodeInfo}
 import org.abovobo.dht.Endpoint._
 import org.abovobo.integer.Integer160
 import Message.Kind._
@@ -65,7 +65,7 @@ trait Writer {
    * @param bucket  A bucket to add this node to.
    * @param kind    A kind of network message.
    */
-  def insert(node: Node, bucket: Integer160, kind: Kind): Unit
+  def insert(node: NodeInfo, bucket: Integer160, kind: Kind): Unit
 
   /**
    * Sets statement parameters from given arguments and executes it in update mode.
@@ -84,7 +84,7 @@ trait Writer {
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */
-  protected def insert(statement: PreparedStatement, node: Node, bucket: Integer160, kind: Kind): Unit = {
+  protected def insert(statement: PreparedStatement, node: NodeInfo, bucket: Integer160, kind: Kind): Unit = {
     statement.setBytes(1, node.id.toArray)
     statement.setBytes(2, bucket.toArray)
     statement.setBytes(3, node.address)
@@ -105,7 +105,7 @@ trait Writer {
    * @param pn      A corresponding persistent node.
    * @param kind    A kind of network message.
    */
-  def update(node: Node, pn: KnownNode, kind: Kind): Unit
+  def update(node: NodeInfo, pn: KnownNodeInfo, kind: Kind): Unit
 
   /**
    * Set statement parameters from given arguments and executes it in update mode.
@@ -126,7 +126,7 @@ trait Writer {
    *                  type of network communication occurred. Method will fail if
    *                  kind is Fail or Error
    */
-  protected def update(statement: PreparedStatement, node: Node, pn: KnownNode, kind: Kind): Unit = {
+  protected def update(statement: PreparedStatement, node: NodeInfo, pn: KnownNodeInfo, kind: Kind): Unit = {
     statement.setBytes(1, node.address)
     kind match {
       case Response | Error =>
@@ -152,7 +152,7 @@ trait Writer {
    * @param node    A node to move.
    * @param bucket  A bucket to move node to.
    */
-  def move(node: KnownNode, bucket: Integer160): Unit
+  def move(node: KnownNodeInfo, bucket: Integer160): Unit
 
   /**
    * Sets statement parameters and executes it in update mode. Note,
@@ -166,7 +166,7 @@ trait Writer {
    * @param node      A node instance to get properties from.
    * @param bucket    A bucket to which this node will be inserted.
    */
-  protected def move(statement: PreparedStatement, node: KnownNode, bucket: Integer160): Unit = {
+  protected def move(statement: PreparedStatement, node: KnownNodeInfo, bucket: Integer160): Unit = {
     statement.setBytes(1, bucket.toArray)
     statement.setBytes(2, node.id.toArray)
     statement.executeUpdate()

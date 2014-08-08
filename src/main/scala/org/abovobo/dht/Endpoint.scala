@@ -11,7 +11,7 @@
 package org.abovobo.dht
 
 import java.net.{InetAddress, InetSocketAddress}
-import org.abovobo.conversions.ByteArray
+import org.abovobo.conversions.{Unsigned, ByteArray}
 
 /**
  * This object defines implicit conversion rules allowing to serialize
@@ -53,11 +53,11 @@ object Endpoint {
     if (ba.length == IPV4_ADDR_SIZE + 2) {
       new InetSocketAddress(
         InetAddress.getByAddress(ba.take(IPV4_ADDR_SIZE)),
-        ByteArray.ba2short(ba.drop(IPV4_ADDR_SIZE)))
+        Unsigned.uint(ByteArray.ba2short(ba.drop(IPV4_ADDR_SIZE))))
     } else if (ba.length == IPV6_ADDR_SIZE + 2) {
       new InetSocketAddress(
         InetAddress.getByAddress(ba.take(IPV6_ADDR_SIZE)),
-        ByteArray.ba2short(ba.drop(IPV6_ADDR_SIZE)))
+        Unsigned.uint(ByteArray.ba2short(ba.drop(IPV6_ADDR_SIZE))))
     } else {
       // 58 bytes?
       throw new IllegalArgumentException("Invalid length of a byte array: " + ba.length)

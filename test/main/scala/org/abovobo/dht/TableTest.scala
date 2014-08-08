@@ -12,8 +12,10 @@ package org.abovobo.dht
 
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
+import com.typesafe.config.ConfigFactory
+import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.Message
-import org.abovobo.dht.persistence.h2.{Storage, DataSource}
+import org.abovobo.dht.persistence.h2.{Reader, Writer, DataSource}
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
@@ -30,31 +32,31 @@ class TableTest(system: ActorSystem)
   with Matchers
   with BeforeAndAfterAll {
 
-  def this() = this(ActorSystem("RoutingTableTest"))
+  def this() = this(ActorSystem("RoutingTableTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
   private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  private val h2 = new Storage(ds.connection)
-  private val reader = h2
+  private val reader = new Reader(this.ds.connection)
+  private val writer = new Writer(this.ds.connection)
 
   val controllerInbox = Inbox.create(system)
 
-  lazy val table = this.system.actorOf(Table.props(
+  val table = this.system.actorOf(Table.props(
       K = 8,
       timeout = 60.seconds,
       delay = 30.seconds,
       threshold = 3,
-      reader = this.h2,
-      writer = this.h2,
-      controller = controllerInbox.getRef()),
+      reader = this.reader,
+      writer = this.writer),
     "table")
-  lazy val node = new Node(Integer160.zero, new InetSocketAddress(0))
+  lazy val node = new NodeInfo(Integer160.random, new InetSocketAddress(0))
 
   override def beforeAll() = {
-    // Do nothing
+    table.tell(Controller.Ready, controllerInbox.getRef())
   }
 
   override def afterAll() = {
-    this.h2.close()
+    this.reader.close()
+    this.writer.close()
     this.ds.close()
     TestKit.shutdownActorSystem(this.system)
   }
@@ -152,8 +154,8 @@ class TableTest(system: ActorSystem)
       "have like a whole lot of them in the end :)" in {
 
         // Delete previously added node from the table
-        this.h2.delete(this.node.id)
-        this.h2.commit()
+        this.writer.delete(this.node.id)
+        this.writer.commit()
 
         // start with 1 as a node id and 0 as an initial bucket
         var start = Integer160.zero + 1
@@ -163,7 +165,7 @@ class TableTest(system: ActorSystem)
         while (repeat) {
           // insert 8 nodes assuming they will be put into a current bucket
           for (i <- 0 to 7) {
-            val node = new Node(start + i, new InetSocketAddress(0))
+            val node = new NodeInfo(start + i, new InetSocketAddress(0))
             table ! Table.Received(node, Message.Kind.Query)
             expectMsg(Table.Inserted(bucket))
           }
@@ -171,7 +173,7 @@ class TableTest(system: ActorSystem)
           // try to insert 9th node which must cause
           // -- pair of messages Split, Reject if there is a more space for nodes in the table
           // -- single Reject message if there is no room to split buckets further
-          val node = new Node(start + 8, new InetSocketAddress(0))
+          val node = new NodeInfo(start + 8, new InetSocketAddress(0))
           table ! Table.Received(node, Message.Kind.Query)
           expectMsgType[Table.Result] match {
             case Table.Split(was, now) =>
@@ -190,11 +192,10 @@ class TableTest(system: ActorSystem)
       }
     }
 
-    "after timeout expires table" must {
+    "timeout expires" must {
       "send Refresh events and cause FindNode received by Controller" in {
-        this.controllerInbox.receive(60.seconds) match {
-          case Controller.FindNode(target) =>
-            for (i <- 0 until 160) this.controllerInbox.receive(1.second)
+        this.controllerInbox.receive(70.seconds) match {
+          case Controller.FindNode(target) => // for (i <- 0 until 156) this.controllerInbox.receive(1.second)
           case _ => this.fail("Unexpected message to controller")
         }
       }

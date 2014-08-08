@@ -19,13 +19,13 @@ import scala.concurrent.duration._
 
 
 /**
- * This class represents complete Node information which is known to the system after at least single
- * attempt to communicate with that Node.
+ * This class represents complete NodeInfo information which is known to the system after at least single
+ * attempt to communicate with that NodeInfo.
  *
- * @constructor     Creates new instance of KnownNode.
+ * @constructor     Creates new instance of KnownNodeInfo.
  *
  * @param id        SHA-1 identifier of the node.
- * @param address   Node network address.
+ * @param address   NodeInfo network address.
  * @param bucket    SHA-1 identifier of the lower bound of the bucket this node belongs to.
  * @param replied   A time when this node last replied to our query.
  * @param queried   A time when this node last sent us a query.
@@ -34,12 +34,12 @@ import scala.concurrent.duration._
  *
  * @author Dmitry Zhuk
  */
-class KnownNode(id: Integer160,
+class KnownNodeInfo(id: Integer160,
                 address: InetSocketAddress,
                 val bucket: Integer160,
                 val replied: Option[Date],
                 val queried: Option[Date],
-                val failcount: Int) extends Node(id, address) {
+                val failcount: Int) extends NodeInfo(id, address) {
 
   /// Ensure that we are dealing with "real" node
   require(id != Integer160.zero)

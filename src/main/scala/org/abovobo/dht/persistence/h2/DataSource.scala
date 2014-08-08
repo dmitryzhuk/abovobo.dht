@@ -16,6 +16,8 @@ import org.abovobo.jdbc.Closer._
 import org.h2.jdbcx.JdbcConnectionPool
 import org.h2.tools.RunScript
 
+import org.abovobo.dht.persistence
+
 object DataSource {
 
   /// Load JDBC drier
@@ -39,10 +41,17 @@ object DataSource {
    */
   def apply(url: String, script: java.io.Reader): DataSource = {
     val source = this.apply(url)
-    using(source.connection) { connection: Connection =>
+    val connection = source.connection
+    try {
       RunScript.execute(connection, script)
+      source
+    } catch {
+      case t: Throwable =>
+        source.close()
+        throw t
+    } finally {
+      connection.close()
     }
-    source
   }
 }
 
@@ -51,10 +60,10 @@ object DataSource {
  *
  * @param ds An instance of [[javax.sql.DataSource]] to wrap.
  */
-class DataSource(val ds: JdbcConnectionPool) extends AutoCloseable {
+class DataSource(val ds: JdbcConnectionPool) extends persistence.DataSource {
 
   /** Returns new connection from given [[javax.sql.DataSource]] */
-  def connection = this.ds.getConnection
+  override def connection = this.ds.getConnection
 
   /** Calls [[org.h2.jdbcx.JdbcConnectionPool#dispose]] */
   override def close() = this.ds.dispose()

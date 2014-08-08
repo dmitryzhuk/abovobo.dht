@@ -10,13 +10,16 @@
 
 package org.abovobo.dht
 
-import org.abovobo.dht.message.Message
-import org.abovobo.integer.Integer160
-import akka.actor.{ActorLogging, Cancellable, Props, Actor}
 import scala.concurrent.duration._
 import scala.collection.mutable
+import scala.util.Random
+
+import akka.actor.{ActorLogging, Cancellable, Props, Actor, ActorRef}
+
+import org.abovobo.dht.controller.Controller
+import org.abovobo.dht.message.Message
+import org.abovobo.integer.Integer160
 import org.abovobo.dht.persistence.{Writer, Reader}
-import akka.actor.ActorRef
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -97,7 +100,6 @@ import akka.actor.ActorRef
  * @param threshold  Number of times a node must fail to respond before being marked as 'bad'.
  * @param reader     Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  * @param writer     Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
- * @param controller An instance of [[ActorRef]] of [[Controller]] actor.
  *
  * @author Dmitry Zhuk
  */
@@ -106,8 +108,7 @@ class Table(val K: Int,
             val delay: FiniteDuration,
             val threshold: Int,
             val reader: Reader,
-            val writer: Writer,
-            val controller: ActorRef)
+            val writer: Writer)
   extends Actor with ActorLogging {
 
   import Table._
@@ -115,47 +116,8 @@ class Table(val K: Int,
   import this.context.system
   import this.context.dispatcher
 
-  /**
-   * @inheritdoc
-   *
-   * Handles RoutingTable Actor specific messages.
-   */
-  def receive = {
-    case Refresh(min, max)    =>          this.refresh(min, max)
-    case Reset()              => sender ! this.reset()
-    case Set(id)              => sender ! this.set(id)
-    case Purge()              => sender ! this.purge()
-    case Received(node, kind) => sender ! this.process(node, kind)
-    case Failed(node)         => sender ! this.process(node, Message.Kind.Fail)
-  }  
-  
-  override def preStart() = {
-    // check if the table already has assigned ID and reset if not
-    // in any case initial FindNode will be issued to controller
-    this.reader.id() match {
-      case None     => this.reset()
-      case Some(id) =>
-        //this.controller ! Controller.FindNode(id)
-        // AY: Sending first FindNode with delay to make batch nodes startup easier
-        system.scheduler.scheduleOnce(15.seconds, this.controller, Controller.FindNode(id))
-    }
+  override def preStart() = {}
 
-    // upon start also perform refresh procedure for every existing bucket
-    // and schedule the next refresh after configured idle timeout
-    var prev: Integer160 = null
-    this.reader.buckets() foreach { bucket =>
-      if (prev ne null) {
-        self ! Refresh(prev, bucket._1)
-        this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, bucket._1)))
-      }
-      prev = bucket._1
-    }
-    if (prev ne null) {
-      self ! Refresh(prev, Integer160.maxval)
-      this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, Integer160.maxval)))
-    }
-  }
-    
   /**
    * @inheritdoc
    *
@@ -167,16 +129,75 @@ class Table(val K: Int,
   }
 
   /**
+   * Defines initial event handler, which only handles [[Controller.Ready]] event.
+   * As soon, as this event has occurred, Table switches event loop to [[Table.working()]]
+   * function and initiates recursive lookup procedures as required by DHT specification.
+   */
+  def waiting: Receive = {
+    case Controller.Ready =>
+      // switch event loop to the one which is able to actually handle events
+      this.context.become(this.working(this.sender()))
+      // check if the table already has assigned ID and reset if not
+      // in any case initial FindNode will be issued to controller
+      this.reader.id() match {
+        case None     =>
+          // fresh start (no node id in storage yet): resetting id to random value
+          this.reset(this.sender())
+
+        case Some(id) =>
+          // Sending first FindNode with random delay (5-15 seconds) to make batch nodes startup easier
+          system.scheduler.scheduleOnce((new Random().nextInt(10) + 5).seconds, this.sender(), Controller.FindNode(id))
+      }
+
+      // upon start also perform refresh procedure for every existing bucket
+      // and schedule the next refresh after configured idle timeout
+      var prev: Integer160 = null
+      this.reader.buckets() foreach { bucket =>
+        if (prev ne null) {
+          self ! Refresh(prev, bucket._1)
+          this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, bucket._1)))
+        }
+        prev = bucket._1
+      }
+      if (prev ne null) {
+        self ! Refresh(prev, Integer160.maxval)
+        this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, Integer160.maxval)))
+      }
+    // To debug crashes
+    case t: Throwable => throw t
+  }
+
+  /**
+   * Defines general event handler.
+   *
+   * @param controller A reference to [[Controller]] actor.
+   */
+  def working(controller: ActorRef): Receive = {
+    case Refresh(min, max)    =>          this.refresh(min, max, controller)
+    case Reset()              => sender ! this.reset(controller)
+    case Set(id)              => sender ! this.set(id, controller)
+    case Purge()              => sender ! this.purge()
+    case Received(node, kind) => sender ! this.process(node, kind, controller)
+    case Failed(node)         => sender ! this.process(node, Message.Kind.Fail, controller)
+    // To debug crashes
+    case t: Throwable => throw t
+  }
+
+  /** @inheritdoc */
+  override def receive = this.waiting
+
+  /**
    * This method initiates bucket refresh sequence by choosing
    * random number from within the bucket range and sending `find_node`
    * message to network agent actor.
    *
    * @param min Lower bound of bucket
    * @param max Upper bound of bucket
+   * @param controller  Reference to [[Controller]] actor.
    */
-  def refresh(min: Integer160, max: Integer160): Unit = {
+  private def refresh(min: Integer160, max: Integer160, controller: ActorRef): Unit = {
     // request refreshing `find_node` by means of `Controller`
-    this.controller ! Controller.FindNode(min + Integer160.random % (max - min))
+    controller ! Controller.FindNode(min + Integer160.random % (max - min))
     // cancel existing bucket task if exists
     this.cancellables.remove(min) foreach { _.cancel() }
     // schedule new refresh bucket task
@@ -185,27 +206,30 @@ class Table(val K: Int,
 
   /**
    * Generates new SHA-1 node id, drops all data and saves new id.
+   *
+   * @param controller  Reference to [[Controller]] actor.
    */
-  def reset(): Result = this.set(Integer160.random)
+  private def reset(controller: ActorRef): Result = this.set(Integer160.random, controller)
 
   /**
    * Drops all data and saves new id in the storage.
    *
    * @param id New SHA-1 node identifier.
+   * @param controller  Reference to [[Controller]] actor.
    */
-  private def set(id: Integer160): Result = this.writer.transaction {
+  private def set(id: Integer160, controller: ActorRef): Result = this.writer.transaction {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
     this.writer.drop()
     this.writer.id(id)
-    this.controller ! Controller.FindNode(id)
+    controller ! Controller.FindNode(id)
     Id(id)
   }
 
   /**
    * Deletes all data from database.
    */
-  def purge(): Result = this.writer.transaction {
+  private def purge(): Result = this.writer.transaction {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
     this.writer.drop()
@@ -220,10 +244,11 @@ class Table(val K: Int,
    * split or node insertion still can be rejected if there was no room for the new node
    * in the table.
    *
-   * @param node    A node to process network message from.
-   * @param kind    A kind of network message received from the node.
+   * @param node        A node to process network message from.
+   * @param kind        A kind of network message received from the node.
+   * @param controller  Reference to [[Controller]] actor.
    */
-  def process(node: Node, kind: Message.Kind.Kind): Result = {
+  private def process(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Result = {
 
     import Message.Kind
 
@@ -235,7 +260,7 @@ class Table(val K: Int,
       case None =>
         if (kind == Kind.Query || kind == Kind.Response) {
           // insert new node only if event does not indicate error or failure
-          val result = this.insert(node, kind)
+          val result = this.insert(node, kind, controller)
           this.log.debug("Attempted insertion with result {}", result)
           result
         } else {
@@ -259,12 +284,13 @@ class Table(val K: Int,
    * Attempts to insert a new node into this table. The whole method is wrapped into
    * [[org.abovobo.dht.persistence.Writer#transaction]] block.
    *
-   * @param node    An instance of [[org.abovobo.dht.Node]] to insert
-   * @param kind    A kind network message received from node.
-   * @return        Result of operation, as listed in [[org.abovobo.dht.Table.Result]]
-   *                excluding `Updated` value.
+   * @param node        An instance of [[org.abovobo.dht.NodeInfo]] to insert
+   * @param kind        A kind network message received from node.
+   * @param controller  Reference to [[Controller]] actor.
+   * @return            Result of operation, as listed in [[org.abovobo.dht.Table.Result]]
+   *                    excluding `Updated` value.
    */
-  private def insert(node: Node, kind: Message.Kind.Kind): Result = this.writer.transaction {
+  private def insert(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Result = this.writer.transaction {
 
     val buckets = this.reader.buckets().toArray.sortWith(_._1 < _._1)
 
@@ -333,7 +359,7 @@ class Table(val K: Int,
           // get list of questionnable nodes
           val questionnable = nodes.filter(_.questionnable)
           // request ping operation for every questionnable node
-          questionnable foreach { node => this.controller ! Controller.Ping(node) }
+          questionnable foreach { node => controller ! Controller.Ping(node) }
           // send deferred message to itself
           system.scheduler.scheduleOnce(this.delay, self, Received(node, kind))(this.context.dispatcher, this.sender())
           // notify caller that insertion has been deferred
@@ -383,12 +409,11 @@ object Table {
    * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
    * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
    * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
-   * @param controller An instance of [[ActorRef]] of [[Controller]] actor.
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(K: Int, timeout: Duration, delay: Duration, threshold: Int, reader: Reader, writer: Writer, controller: ActorRef): Props =
-    Props(classOf[Table], K, timeout, delay, threshold, reader, writer, controller)
+  def props(K: Int, timeout: FiniteDuration, delay: FiniteDuration, threshold: Int, reader: Reader, writer: Writer): Props =
+    Props(classOf[Table], K, timeout, delay, threshold, reader, writer)
 
   /**
    * Factory which creates RoutingTable Actor Props instance with default values:
@@ -396,12 +421,11 @@ object Table {
    *
    * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
    * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
-   * @param controller An instance of [[ActorRef]] of [[Controller]] actor.
    *
    * @return          Properly configured Actor Props instance.
    */
-  def props(reader: Reader, writer: Writer, controller: ActorRef): Props =
-    this.props(8, 15.minutes, 30.seconds, 3, reader, writer, controller)
+  def props(reader: Reader, writer: Writer): Props =
+    this.props(8, 15.minutes, 30.seconds, 3, reader, writer)
 
   /**
    * Basic trait for all possible outcomes of Table operation.
@@ -422,23 +446,23 @@ object Table {
   case class Split(was: Integer160, now: Integer160) extends Result
 
   /**
-   * Indicates that new Node has been inserted into a table.
+   * Indicates that new NodeInfo has been inserted into a table.
    *
-   * @param bucket Lower bound of the bucket in which new Node has been inserted.
+   * @param bucket Lower bound of the bucket in which new NodeInfo has been inserted.
    */
   case class Inserted(bucket: Integer160) extends Result
 
   /**
-   * Indicates that existing (bad) Node has been replaced with new Node.
+   * Indicates that existing (bad) NodeInfo has been replaced with new NodeInfo.
    *
    * @param old An old node instance which has been replaced with the new one.
    */
-  case class Replaced(old: KnownNode) extends Result
+  case class Replaced(old: KnownNodeInfo) extends Result
 
-  /** Indicates that Node has already been in the table, so its info has just been updated. */
+  /** Indicates that NodeInfo has already been in the table, so its info has just been updated. */
   case object Updated extends Result
 
-  /** Indicates that there was no room for the new Node in the table. */
+  /** Indicates that there was no room for the new NodeInfo in the table. */
   case object Rejected extends Result
 
   /**
@@ -466,18 +490,18 @@ object Table {
    * This class represents a case when network message has been received
    * from the given node.
    *
-   * @param node A Node from which a network message has been received.
+   * @param node A NodeInfo from which a network message has been received.
    * @param kind A kind of message received from the node.
    */
-  case class Received(node: Node, kind: Message.Kind.Kind) extends Event
+  case class Received(node: NodeInfo, kind: Message.Kind.Kind) extends Event
 
   /**
    * This class represents a case when remote peer represented by node has failed
    * to respond to our request in timely manner.
    *
-   * @param node A Node which has failed to respond to our query.
+   * @param node A NodeInfo which has failed to respond to our query.
    */
-  case class Failed(node: Node) extends Event
+  case class Failed(node: NodeInfo) extends Event
 
   /** Basic trait for all commands supported by [[org.abovobo.dht.Table]] actor. */
   sealed trait Command

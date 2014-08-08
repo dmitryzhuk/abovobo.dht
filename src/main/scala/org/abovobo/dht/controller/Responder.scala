@@ -8,11 +8,14 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht
+package org.abovobo.dht.controller
 
 import java.net.InetSocketAddress
-import org.abovobo.dht.message.{Response, Query}
-import org.abovobo.dht.persistence.{Writer, Reader}
+
+import org.abovobo.dht._
+import org.abovobo.dht.message.{Query, Response}
+import org.abovobo.dht.persistence.{Reader, Writer}
+
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
 
@@ -20,7 +23,7 @@ import scala.concurrent.duration.FiniteDuration
  * The responsibility of this class is to generate [[Response]] message
  * from particular incoming [[Query]] message.
  *
- * The instance of this class is an aggregated sub-part of [[org.abovobo.dht.Controller]] actor.
+ * The instance of this class is an aggregated sub-part of [[Controller]] actor.
  *
  * @param K         Max number of entries to send back to querier.
  * @param period    A period of rotating the token.
@@ -40,7 +43,7 @@ class Responder(K: Int,
    * @param query   A query to respond to.
    * @param remote  An address of the remote peer to send response to.
    */
-  def respond(query: Query, remote: Node): Agent.Send = query match {
+  def respond(query: Query, remote: NodeInfo): Agent.Send = query match {
     case ping: Query.Ping => this.ping(ping, remote)
     case fn: Query.FindNode => this.findNode(fn, remote)
     case gp: Query.GetPeers => this.getPeers(gp, remote)
@@ -48,13 +51,13 @@ class Responder(K: Int,
   }
 
   /** Response to `ping` query */
-  private def ping(q: Query.Ping, remote: Node) = {
+  private def ping(q: Query.Ping, remote: NodeInfo) = {
     // simply send response `ping` message
     Agent.Send(new Response.Ping(q.tid, this.id), remote.address)
   }
 
   /** Responds to `find_node` query */
-  private def findNode(q: Query.FindNode, remote: Node) = {
+  private def findNode(q: Query.FindNode, remote: NodeInfo) = {
     // get `K` closest nodes from own routing table
     val nodes = this.reader.klosest(this.K + 1, q.target).filter(_.id != remote.id).take(this.K)
     // now respond with proper message
@@ -62,7 +65,7 @@ class Responder(K: Int,
   }
 
   /** Responds to `get_peers` query */
-  private def getPeers(q: Query.GetPeers, remote: Node) = {
+  private def getPeers(q: Query.GetPeers, remote: NodeInfo) = {
     // get current token to return to querier
     val token = this.tp.get
     // remember that we sent the token to this remote peer
@@ -136,9 +139,9 @@ class Responder(K: Int,
   }
 
   /** This method is executed periodically to remote expired infohash-peer associations */
-  def cleanupPeers() =
-    this.writer.cleanup(this.lifetime)
+  def cleanupPeers() = this.writer.cleanup(this.lifetime)
 
+  /// An instance of [[TokenProvider]]
   private val tp = new TokenProvider
 
   /// Collection of remote peers which received tokens

@@ -10,7 +10,7 @@
 
 package org.abovobo.dht.message
 
-import org.abovobo.dht.{TID, Node, Endpoint, Token, Peer}
+import org.abovobo.dht.{TID, NodeInfo, Endpoint, Token, Peer}
 import org.abovobo.integer.Integer160
 
 /**
@@ -53,7 +53,7 @@ object Response {
    * @param id    Sending node identifier.
    * @param nodes Collection of nodes with ids closest to requested target.
    */
-  class FindNode(tid: TID, id: Integer160, val nodes: Seq[Node])
+  class FindNode(tid: TID, id: Integer160, val nodes: Seq[NodeInfo])
     extends Response(tid, id) {
 
     /** @inheritdoc */
@@ -89,7 +89,7 @@ object Response {
    * @param token Special token which then must be used in `announce_peer` query.
    * @param nodes Collection of nodes with ids closest to requested infohash.
    */
-  class GetPeersWithNodes(tid: TID, id: Integer160, token: Token, val nodes: Seq[Node])
+  class GetPeersWithNodes(tid: TID, id: Integer160, token: Token, val nodes: Seq[NodeInfo])
     extends GetPeers(tid, id, token) {
 
     /** @inheritdoc */

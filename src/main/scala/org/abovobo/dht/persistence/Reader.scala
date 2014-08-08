@@ -15,7 +15,7 @@ import java.util.Date
 import java.sql.{ResultSet, PreparedStatement}
 import scala.collection.mutable.ListBuffer
 import org.abovobo.dht.Endpoint._
-import org.abovobo.dht.{Peer, KnownNode}
+import org.abovobo.dht.{Peer, KnownNodeInfo}
 
 /**
  * This trait defines read-only methods accessing DHT persistent storage.
@@ -55,18 +55,18 @@ trait Reader {
    *
    * @return Traversable collection of all persisted nodes.
    */
-  def nodes(): Traversable[KnownNode]
+  def nodes(): Traversable[KnownNodeInfo]
 
   /**
    * Executes given query and reads all its rows converting them into instances of
-   * [[org.abovobo.dht.KnownNode]].
+   * [[org.abovobo.dht.KnownNodeInfo]].
    *
    * @param statement A statement to execute.
    * @return Traversable collection of all persisted nodes.
    */
-  protected def nodes(statement: PreparedStatement): Traversable[KnownNode] = {
+  protected def nodes(statement: PreparedStatement): Traversable[KnownNodeInfo] = {
     import org.abovobo.jdbc.Closer._
-    val nodes = new ListBuffer[KnownNode]
+    val nodes = new ListBuffer[KnownNodeInfo]
     using(statement.executeQuery()) { rs =>
       while (rs.next()) {
         nodes += this.read(rs)
@@ -81,7 +81,7 @@ trait Reader {
    * @param id An SHA-1 identifier of the node to return.
    * @return Persistent node with given id.
    */
-  def node(id: Integer160): Option[KnownNode]
+  def node(id: Integer160): Option[KnownNodeInfo]
 
   /**
    * Sets statement parameters and executes query.
@@ -93,7 +93,7 @@ trait Reader {
    * @param id        An SHA-1 identifier of the node to return.
    * @return Persistent node with given id.
    */
-  protected def node(statement: PreparedStatement, id: Integer160): Option[KnownNode] = {
+  protected def node(statement: PreparedStatement, id: Integer160): Option[KnownNodeInfo] = {
     import org.abovobo.jdbc.Closer._
     statement.setBytes(1, id.toArray)
     using(statement.executeQuery()) { rs =>
@@ -107,7 +107,7 @@ trait Reader {
    * @param id A lower bound of the bucket range.
    * @return Traversable collection of all nodes within given bucket.
    */
-  def bucket(id: Integer160): Traversable[KnownNode]
+  def bucket(id: Integer160): Traversable[KnownNodeInfo]
 
   /**
    * Sets statement parameters and executes query.
@@ -119,9 +119,9 @@ trait Reader {
    * @param id        An SHA-1 identifier of the lower bound of the bucket to return nodes from.
    * @return Persistent node with given id.
    */
-  protected def bucket(statement: PreparedStatement, id: Integer160): Traversable[KnownNode] = {
+  protected def bucket(statement: PreparedStatement, id: Integer160): Traversable[KnownNodeInfo] = {
     import org.abovobo.jdbc.Closer._
-    val nodes = new ListBuffer[KnownNode]
+    val nodes = new ListBuffer[KnownNodeInfo]
     statement.setBytes(1, id.toArray)
     using(statement.executeQuery()) { rs =>
       while (rs.next()) {
@@ -204,14 +204,14 @@ trait Reader {
   }
 
   /**
-   * Reads instance of [[org.abovobo.dht.KnownNode]] from given [[java.sql.ResultSet]].
+   * Reads instance of [[org.abovobo.dht.KnownNodeInfo]] from given [[java.sql.ResultSet]].
    *
    * @param rs Valid [[java.sql.ResultSet]] instance.
-   * @return New instance of [[org.abovobo.dht.KnownNode]] built from read data.
+   * @return New instance of [[org.abovobo.dht.KnownNodeInfo]] built from read data.
    */
-  private def read(rs: ResultSet): KnownNode = {
+  private def read(rs: ResultSet): KnownNodeInfo = {
     import org.abovobo.jdbc.Optional._
-    new KnownNode(
+    new KnownNodeInfo(
       new Integer160(rs.getBytes("id")),
       rs.getBytes("address"),
       new Integer160(rs.getBytes("bucket")),
@@ -228,7 +228,7 @@ trait Reader {
    * @param target  Target number to get closest nodes to.
    * @return sequence of stored nodes.
    */
-  def klosest(K: Int, target: Integer160): Seq[KnownNode] = this.nodes()
+  def klosest(K: Int, target: Integer160): Seq[KnownNodeInfo] = this.nodes()
     .map(node => node -> (node.id ^ target)).toSeq
     .sortWith(_._2 < _._2)
     .take(K)
