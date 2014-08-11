@@ -23,7 +23,7 @@ import scala.collection.mutable.ListBuffer
  * actually represents sendable Kademlia packet.
  *
  * @param tid Transaction identifier.
- * @param y   Message kind: 'e' for error, 'q' for query, 'r' for response.
+ * @param y   Message kind: 'e' for error, 'q' for query, 'r' for response, 'p' for plugin-specific messages.
  */
 abstract class Message(val tid: TID, val y: Char) {
   def kind: Message.Kind.Value = this.y match {
