@@ -227,7 +227,7 @@ class Controller(val K: Int,
       case Finder.State.Continue => round(this.alpha)
       case Finder.State.Finalize => round(this.K)
       case Finder.State.Succeeded =>
-        this.log.debug("Sending SUCCEEDED to " + sender)
+        this.log.debug("Sending SUCCEEDED to {} after {} rounds", sender, f._completed.rounds.size)
         sender ! Controller.Found(f.nodes, f.peers, f.tokens)
       case Finder.State.Failed =>
         this.log.debug("Sending FAILED to " + sender)

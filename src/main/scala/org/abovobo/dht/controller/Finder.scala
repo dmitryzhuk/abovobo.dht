@@ -68,7 +68,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   private val _pending = new Rounds()
 
   /// Collection of completed request rounds
-  private val _completed = new Rounds()
+  private[controller] val _completed = new Rounds()
 
   /// Collection of nodes which reported successfully
   private val _succeeded = new mutable.TreeSet[NodeInfo]
