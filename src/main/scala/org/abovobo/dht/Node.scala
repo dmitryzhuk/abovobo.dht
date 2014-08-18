@@ -36,11 +36,11 @@ class Node(val ds: DataSource,
   import this.context.system
 
   /// collection of readers and writers used within actors
-  val storages = Array[Storage](
-    new h2.Reader(this.ds.connection),
+  val storages = Array[PermanentlyConnectedStorage](
+    /*new h2.Reader(this.ds.connection),
     new h2.Writer(this.ds.connection),
     new h2.Reader(this.ds.connection),
-    new h2.Writer(this.ds.connection)
+    new h2.Writer(this.ds.connection)*/
   )
 
   /// Reference to Table actor
@@ -102,7 +102,7 @@ object NodeApp extends App {
 import java.net.InetSocketAddress
 import akka.actor.actorRef2Scala
 import org.abovobo.dht.controller.Controller
-import org.abovobo.dht.persistence.Storage
+import org.abovobo.dht.persistence.PermanentlyConnectedStorage
 import org.abovobo.dht.persistence.h2.{Reader, Writer}
 import scala.concurrent.duration._
 import akka.actor.ActorRef
@@ -115,8 +115,8 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   
   val dataSource = null //H2DataSource.open("~/db/dht-" + self.path.name, true)
   
-  val storageC: Storage = null //H2Storage(dataSource.getConnection) // controller
-  val storageT: Storage = null //H2Storage(dataSource.getConnection) // table
+  val storageC: PermanentlyConnectedStorage = null //H2Storage(dataSource.getConnection) // controller
+  val storageT: PermanentlyConnectedStorage = null //H2Storage(dataSource.getConnection) // table
   val storageD: Reader = null //H2Storage(dataSource.getConnection) // node (self)
     
   val controller = null //this.context.actorOf(Controller.props(routers, storageC, storageC, null, null), "controller")

@@ -36,7 +36,6 @@ import scala.concurrent.duration._
  */
 class KnownNodeInfo(id: Integer160,
                 address: InetSocketAddress,
-                val bucket: Integer160,
                 val replied: Option[Date],
                 val queried: Option[Date],
                 val failcount: Int) extends NodeInfo(id, address) {

@@ -10,42 +10,46 @@
 
 package org.abovobo.dht.persistence
 
-import java.sql.{Connection, PreparedStatement}
-
 /**
- * Represetns abstract persistent storage.
- *
- * @author Dmitry Zhuk
+ * Basic storage trait definition.
  */
-abstract class Storage(val connection: Connection) extends AutoCloseable {
-  /**
-   * @inheritdoc
-   *
-   * Really just closes all prepared statements and JDBC connection instance.
-   */
-  override def close() = {
-    this.statements.foreach(_._2.close())
-    this.connection.close()
-  }
-
-  /** Delegates invocation to JDBC [[java.sql.Connection]] instance */
-  def commit() = this.connection.commit()
-
-  /** Delegates invocation to JDBC [[java.sql.Connection]] instance */
-  def rollback() = this.connection.rollback()
+trait Storage extends AutoCloseable with Reader with Writer {
 
   /**
-   * Prepares all statements which subclass wants to be closed automatically.
+   * Returns connection to work with.
    *
-   * @return A map of named prepared statements.
+   * @return connection to work with.
    */
-  protected def prepare(): Map[String, PreparedStatement]
+  protected def connection: java.sql.Connection
 
-  /// An instance of connection
-  //protected var connection: Connection = null
+  /**
+   * Returns [[java.sql.PreparedStatement]] for given key to work with. If no statement for the given key
+   * was found, null will be returned.
+   *
+   * @param key A key to return statement for.
+   * @return [[java.sql.PreparedStatement]] instance or null.
+   */
+  protected def statement(key: String): java.sql.PreparedStatement
 
-  /// Collection of named and prepared statements
-  protected var statements: Map[String, PreparedStatement] = this.prepare()
+  /**
+   * Sets given schema as default for all storage operations.
+   *
+   * @param name A name of schema to set.
+   */
+  def setSchema(name: String): Unit
+
+  /**
+   * Unset default schema.
+   */
+  def unsetSchema(): Unit
+
+  /**
+   * Allows to execute block of code within transaction.
+   *
+   * @param f   A code block to execute.
+   * @tparam T  Return type of the code block.
+   * @return    A value yielded by code block.
+   */
+  def transaction[T](f: => T): T
+
 }
-
-

@@ -23,24 +23,41 @@ object DataSource {
   /// Load JDBC drier
   Class.forName("org.h2.Driver")
 
+  /** Value of the connection pool size by default */
+  val DEFAULT_CONNECTION_POOL_SIZE = 10
+
   /**
    * Instantiates connection pool at given URL and wraps it with new instance of [[DataSource]].
+   *
+   * @param url   An URL to create connection pool at.
+   * @param size  A size of the connection pool.
+   * @return new instance of [[DataSource]]
+   */
+  def apply(url: String, size: Int): DataSource = {
+    val cp = JdbcConnectionPool.create(url, "", "")
+    cp.setMaxConnections(size)
+    new DataSource(cp)
+  }
+
+  /**
+   * Instantiates connection pool with default size at given URL and wraps it with new instance of [[DataSource]].
    *
    * @param url An URL to create connection pool at.
    * @return new instance of [[DataSource]]
    */
-  def apply(url: String): DataSource = new DataSource(JdbcConnectionPool.create(url, "", ""))
+  def apply(url: String): DataSource = this.apply(url, this.DEFAULT_CONNECTION_POOL_SIZE)
 
   /**
    * Instantiates connection pool at given URL and wraps it with new instance of [[DataSource]]
    * and executes given script.
    *
-   * @param url An URL to create connection pool at.
-   * @param script A script to execute.
+   * @param url     An URL to create connection pool at.
+   * @param script  A script to execute.
+   * @param size    A size of the connection pool.
    * @return new instance of [[DataSource]]
    */
-  def apply(url: String, script: java.io.Reader): DataSource = {
-    val source = this.apply(url)
+  def apply(url: String, script: java.io.Reader, size: Int = this.DEFAULT_CONNECTION_POOL_SIZE): DataSource = {
+    val source = this.apply(url, size)
     val connection = source.connection
     try {
       RunScript.execute(connection, script)

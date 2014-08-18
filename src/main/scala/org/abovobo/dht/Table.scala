@@ -19,7 +19,7 @@ import akka.actor.{ActorLogging, Cancellable, Props, Actor, ActorRef}
 import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.Message
 import org.abovobo.integer.Integer160
-import org.abovobo.dht.persistence.{Writer, Reader}
+import org.abovobo.dht.persistence.{Storage, Writer, Reader}
 
 /**
  * <p>This class represents routing table which is maintained by DHT node.</p>
@@ -98,8 +98,7 @@ import org.abovobo.dht.persistence.{Writer, Reader}
  *                   This duration must normally be a bit longer when waiting node
  *                   reply timeout.
  * @param threshold  Number of times a node must fail to respond before being marked as 'bad'.
- * @param reader     Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
- * @param writer     Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+ * @param storage    Instance of [[org.abovobo.dht.persistence.Storage]] used to access persisted data.
  *
  * @author Dmitry Zhuk
  */
@@ -107,8 +106,7 @@ class Table(val K: Int,
             val timeout: FiniteDuration,
             val delay: FiniteDuration,
             val threshold: Int,
-            val reader: Reader,
-            val writer: Writer)
+            val storage: Storage)
   extends Actor with ActorLogging {
 
   import Table._
@@ -139,7 +137,7 @@ class Table(val K: Int,
       this.context.become(this.working(this.sender()))
       // check if the table already has assigned ID and reset if not
       // in any case initial FindNode will be issued to controller
-      this.reader.id() match {
+      this.storage.id() match {
         case None     =>
           // fresh start (no node id in storage yet): resetting id to random value
           this.reset(this.sender())
@@ -151,6 +149,8 @@ class Table(val K: Int,
 
       // upon start also perform refresh procedure for every existing bucket
       // and schedule the next refresh after configured idle timeout
+      // TODO Complete this
+      /*
       var prev: Integer160 = null
       this.reader.buckets() foreach { bucket =>
         if (prev ne null) {
@@ -163,6 +163,7 @@ class Table(val K: Int,
         self ! Refresh(prev, Integer160.maxval)
         this.cancellables.put(prev, system.scheduler.scheduleOnce(this.timeout, self, Refresh(prev, Integer160.maxval)))
       }
+      */
     // To debug crashes
     case t: Throwable => throw t
   }
@@ -173,7 +174,7 @@ class Table(val K: Int,
    * @param controller A reference to [[Controller]] actor.
    */
   def working(controller: ActorRef): Receive = {
-    case Refresh(min, max)    =>          this.refresh(min, max, controller)
+    case Refresh(bucket)    =>            this.refresh(bucket, controller)
     case Reset()              => sender ! this.reset(controller)
     case Set(id)              => sender ! this.set(id, controller)
     case Purge()              => sender ! this.purge()
@@ -191,17 +192,18 @@ class Table(val K: Int,
    * random number from within the bucket range and sending `find_node`
    * message to network agent actor.
    *
-   * @param min Lower bound of bucket
-   * @param max Upper bound of bucket
+   * @param bucket The bucket to refresh
    * @param controller  Reference to [[Controller]] actor.
    */
-  private def refresh(min: Integer160, max: Integer160, controller: ActorRef): Unit = {
+  private def refresh(bucket: Bucket, controller: ActorRef): Unit = {
     // request refreshing `find_node` by means of `Controller`
-    controller ! Controller.FindNode(min + Integer160.random % (max - min))
+    controller ! Controller.FindNode(bucket.start + Integer160.random % (bucket.end - bucket.start))
     // cancel existing bucket task if exists
-    this.cancellables.remove(min) foreach { _.cancel() }
+    this.cancellables.remove(bucket.start) foreach { _.cancel() }
     // schedule new refresh bucket task
-    this.cancellables.put(min, system.scheduler.scheduleOnce(this.timeout, self, Refresh(min, this.reader.next(min))))
+    this.cancellables.put(
+      bucket.start,
+      system.scheduler.scheduleOnce(this.timeout, self, Refresh(bucket)))
   }
 
   /**
@@ -217,11 +219,11 @@ class Table(val K: Int,
    * @param id New SHA-1 node identifier.
    * @param controller  Reference to [[Controller]] actor.
    */
-  private def set(id: Integer160, controller: ActorRef): Result = this.writer.transaction {
+  private def set(id: Integer160, controller: ActorRef): Result = this.storage.transaction {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
-    this.writer.drop()
-    this.writer.id(id)
+    this.storage.drop()
+    this.storage.id(id)
     controller ! Controller.FindNode(id)
     Id(id)
   }
@@ -229,10 +231,10 @@ class Table(val K: Int,
   /**
    * Deletes all data from database.
    */
-  private def purge(): Result = this.writer.transaction {
+  private def purge(): Result = this.storage.transaction {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
-    this.writer.drop()
+    this.storage.drop()
     Purged
   }
 
@@ -256,7 +258,7 @@ class Table(val K: Int,
       "Processing incoming message with node id {} and kind {} received from {}",
       node.id, kind, this.sender())
 
-    this.reader.node(node.id) match {
+    this.storage.node(node.id) match {
       case None =>
         if (kind == Kind.Query || kind == Kind.Response) {
           // insert new node only if event does not indicate error or failure
@@ -270,11 +272,11 @@ class Table(val K: Int,
         }
       case Some(pn) =>
         // update existing node
-        this.writer.transaction {
-          this.writer.update(node, pn, kind)
+        this.storage.transaction {
+          this.storage.update(node, pn, kind)
         }
         // touch owning bucket
-        this.touch(pn.bucket, this.reader.next(pn.bucket))
+        // TODO this.touch(pn.bucket, this.reader.next(pn.bucket))
         // respond with Updated Result
         Updated
     }
@@ -290,26 +292,27 @@ class Table(val K: Int,
    * @return            Result of operation, as listed in [[org.abovobo.dht.Table.Result]]
    *                    excluding `Updated` value.
    */
-  private def insert(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Result = this.writer.transaction {
+  private def insert(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Result = this.storage.transaction {
 
-    val buckets = this.reader.buckets().toArray.sortWith(_._1 < _._1)
+    val buckets = this.storage.buckets()
 
     // get the bucket which is good for the given node
-    val bucket = if (buckets.isEmpty) {
+    val bucket: Bucket = if (buckets.isEmpty) {
       // if there are no buckets exist we must insert zeroth bucket
       val zero = Integer160.zero
-      this.writer.insert(zero)
-      zero -> Integer160.maxval
+      this.storage.insert(zero)
+      new Bucket(zero, Integer160.maxval, new java.util.Date())
     } else {
       // since zeroth element of this collection must be Integer160.zero
       // this always leads to valid index: we never can get -1 here.
       // so here we are getting last bucket having min bound less or equal to node id.
-      val index = buckets.lastIndexWhere(_._1 <= node.id)
-      buckets(index)._1 -> (if (index == buckets.length - 1) Integer160.maxval else buckets(index + 1)._1)
+      // TODO val index = buckets.lastIndexWhere(bucket => bucket.start <= node.id)
+      // TODO buckets(index)._1 -> (if (index == buckets.length - 1) Integer160.maxval else buckets(index + 1)._1)
+      null
     }
 
-    val nodes = this.reader.bucket(bucket._1)
-    val id = this.reader.id().get
+    val nodes = this.storage.nodes(bucket)
+    val id = this.storage.id().get
 
     implicit val timeout = this.timeout
     implicit val threshold = this.threshold
@@ -322,23 +325,23 @@ class Table(val K: Int,
       if (good.size == this.K) {
         // the bucket is full of good nodes
         // check if this id falls into a bucket range
-        if (bucket._1 <= id && id < bucket._2) {
+        if (bucket.in(id)) {
           // check if current bucket is large enough to be split
-          if (bucket._2 - bucket._1 <= this.K * 2) {
+          if (bucket.end - bucket.start <= this.K * 2) {
             // current bucket is too small
             Rejected
           } else {
             // split current bucket and send the message back to self queue
             // new bucket edge must split existing buckets onto 2 equals buckets
-            val b = bucket._1 + ((bucket._2 - bucket._1) >> 1)
+            val b = bucket.start + ((bucket.end - bucket.start) >> 1)
             // insert new bucket
-            this.writer.insert(b)
+            this.storage.insert(b)
             // move nodes appropriately
-            nodes.filter(_.id >= b) foreach { node => this.writer.move(node, b) }
+            // TODO nodes.filter(_.id >= b) foreach { node => this.st.move(node, b) }
             // send message to itself preserving original sender
             self.!(Received(node, kind))(this.sender())
             // notify caller that insertion has been deferred
-            Split(bucket._1, b)
+            Split(bucket.start, b)
           }
         } else {
           // own id is outside the bucket, so no more nodes can be inserted
@@ -350,9 +353,9 @@ class Table(val K: Int,
         val bad = nodes.filter(_.bad)
         if (bad.size > 0) {
           // there are bad nodes, replacing first of them
-          this.writer.delete(bad.head.id)
-          this.writer.insert(node, bucket._1, kind)
-          this.writer.touch(bucket._1)
+          this.storage.delete(bad.head.id)
+          this.storage.insert(node, kind)
+          this.storage.touch(bucket.start)
           Replaced(bad.head)
         } else {
           // there are no bad nodes in this bucket
@@ -368,9 +371,9 @@ class Table(val K: Int,
       }
     } else {
       // there is a room for new node in this bucket
-      this.writer.insert(node, bucket._1, kind)
-      this.touch(bucket._1, bucket._2)
-      Inserted(bucket._1)
+      this.storage.insert(node, kind)
+      this.touch(bucket)
+      Inserted(bucket.start)
     }
   }
 
@@ -379,15 +382,14 @@ class Table(val K: Int,
    * new `Refresh` command.
    *
    * @param bucket A bucket to touch.
-   * @param next   An id of the next bucket.
    */
-  private def touch(bucket: Integer160, next: Integer160) = this.writer.transaction {
+  private def touch(bucket: Bucket) = this.storage.transaction {
     // actually update bucket last seen property in storage
-    this.writer.touch(bucket)
+    this.storage.touch(bucket.start)
     // cancel existing bucket task if exists
-    this.cancellables.remove(bucket) foreach { _.cancel() }
+    this.cancellables.remove(bucket.start) foreach { _.cancel() }
     // schedule new refresh bucket task
-    this.cancellables.put(bucket, system.scheduler.scheduleOnce(this.timeout, self, Refresh(bucket, next)))
+    this.cancellables.put(bucket.start, system.scheduler.scheduleOnce(this.timeout, self, Refresh(bucket)))
   }
 
   /// Collection of cancellable deferred tasks for refreshing buckets
@@ -522,8 +524,7 @@ object Table {
   /**
    * Instructs routing table to refresh the bucket with given bounds.
    *
-   * @param min Lower bound of bucket.
-   * @param max Upper bound of bucket.
+   * @param bucket A bucket to refresh.
    */
-  case class Refresh(min: Integer160, max: Integer160) extends Command
+  case class Refresh(bucket: Bucket) extends Command
 }

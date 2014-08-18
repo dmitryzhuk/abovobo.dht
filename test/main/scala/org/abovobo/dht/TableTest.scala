@@ -15,7 +15,8 @@ import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.Message
-import org.abovobo.dht.persistence.h2.{Reader, Writer, DataSource}
+import org.abovobo.dht.persistence.{Reader, Writer}
+import org.abovobo.dht.persistence.h2.DataSource
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
@@ -35,8 +36,8 @@ class TableTest(system: ActorSystem)
   def this() = this(ActorSystem("RoutingTableTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
   private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  private val reader = new Reader(this.ds.connection)
-  private val writer = new Writer(this.ds.connection)
+  private val reader: Reader = null //new Reader(this.ds.connection)
+  private val writer: Writer = null //new Writer(this.ds.connection)
 
   val controllerInbox = Inbox.create(system)
 
@@ -55,8 +56,8 @@ class TableTest(system: ActorSystem)
   }
 
   override def afterAll() = {
-    this.reader.close()
-    this.writer.close()
+    //this.reader.close()
+    //this.writer.close()
     this.ds.close()
     TestKit.shutdownActorSystem(this.system)
   }
@@ -113,10 +114,10 @@ class TableTest(system: ActorSystem)
         this.table ! Table.Received(this.node, Message.Kind.Query)
         expectMsg(Table.Inserted(Integer160.zero))
         this.reader.buckets() should have size 1
-        this.reader.buckets().head._1 should be(Integer160.zero)
+        this.reader.buckets().head.start should be(Integer160.zero)
         this.reader.nodes() should have size 1
         val node = this.reader.nodes().head
-        node.bucket should be(Integer160.zero)
+        // -- node.bucket.start should be(Integer160.zero)
         node.queried should be('defined)
         node.replied should not be 'defined
         node.failcount should be(0)
@@ -128,10 +129,10 @@ class TableTest(system: ActorSystem)
         this.table ! Table.Received(this.node, Message.Kind.Response)
         expectMsg(Table.Updated)
         this.reader.buckets() should have size 1
-        this.reader.buckets().head._1 should be(Integer160.zero)
+        this.reader.buckets().head.start should be(Integer160.zero)
         this.reader.nodes() should have size 1
         val node = this.reader.nodes().head
-        node.bucket should be(Integer160.zero)
+        //node.bucket should be(Integer160.zero)
         node.queried should be('defined)
         node.replied should be('defined)
         node.failcount should be(0)
@@ -140,10 +141,10 @@ class TableTest(system: ActorSystem)
         this.table ! Table.Received(this.node, Message.Kind.Fail)
         expectMsg(Table.Updated)
         this.reader.buckets() should have size 1
-        this.reader.buckets().head._1 should be(Integer160.zero)
+        this.reader.buckets().head.start should be(Integer160.zero)
         this.reader.nodes() should have size 1
         val node = this.reader.nodes().head
-        node.bucket should be(Integer160.zero)
+        //node.bucket should be(Integer160.zero)
         node.queried should be('defined)
         node.replied should be('defined)
         node.failcount should be(1)
@@ -155,7 +156,7 @@ class TableTest(system: ActorSystem)
 
         // Delete previously added node from the table
         this.writer.delete(this.node.id)
-        this.writer.commit()
+        // -- this.writer.commit()
 
         // start with 1 as a node id and 0 as an initial bucket
         var start = Integer160.zero + 1

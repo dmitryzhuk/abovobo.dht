@@ -14,7 +14,7 @@ import java.net.InetSocketAddress
 
 import org.abovobo.dht._
 import org.abovobo.dht.message.{Query, Response}
-import org.abovobo.dht.persistence.{Reader, Writer}
+import org.abovobo.dht.persistence.Storage
 
 import scala.collection.mutable
 import scala.concurrent.duration.FiniteDuration
@@ -28,14 +28,12 @@ import scala.concurrent.duration.FiniteDuration
  * @param K         Max number of entries to send back to querier.
  * @param period    A period of rotating the token.
  * @param lifetime  A lifetime of the peer info.
- * @param reader    Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
- * @param writer    Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+ * @param storage   Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  */
 class Responder(K: Int,
                 period: FiniteDuration,
                 lifetime: FiniteDuration,
-                reader: Reader,
-                writer: Writer) {
+                storage: Storage) {
   /**
    * Creates an instance of [[Response]] message which is appropriate to
    * an incoming [[Query]] message and sends it to given remote peer.
@@ -59,7 +57,7 @@ class Responder(K: Int,
   /** Responds to `find_node` query */
   private def findNode(q: Query.FindNode, remote: NodeInfo) = {
     // get `K` closest nodes from own routing table
-    val nodes = this.reader.klosest(this.K + 1, q.target).filter(_.id != remote.id).take(this.K)
+    val nodes = this.storage.closest(this.K + 1, q.target).filter(_.id != remote.id).take(this.K)
     // now respond with proper message
     Agent.Send(new Response.FindNode(q.tid, this.id, nodes), remote.address)
   }
@@ -74,13 +72,13 @@ class Responder(K: Int,
       case l => this.tokens.put(remote.address, token :: l)
     }
     // look for peers for the given infohash in the storage
-    val peers = this.reader.peers(q.infohash)
+    val peers = this.storage.peers(q.infohash)
     if (peers.nonEmpty) {
       // if there are peers found send them with response
       Agent.Send(new Response.GetPeersWithValues(q.tid, id, token, peers.toSeq), remote.address)
     } else {
       // otherwise send closest K nodes
-      val nodes = this.reader.klosest(this.K + 1, q.infohash).filter(_.id != remote.id).take(this.K)
+      val nodes = this.storage.closest(this.K + 1, q.infohash).filter(_.id != remote.id).take(this.K)
       Agent.Send(new Response.GetPeersWithNodes(q.tid, id, token, nodes), remote.address)
     }
   }
@@ -99,8 +97,8 @@ class Responder(K: Int,
           // ok: token value is still valid
           if (this.tp.valid(value)) {
             // put peer into the storage
-            this.writer.transaction {
-              this.writer.announce(
+            this.storage.transaction {
+              this.storage.announce(
                 q.infohash,
                 new Peer(remote.getAddress, if (q.implied) remote.getPort else q.port))
             }
@@ -120,7 +118,7 @@ class Responder(K: Int,
   }
 
   /** Returns immediate value of node self id */
-  private def id = this.reader.id().get
+  private def id = this.storage.id().get
 
   /**
    * This method is executed periodically to rotate tokens (generating a new one, preserving previous) and
@@ -139,7 +137,7 @@ class Responder(K: Int,
   }
 
   /** This method is executed periodically to remote expired infohash-peer associations */
-  def cleanupPeers() = this.writer.cleanup(this.lifetime)
+  def cleanupPeers() = this.storage.cleanup(this.lifetime)
 
   /// An instance of [[TokenProvider]]
   private val tp = new TokenProvider

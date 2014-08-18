@@ -45,7 +45,7 @@ class DHTTest(system: ActorSystem)
 
   val routerDS =
     if (!this.system.settings.config.hasPath("router")) {
-      using(new InputStreamReader(this.getClass.getResourceAsStream("/tables.sql"))) { reader =>
+      using(new InputStreamReader(this.getClass.getResourceAsStream("/tables-ipv4.sql"))) { reader =>
         DataSource("jdbc:h2:~/db/dht-router", reader).close()
 
       }
@@ -54,7 +54,7 @@ class DHTTest(system: ActorSystem)
       null
 
   def makeDS(id: Long) = {
-    using(new InputStreamReader(this.getClass.getResourceAsStream("/tables.sql"))) { reader =>
+    using(new InputStreamReader(this.getClass.getResourceAsStream("/tables-ipv4.sql"))) { reader =>
       DataSource("jdbc:h2:~/db/dht-node" + id, reader).close()
 
     }

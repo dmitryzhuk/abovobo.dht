@@ -17,7 +17,8 @@ import akka.io.{Udp, IO}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.message.{Message, Response, Query}
-import org.abovobo.dht.persistence.h2.{DataSource, Reader, Writer}
+import org.abovobo.dht.persistence.{Reader, Writer}
+import org.abovobo.dht.persistence.h2.DataSource
 import org.abovobo.integer.Integer160
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.dht._
@@ -65,8 +66,8 @@ class ControllerTest(system: ActorSystem)
   def this() = this(ActorSystem("ControllerTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
   private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  private val reader = new Reader(ds.connection)
-  private val writer = new Writer(ds.connection)
+  private val reader: Reader = null //new Reader(ds.connection)
+  private val writer: Writer = null // new Writer(ds.connection)
 
   val remote0 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
   val remote1 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
@@ -89,8 +90,8 @@ class ControllerTest(system: ActorSystem)
   }
 
   override def afterAll() {
-    this.reader.close()
-    this.writer.close()
+    //this.reader.close()
+    //this.writer.close()
     this.ds.close()
     TestKit.shutdownActorSystem(this.system)
   }

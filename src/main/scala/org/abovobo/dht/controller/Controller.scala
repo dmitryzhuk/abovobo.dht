@@ -16,7 +16,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import org.abovobo.dht
 import org.abovobo.dht._
 import org.abovobo.dht.message.{Message, Query, Response}
-import org.abovobo.dht.persistence.{Reader, Writer}
+import org.abovobo.dht.persistence.{Storage, Reader, Writer}
 import org.abovobo.integer.Integer160
 
 import scala.collection.mutable
@@ -32,8 +32,7 @@ import scala.concurrent.duration._
  * @param period      A period of rotating the token.
  * @param lifetime    A lifetime of the peer info.
  * @param routers     A collection of addresses which can be used as inital seeds when own routing table is empty.
- * @param reader      Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
- * @param writer      Instance of [[org.abovobo.dht.persistence.Writer]] to update persisted DHT state.
+ * @param storage     Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  * @param table       Reference to [[Table]] actor.
  *
  * @author Dmitry Zhuk
@@ -43,12 +42,13 @@ class Controller(val K: Int,
                  val period: FiniteDuration,
                  val lifetime: FiniteDuration,
                  val routers: Traversable[InetSocketAddress],
-                 val reader: Reader,
-                 val writer: Writer,
+                 val storage: Storage,
                  val table: ActorRef)
   extends Actor with ActorLogging {
 
   import this.context.dispatcher
+
+  private val reader: Reader = this.storage
 
   /** @inheritdoc */
   override def preStart() = {
@@ -288,13 +288,13 @@ class Controller(val K: Int,
   }
 
   /// Wraps Reader's `klosest` method adding routers to the output if the table has not enough entries
-  private def klosest(n: Int, target: Integer160) = this.reader.klosest(n, target) match {
+  private def klosest(n: Int, target: Integer160) = this.reader.closest(n, target) match {
     case nn: Seq[NodeInfo] if nn.size < n => nn ++ (this.routers map { ra => new NodeInfo(Integer160.zero, ra) })
     case enough: Seq[NodeInfo] => enough
   }
 
   /// An instance of Responder to handle incoming queries
-  private lazy val responder = new Responder(this.K, this.period, this.lifetime, this.reader, this.writer)
+  private lazy val responder = new Responder(this.K, this.period, this.lifetime, this.storage)
 
   /// Collection of scheduled tasks sending periodic internal commands to self
   private val timerTasks =
