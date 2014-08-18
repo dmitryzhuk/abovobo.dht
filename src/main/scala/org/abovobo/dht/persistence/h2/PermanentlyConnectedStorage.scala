@@ -15,6 +15,7 @@ import java.sql.{PreparedStatement, Connection}
 import org.abovobo.dht.message.Message.Kind._
 import org.abovobo.dht._
 import org.abovobo.integer.Integer160
+import org.h2.tools.RunScript
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -22,10 +23,8 @@ import scala.concurrent.duration.FiniteDuration
  * H2-based implementation of [[persistence.PermanentlyConnectedStorage]]
  *
  * @param connection A connection to be used by this storage.
- * @param schema     An optional schema name to work with
  */
-class PermanentlyConnectedStorage(connection: Connection, schema: Option[String])
-  extends persistence.PermanentlyConnectedStorage(connection) {
+class PermanentlyConnectedStorage(connection: Connection) extends persistence.PermanentlyConnectedStorage(connection) {
 
   import org.abovobo.jdbc.Closer._
 
@@ -105,7 +104,7 @@ class PermanentlyConnectedStorage(connection: Connection, schema: Option[String]
   /** @inheritdoc */
   override def setSchema(name: String): Unit = {
     using (this.connection.createStatement()) { statement =>
-      statement.execute("set schema " + schema)
+      statement.execute("set schema " + name)
     }
   }
 
@@ -115,6 +114,9 @@ class PermanentlyConnectedStorage(connection: Connection, schema: Option[String]
       statement.execute("set schema PUBLIC")
     }
   }
+
+  /** @inheritdoc */
+  override def execute(script: java.io.Reader): Unit = RunScript.execute(this.connection, script)
 
   /** @inheritdoc */
   override protected def prepare(): Map[String, PreparedStatement] =

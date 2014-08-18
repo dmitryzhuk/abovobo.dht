@@ -43,4 +43,24 @@ trait Storage extends AutoCloseable with Reader with Writer {
    */
   def transaction[T](f: => T): T
 
+  /**
+   * Executes an SQL script provided as a reader.
+   *
+   * @param script An SQL script to execute.
+   */
+  def execute(script: java.io.Reader): Unit
+
+  /**
+   * Execute SQL script located in the resource with given name.
+   *
+   * @param resource A name of resource containing script to execute.
+   */
+  def execute(resource: String): Unit = {
+    import org.abovobo.jdbc.Closer._
+    using(this.getClass.getResourceAsStream(resource)) { is: java.io.InputStream =>
+      using(new java.io.InputStreamReader(is)) { reader =>
+        this.execute(reader)
+      }
+    }
+  }
 }

@@ -25,36 +25,57 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
  */
 class PermanentlyConnectedStorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
 
-  val ds = using(this.getClass.getResourceAsStream("/tables-ipv4.sql")) { is: java.io.InputStream =>
-    using(new java.io.InputStreamReader(is)) { reader =>
-      DataSource("jdbc:h2:~/db/dht", reader).close()
-    }
-    DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  }
+  // initialize DataSource instance
+  val ds = DataSource("jdbc:h2:~/db/dht-test-pcs")
 
-  val writer: persistence.Writer = null // new Writer(this.ds.connection)
-  val reader: persistence.Reader = null // new Reader(this.ds.connection)
+  // get instance of connection to be used within a storage
+  val connection = ds.connection
 
+  // initialize actual Storage instance
+  val storage = new PermanentlyConnectedStorage(connection)
+
+  /** @inheritdoc */
   override def beforeAll() = {
+
+    // drop everything in the beginning and create working schema
+    using(this.ds.connection) { c =>
+      using(c.createStatement()) { s =>
+        s.execute("drop all objects")
+        s.execute("create schema ipv4")
+      }
+    }
+
+    // set working schema for the storage
+    this.storage.setSchema("ipv4")
+
+    // create common tables
+    this.storage.execute("/tables-common.sql")
+
+    // create tables specific to IPv4 protocol which will be used in test
+    this.storage.execute("/tables-ipv4.sql")
   }
 
+  /** @inheritdoc */
   override def afterAll() = {
-    //this.writer.commit()
-    //this.writer.close()
-    //this.reader.close()
+    this.storage.close()
+    this.connection.close()
     this.ds.close()
   }
 
   "A storage" when {
 
-    "dropped" must {
-      "be empty" in {
-        this.writer.drop()
-        this.reader.buckets() should have size 0
-        this.reader.nodes() should have size 0
+    "just created" must {
+      "have no ID, no nodes and single bucket covering the whole address space" in {
+        this.storage.id() should be (None)
+        this.storage.nodes() should have size 0
+        val buckets = this.storage.buckets()
+        buckets should have size 1
+        buckets.head.start should be (Integer160.zero)
+        buckets.head.end should be (Integer160.maxval)
       }
     }
 
+    /*
     "node is being inserted in empty storage" must {
       "fail with SQLException" in {
         val node = new NodeInfo(Integer160.random, new InetSocketAddress(0))
@@ -196,6 +217,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
         id.get should be(Integer160.maxval - 1)
       }
     }
+    */
   }
 
 }

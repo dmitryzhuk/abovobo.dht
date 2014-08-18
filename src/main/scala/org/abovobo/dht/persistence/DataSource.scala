@@ -17,11 +17,4 @@ trait DataSource extends AutoCloseable {
 
   /** Returns new connection */
   def connection: java.sql.Connection
-
-  /**
-   * Executes an SQL script provided as a reader.
-   *
-   * @param script An SQL script to execute.
-   */
-  def execute(script: java.io.Reader): Unit
 }

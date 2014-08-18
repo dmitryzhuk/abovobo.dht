@@ -16,6 +16,7 @@ import org.abovobo.dht.message.Message.Kind._
 import org.abovobo.dht._
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
+import org.h2.tools.RunScript
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -25,6 +26,11 @@ import scala.concurrent.duration.FiniteDuration
  * @param ds  DataSource instance used to retrieve connection.
  */
 class DynamicallyConnectedStorage(ds: persistence.DataSource) extends persistence.DynamicallyConnectedStorage(ds) {
+
+  /** Executes given script using H2 [[org.h2.tools.RunScript]] utility */
+  override def execute(script: java.io.Reader): Unit = using(this.connection) { c =>
+    RunScript.execute(c, script)
+  }
 
   //////////////////
   /// READER METHODS
