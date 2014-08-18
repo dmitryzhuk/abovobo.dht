@@ -48,7 +48,7 @@ abstract class PermanentlyConnectedStorage(override protected val connection: Co
   protected def prepare(): Map[String, PreparedStatement]
 
   /// Collection of named and prepared statements
-  private val statements: Map[String, PreparedStatement] = this.prepare()
+  private lazy val statements: Map[String, PreparedStatement] = this.prepare()
 }
 
 
