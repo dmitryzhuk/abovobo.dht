@@ -27,4 +27,7 @@ create table bucket(
     -- a time when the bucket has last been touched
     seen timestamp not null
 );
-
+-- ==========================
+-- Insert initial zero bucket
+-- ==========================
+insert into bucket(X'0000000000000000000000000000000000000000', now())
