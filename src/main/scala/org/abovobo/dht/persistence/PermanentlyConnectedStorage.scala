@@ -31,8 +31,14 @@ abstract class PermanentlyConnectedStorage(override protected val connection: Co
   /** @inheritdoc */
   override def transaction[T](f: => T): T = Transaction.transaction(this.connection)(f)
 
-  /** @inheritdoc */
-  override protected def statement(key: String): java.sql.PreparedStatement = this.statements(key)
+  /**
+   * Returns [[java.sql.PreparedStatement]] for given key to work with. If no statement for the given key
+   * was found, null will be returned.
+   *
+   * @param key A key to return statement for.
+   * @return [[java.sql.PreparedStatement]] instance or null.
+   */
+  protected def statement(key: String): java.sql.PreparedStatement = this.statements(key)
 
   /**
    * Prepares all statements which subclass wants to be closed automatically.

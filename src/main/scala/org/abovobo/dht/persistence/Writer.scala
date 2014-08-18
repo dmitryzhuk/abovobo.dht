@@ -43,23 +43,6 @@ trait Writer {
   def id(id: Integer160): Unit
 
   /**
-   * This method first executes drop statement to delete currently persisted DHT node identifier,
-   * then sets parameter to save statement and executes it consequently.
-   *
-   * Expected parameter mapping:
-   * 1 BINARY id
-   *
-   * @param drop A statement which drops existing id if any.
-   * @param save A statement which inserts new id.
-   * @param id   An identifier to set.
-   */
-  protected def id(drop: PreparedStatement, save: PreparedStatement, id: Integer160): Unit = {
-    drop.executeUpdate()
-    save.setBytes(1, id.toArray)
-    save.executeUpdate()
-  }
-
-  /**
    * Inserts new node.
    *
    * @param node    A node to insert into a storage.
@@ -121,6 +104,23 @@ trait Writer {
   //////////////////////////////////////////////////////////////
   // PROPOSED IMPLEMENTATION BASED ON java.sql.PreparedStatement
   //////////////////////////////////////////////////////////////
+
+  /**
+   * This method first executes drop statement to delete currently persisted DHT node identifier,
+   * then sets parameter to save statement and executes it consequently.
+   *
+   * Expected parameter mapping:
+   * 1 BINARY id
+   *
+   * @param drop A statement which drops existing id if any.
+   * @param save A statement which inserts new id.
+   * @param id   An identifier to set.
+   */
+  protected def id(drop: PreparedStatement, save: PreparedStatement, id: Integer160): Unit = {
+    drop.executeUpdate()
+    save.setBytes(1, id.toArray)
+    save.executeUpdate()
+  }
 
 
   /**

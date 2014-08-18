@@ -23,15 +23,6 @@ trait Storage extends AutoCloseable with Reader with Writer {
   protected def connection: java.sql.Connection
 
   /**
-   * Returns [[java.sql.PreparedStatement]] for given key to work with. If no statement for the given key
-   * was found, null will be returned.
-   *
-   * @param key A key to return statement for.
-   * @return [[java.sql.PreparedStatement]] instance or null.
-   */
-  protected def statement(key: String): java.sql.PreparedStatement
-
-  /**
    * Sets given schema as default for all storage operations.
    *
    * @param name A name of schema to set.
