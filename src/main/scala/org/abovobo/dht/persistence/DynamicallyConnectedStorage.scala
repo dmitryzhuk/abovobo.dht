@@ -52,6 +52,7 @@ abstract class DynamicallyConnectedStorage(val ds: DataSource) extends Storage {
           statement.execute("set schema " + name)
         }
       }
+      connection.setAutoCommit(false)
       connection
     })
   }

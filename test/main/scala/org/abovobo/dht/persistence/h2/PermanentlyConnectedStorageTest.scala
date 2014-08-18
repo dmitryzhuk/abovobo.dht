@@ -11,11 +11,9 @@
 package org.abovobo.dht.persistence.h2
 
 import java.net.{InetAddress, InetSocketAddress}
-import java.sql.SQLException
 
-import org.abovobo.dht.NodeInfo
+import org.abovobo.dht.{Bucket, NodeInfo}
 import org.abovobo.dht.message.Message
-import org.abovobo.dht.persistence
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
@@ -29,10 +27,10 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
   val ds = DataSource("jdbc:h2:~/db/dht-test-pcs")
 
   // get instance of connection to be used within a storage
-  val connection = ds.connection
+  val connection = this.ds.connection
 
   // initialize actual Storage instance
-  val storage = new PermanentlyConnectedStorage(connection)
+  val storage = new PermanentlyConnectedStorage(this.connection)
 
   /** @inheritdoc */
   override def beforeAll() = {
@@ -42,6 +40,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
       using(c.createStatement()) { s =>
         s.execute("drop all objects")
         s.execute("create schema ipv4")
+        c.commit()
       }
     }
 
@@ -57,6 +56,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
   /** @inheritdoc */
   override def afterAll() = {
+    this.connection.commit()
     this.storage.close()
     this.connection.close()
     this.ds.close()
@@ -75,121 +75,92 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
       }
     }
 
-    /*
-    "node is being inserted in empty storage" must {
-      "fail with SQLException" in {
-        val node = new NodeInfo(Integer160.random, new InetSocketAddress(0))
-        intercept[SQLException] {
-          this.writer.insert(node, Message.Kind.Query)
-        }
-      }
-    }
-
-    "bucket inserted in empty storage" must {
-      "have bucket collection size of 1" in {
-        this.writer.insert(Integer160.zero)
-        this.reader.buckets() should have size 1
-      }
-      "have first bucket id equal to inserted bucket" in {
-        this.reader.buckets().head.start should be(Integer160.zero)
-      }
-      "and 100 ms sleep must provide last seen time stamp must be older than 99 ms for that bucket" in {
-        Thread.sleep(100)
-        (System.currentTimeMillis() - this.reader.buckets().head.seen.getTime).toInt should be > 99
-      }
-    }
-
     "bucket touched" must {
       "have last seen time stamp not older than 10 millseconds" in {
-        this.writer.touch(Integer160.zero)
-        (System.currentTimeMillis() - this.reader.buckets().head.seen.getTime).toInt should be < 10
+        this.storage.touch(Integer160.zero)
+        (System.currentTimeMillis() - this.storage.buckets().head.seen.getTime).toInt should be < 10
       }
     }
 
     "another bucket inserted" must {
       "have bucket collection size of 2" in {
-        this.writer.insert(Integer160.zero + 1)
-        this.reader.buckets() should have size 2
+        this.storage.insert(Integer160.zero + 2)
+        this.storage.buckets() should have size 2
+      }
+      "have second bucket id equal to inserted bucket" in {
+        this.storage.buckets().head.end should be(Integer160.zero + 1)
+        this.storage.buckets().last.start should be(Integer160.zero + 2)
+      }
+      "and 100 ms sleep must provide last seen time stamp must be older than 99 ms for that bucket" in {
+        Thread.sleep(100)
+        (System.currentTimeMillis() - this.storage.buckets().last.seen.getTime).toInt should be > 99
       }
     }
 
-    "node inserted into a bucket" must {
+    "node inserted into a storage" must {
       "have node collection size of 1" in {
-        this.writer.insert(
+        this.storage.insert(
           new NodeInfo(Integer160.maxval, new InetSocketAddress(0)),
           Message.Kind.Query)
-        this.reader.nodes() should have size 1
+        this.storage.nodes() should have size 1
       }
       "have size of the bucket equal to 1" in {
-        // TODO this.reader.bucket(Integer160.zero) should have size 1
+        val bucket = this.storage.bucket(Integer160.maxval)
+        bucket.start should be (Integer160.zero + 2)
+        this.storage.nodes(bucket) should have size 1
       }
       "provide node instance by its id" in {
-        this.reader.node(Integer160.maxval) should be('defined)
-      }
-    }
-
-    "node moved to another bucket" must {
-      "have size of the first bucket equal to 0 and size of the second bucket equal to 1" in {
-        val node = this.reader.node(Integer160.maxval)
-        val buckets = this.reader.buckets().toIndexedSeq
-        assume(node.isDefined)
-        assume(buckets.size == 2)
-        // ==this.writer.move(node.get, Integer160.zero + 1)
-        // TODO this.reader.bucket(buckets(0).start) should have size 0
-        // TODO this.reader.bucket(buckets(1).start) should have size 1
+        this.storage.node(Integer160.maxval) should be('defined)
       }
     }
 
     "node updated" must {
       "update replied timestamp with Reply message kind" in {
-        Thread.sleep(10)
-        val original = this.reader.node(Integer160.maxval)
+        val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.writer.update(node, original.get, Message.Kind.Response)
-        val updated = this.reader.node(Integer160.maxval)
+        this.storage.update(node, original.get, Message.Kind.Response)
+        val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
         (updated.get.replied.get.getTime - System.currentTimeMillis()).toInt should be < 5
       }
       "update replied timestamp with Error message kind" in {
-        Thread.sleep(10)
-        val original = this.reader.node(Integer160.maxval)
+        val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.writer.update(node, original.get, Message.Kind.Error)
-        val updated = this.reader.node(Integer160.maxval)
+        this.storage.update(node, original.get, Message.Kind.Error)
+        val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
         (updated.get.replied.get.getTime - System.currentTimeMillis()).toInt should be < 5
       }
       "update queried timestamp with Query message kind" in {
-        Thread.sleep(10)
-        val original = this.reader.node(Integer160.maxval)
+        val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.writer.update(node, original.get, Message.Kind.Query)
-        val updated = this.reader.node(Integer160.maxval)
+        this.storage.update(node, original.get, Message.Kind.Query)
+        val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
         (updated.get.queried.get.getTime - System.currentTimeMillis()).toInt should be < 5
       }
       "increment failcount with Fail message kind" in {
-        val original = this.reader.node(Integer160.maxval)
+        val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.writer.update(node, original.get, Message.Kind.Fail)
-        val updated = this.reader.node(Integer160.maxval)
+        this.storage.update(node, original.get, Message.Kind.Fail)
+        val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         (updated.get.failcount - original.get.failcount) should be(1)
       }
       "update address" in {
         val ip = new InetSocketAddress(InetAddress.getByAddress(Array[Byte](1, 0, 0, 0)), 1)
         val node = new NodeInfo(Integer160.maxval, ip)
-        val original = this.reader.node(Integer160.maxval)
+        val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
-        this.writer.update(node, original.get, Message.Kind.Error)
-        val updated = this.reader.node(Integer160.maxval)
+        this.storage.update(node, original.get, Message.Kind.Error)
+        val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         updated.get.address should equal (ip)
       }
@@ -198,26 +169,40 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
     "node deleted" must {
       "have empty node collection" in {
-        this.writer.delete(Integer160.maxval)
-        this.reader.nodes() should have size 0
+        this.storage.delete(Integer160.maxval)
+        this.storage.nodes() should have size 0
       }
       "do not provide node instance by its id" in {
-        this.reader.node(Integer160.maxval) should be('empty)
+        this.storage.node(Integer160.maxval) should be('empty)
       }
       "have empty bucket" in {
-        // TODO this.reader.bucket(Integer160.zero) should have size 0
+        this.storage.nodes(new Bucket(Integer160.zero + 2, Integer160.maxval, new java.util.Date())) should have size 0
+      }
+    }
+
+    "data is dropped" must {
+      "have bucket collection containing only zeroth bucket and no nodes" in {
+        this.storage.insert(
+          new NodeInfo(Integer160.maxval, new InetSocketAddress(0)),
+          Message.Kind.Query)
+        this.storage.nodes() should have size 1
+        this.storage.drop()
+        this.storage.nodes() should have size 0
+        val buckets = this.storage.buckets()
+        buckets should have size 1
+        buckets.head.start should be(Integer160.zero)
+        buckets.head.end should be(Integer160.maxval)
       }
     }
 
     "when id is changed" must {
       "provide new id" in {
-        this.writer.id(Integer160.maxval - 1)
-        val id = this.reader.id()
+        this.storage.id(Integer160.maxval - 1)
+        val id = this.storage.id()
         id should be ('defined)
         id.get should be(Integer160.maxval - 1)
       }
     }
-    */
   }
 
 }

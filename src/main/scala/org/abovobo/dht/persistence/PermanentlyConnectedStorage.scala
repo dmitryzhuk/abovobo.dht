@@ -22,6 +22,9 @@ import org.abovobo.jdbc.Transaction
  */
 abstract class PermanentlyConnectedStorage(override protected val connection: Connection) extends Storage {
 
+  // Turn OFF auto commit, expect that all write operations are done within transaction block
+  this.connection.setAutoCommit(false)
+
   /** @inheritdoc */
   override def close() = {
     this.statements.foreach(_._2.close())

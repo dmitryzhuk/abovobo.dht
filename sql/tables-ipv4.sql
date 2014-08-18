@@ -19,14 +19,6 @@ create table node(
     -- node id (Integer160)
     id binary(40) primary key,
 
-    -- bucket id owning this node (Integer160)
-    -- note that `bucket` value must always be less than `id`
-    -- db does not force check constraint as it must be managed by code
-    bucket binary(40) not null,
-
-    -- specifies that `bucket` references actual record in corresponding table
-    foreign key(bucket) references bucket(id) on delete cascade on update restrict,
-
     -- address of node and port for UDP communications compacted into a byte array
     address binary(6) not null,
 

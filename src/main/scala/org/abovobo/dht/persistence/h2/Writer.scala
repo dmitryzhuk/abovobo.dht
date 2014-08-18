@@ -21,7 +21,7 @@ object Writer {
   val Q_DELETE_NODE_STMT = "delete from node where id=?"
   val Q_INSERT_BUCKET_STMT = "insert into bucket(id, seen) values(?, now())"
   val Q_TOUCH_BUCKET_STMT = "update bucket set seen=now() where id=?"
-  val Q_DROP_ALL_BUCKETS_STMT = "delete from bucket"
+  val Q_DROP_ALL_BUCKETS_STMT = "delete from bucket where id<>X'0000000000000000000000000000000000000000';delete from node"
   val Q_ANNOUNCE_PEER_STMT = "merge into peer(infohash, address, announced) values(?, ?, now())"
   val Q_CLEANUP_PEERS_STMT = "delete from peer where dateadd('SECOND', ?, announced) < now()"
 }
