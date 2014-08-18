@@ -10,13 +10,11 @@
 
 package org.abovobo.dht.persistence.h2
 
-import java.sql.Connection
-
-import org.abovobo.jdbc.Closer._
 import org.h2.jdbcx.JdbcConnectionPool
 import org.h2.tools.RunScript
 
 import org.abovobo.dht.persistence
+import org.abovobo.jdbc.Closer._
 
 object DataSource {
 
@@ -81,6 +79,11 @@ class DataSource(val ds: JdbcConnectionPool) extends persistence.DataSource {
 
   /** Returns new connection from given [[javax.sql.DataSource]] */
   override def connection = this.ds.getConnection
+
+  /** Executes given script using H2 [[org.h2.tools.RunScript]] utility */
+  override def execute(script: java.io.Reader): Unit = using(connection) { c =>
+    RunScript.execute(c, script)
+  }
 
   /** Calls [[org.h2.jdbcx.JdbcConnectionPool#dispose]] */
   override def close() = this.ds.dispose()
