@@ -12,8 +12,8 @@ package org.abovobo.dht.persistence.h2
 
 import java.net.{InetAddress, InetSocketAddress}
 
-import org.abovobo.dht.{Bucket, NodeInfo}
 import org.abovobo.dht.message.Message
+import org.abovobo.dht.{Bucket, NodeInfo}
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
@@ -21,16 +21,13 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpec}
 /**
  * Unit test for H2 PermanentlyConnectedStorage implementation
  */
-class PermanentlyConnectedStorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
+class DynamicallyConnectedStorageTest extends WordSpec with Matchers with BeforeAndAfterAll {
 
   // initialize DataSource instance
-  val ds = DataSource("jdbc:h2:~/db/storage-test-pcs")
-
-  // get instance of connection to be used within a storage
-  val connection = this.ds.connection
+  val ds = DataSource("jdbc:h2:~/db/storage-test-dcs")
 
   // initialize actual Storage instance
-  val storage = new PermanentlyConnectedStorage(this.connection)
+  val storage = new DynamicallyConnectedStorage(this.ds)
 
   /** @inheritdoc */
   override def beforeAll() = {
@@ -56,9 +53,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
   /** @inheritdoc */
   override def afterAll() = {
-    this.connection.commit()
     this.storage.close()
-    this.connection.close()
     this.ds.close()
   }
 
@@ -77,14 +72,14 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
     "bucket touched" must {
       "have last seen time stamp not older than 10 millseconds" in {
-        this.storage.touch(Integer160.zero)
+        this.storage.transaction(this.storage.touch(Integer160.zero))
         (System.currentTimeMillis() - this.storage.buckets().head.seen.getTime).toInt should be < 10
       }
     }
 
     "another bucket inserted" must {
       "have bucket collection size of 2" in {
-        this.storage.insert(Integer160.zero + 2)
+        this.storage.transaction(this.storage.insert(Integer160.zero + 2))
         this.storage.buckets() should have size 2
       }
       "have second bucket id equal to inserted bucket" in {
@@ -99,9 +94,9 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
     "node inserted into a storage" must {
       "have node collection size of 1" in {
-        this.storage.insert(
+        this.storage.transaction(this.storage.insert(
           new NodeInfo(Integer160.maxval, new InetSocketAddress(0)),
-          Message.Kind.Query)
+          Message.Kind.Query))
         this.storage.nodes() should have size 1
       }
       "have size of the bucket equal to 1" in {
@@ -119,7 +114,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
         val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.storage.update(node, original.get, Message.Kind.Response)
+        this.storage.transaction(this.storage.update(node, original.get, Message.Kind.Response))
         val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
@@ -129,7 +124,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
         val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.storage.update(node, original.get, Message.Kind.Error)
+        this.storage.transaction(this.storage.update(node, original.get, Message.Kind.Error))
         val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
@@ -139,7 +134,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
         val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.storage.update(node, original.get, Message.Kind.Query)
+        this.storage.transaction(this.storage.update(node, original.get, Message.Kind.Query))
         val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         assume(updated.get.replied.isDefined)
@@ -149,7 +144,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
         val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
         val node = new NodeInfo(original.get.id, original.get.address)
-        this.storage.update(node, original.get, Message.Kind.Fail)
+        this.storage.transaction(this.storage.update(node, original.get, Message.Kind.Fail))
         val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         (updated.get.failcount - original.get.failcount) should be(1)
@@ -159,7 +154,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
         val node = new NodeInfo(Integer160.maxval, ip)
         val original = this.storage.node(Integer160.maxval)
         assume(original.isDefined)
-        this.storage.update(node, original.get, Message.Kind.Error)
+        this.storage.transaction(this.storage.update(node, original.get, Message.Kind.Error))
         val updated = this.storage.node(Integer160.maxval)
         assume(updated.isDefined)
         updated.get.address should equal (ip)
@@ -169,7 +164,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
     "node deleted" must {
       "have empty node collection" in {
-        this.storage.delete(Integer160.maxval)
+        this.storage.transaction(this.storage.delete(Integer160.maxval))
         this.storage.nodes() should have size 0
       }
       "do not provide node instance by its id" in {
@@ -182,11 +177,11 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
     "data is dropped" must {
       "have bucket collection containing only zeroth bucket and no nodes" in {
-        this.storage.insert(
+        this.storage.transaction(this.storage.insert(
           new NodeInfo(Integer160.maxval, new InetSocketAddress(0)),
-          Message.Kind.Query)
+          Message.Kind.Query))
         this.storage.nodes() should have size 1
-        this.storage.drop()
+        this.storage.transaction(this.storage.drop())
         this.storage.nodes() should have size 0
         val buckets = this.storage.buckets()
         buckets should have size 1
@@ -197,7 +192,7 @@ class PermanentlyConnectedStorageTest extends WordSpec with Matchers with Before
 
     "when id is changed" must {
       "provide new id" in {
-        this.storage.id(Integer160.maxval - 1)
+        this.storage.transaction(this.storage.id(Integer160.maxval - 1))
         val id = this.storage.id()
         id should be ('defined)
         id.get should be(Integer160.maxval - 1)

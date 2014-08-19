@@ -65,8 +65,10 @@ class PermanentlyConnectedStorage(connection: Connection) extends persistence.Pe
   //////////////////
 
   /** @inheritdoc */
-  override def id(id: Integer160) =
-    this.id(this.statement(persistence.Writer.Q_DROP_SELF_ID_NAME), this.statement(persistence.Writer.Q_SET_SELF_ID_NAME), id)
+  override def id(id: Integer160) = this.id(
+    this.statement(persistence.Writer.Q_DROP_SELF_ID_NAME),
+    this.statement(persistence.Writer.Q_SET_SELF_ID_NAME),
+    id)
 
   /** @inheritdoc */
   override def insert(node: NodeInfo, kind: Kind) =

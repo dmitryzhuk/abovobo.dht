@@ -31,3 +31,4 @@ create table bucket(
 -- Insert initial zero bucket
 -- ==========================
 insert into bucket(id, seen) values (X'0000000000000000000000000000000000000000', now());
+commit;
