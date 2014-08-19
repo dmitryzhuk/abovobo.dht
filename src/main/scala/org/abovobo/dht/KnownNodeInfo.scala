@@ -26,7 +26,6 @@ import scala.concurrent.duration._
  *
  * @param id        SHA-1 identifier of the node.
  * @param address   NodeInfo network address.
- * @param bucket    SHA-1 identifier of the lower bound of the bucket this node belongs to.
  * @param replied   A time when this node last replied to our query.
  * @param queried   A time when this node last sent us a query.
  * @param failcount A number of times in a row this node failed to respond to our query.
@@ -35,10 +34,10 @@ import scala.concurrent.duration._
  * @author Dmitry Zhuk
  */
 class KnownNodeInfo(id: Integer160,
-                address: InetSocketAddress,
-                val replied: Option[Date],
-                val queried: Option[Date],
-                val failcount: Int) extends NodeInfo(id, address) {
+                    address: InetSocketAddress,
+                    val replied: Option[Date],
+                    val queried: Option[Date],
+                    val failcount: Int) extends NodeInfo(id, address) {
 
   /// Ensure that we are dealing with "real" node
   require(id != Integer160.zero)
@@ -50,7 +49,7 @@ class KnownNodeInfo(id: Integer160,
    * @param threshold Number of fails to reply before node becomes bad.
    * @return  true if this node is considered to be good.
    */
-  def good(implicit timeout: Duration, threshold: Int): Boolean = !this.bad && !this.questionnable
+  def good(implicit timeout: Duration, threshold: Int): Boolean = !this.bad && !this.questionable
 
   /**
    * Returns true if this node is definitely bad
@@ -68,7 +67,7 @@ class KnownNodeInfo(id: Integer160,
    * @param threshold Number of fails to reply before node becomes bad.
    * @return  true if this node is considered to be good.
    */
-  def questionnable(implicit timeout: Duration, threshold: Int): Boolean =
+  def questionable(implicit timeout: Duration, threshold: Int): Boolean =
     threshold > this.failcount && this.replied.isDefined && !this.recentlySeen
 
   /**
