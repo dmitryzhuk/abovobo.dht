@@ -46,8 +46,7 @@ class Node(val ds: DataSource,
   /// Reference to Table actor
   val table = system.actorOf(
     Table.props(
-      this.storages(2).asInstanceOf[Reader],
-      this.storages(3).asInstanceOf[Writer]),
+      this.storages(2).asInstanceOf[Storage]),
     "table" + this.id)
 
   /// Reference to Controller actor

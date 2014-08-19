@@ -49,10 +49,6 @@ class PermanentlyConnectedStorage(connection: Connection) extends persistence.Pe
     this.nodes(this.statement(persistence.Reader.Q_NODES_BY_BUCKET_NAME), bucket)
 
   /** @inheritdoc */
-  override def bucket(id: Integer160): Bucket =
-    this.bucket(this.statement(persistence.Reader.Q_BUCKET_BY_ID_NAME), id)
-
-  /** @inheritdoc */
   override def buckets() =
     this.buckets(this.statement(persistence.Reader.Q_ALL_BUCKETS_NAME))
 
@@ -128,7 +124,6 @@ class PermanentlyConnectedStorage(connection: Connection) extends persistence.Pe
       persistence.Reader.Q_NODE_BY_ID_NAME -> this.connection.prepareStatement(Reader.Q_NODE_BY_ID_STMT),
       persistence.Reader.Q_ALL_NODES_NAME -> this.connection.prepareStatement(Reader.Q_ALL_NODES_STMT),
       persistence.Reader.Q_NODES_BY_BUCKET_NAME -> this.connection.prepareStatement(Reader.Q_NODES_BY_BUCKET_STMT),
-      persistence.Reader.Q_BUCKET_BY_ID_NAME -> this.connection.prepareStatement(Reader.Q_BUCKET_BY_ID_STMT),
       persistence.Reader.Q_ALL_BUCKETS_NAME -> this.connection.prepareStatement(Reader.Q_ALL_BUCKETS_STMT),
       persistence.Reader.Q_ALL_PEERS_NAME -> this.connection.prepareStatement(Reader.Q_ALL_PEERS_STMT),
       /// WRITER QUERIES

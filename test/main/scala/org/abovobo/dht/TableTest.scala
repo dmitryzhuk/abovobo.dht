@@ -15,8 +15,9 @@ import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.Message
-import org.abovobo.dht.persistence.{Reader, Writer}
-import org.abovobo.dht.persistence.h2.DataSource
+import org.abovobo.dht.persistence.Reader
+import org.abovobo.dht.persistence.h2.{DynamicallyConnectedStorage, DataSource}
+import org.abovobo.jdbc.Closer._
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 import org.abovobo.integer.Integer160
 import java.net.InetSocketAddress
@@ -35,9 +36,9 @@ class TableTest(system: ActorSystem)
 
   def this() = this(ActorSystem("RoutingTableTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
-  private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  private val reader: Reader = null //new Reader(this.ds.connection)
-  private val writer: Writer = null //new Writer(this.ds.connection)
+  private val ds = DataSource("jdbc:h2:~/db/table-test")
+  private val storage = new DynamicallyConnectedStorage(this.ds)
+  private val reader: Reader = this.storage
 
   val controllerInbox = Inbox.create(system)
 
@@ -46,18 +47,36 @@ class TableTest(system: ActorSystem)
       timeout = 60.seconds,
       delay = 30.seconds,
       threshold = 3,
-      reader = this.reader,
-      writer = this.writer),
+      storage = this.storage),
     "table")
   lazy val node = new NodeInfo(Integer160.random, new InetSocketAddress(0))
 
   override def beforeAll() = {
+
+    // drop everything in the beginning and create working schema
+    using(this.ds.connection) { c =>
+      using(c.createStatement()) { s =>
+        s.execute("drop all objects")
+        s.execute("create schema ipv4")
+        c.commit()
+      }
+    }
+
+    // set working schema for the storage
+    this.storage.setSchema("ipv4")
+
+    // create common tables
+    this.storage.execute("/tables-common.sql")
+
+    // create tables specific to IPv4 protocol which will be used in test
+    this.storage.execute("/tables-ipv4.sql")
+
+    // notify table that controller is ready
     table.tell(Controller.Ready, controllerInbox.getRef())
   }
 
   override def afterAll() = {
-    //this.reader.close()
-    //this.writer.close()
+    this.storage.close()
     this.ds.close()
     TestKit.shutdownActorSystem(this.system)
   }
@@ -70,7 +89,7 @@ class TableTest(system: ActorSystem)
         expectMsg(Table.Id(Integer160.zero))
         this.reader.id() should be('defined)
         this.reader.id().get should be(Integer160.zero)
-        this.reader.buckets() should have size 0
+        this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
       }
     }
@@ -81,7 +100,7 @@ class TableTest(system: ActorSystem)
         expectMsgClass(classOf[Table.Id])
         this.reader.id() should be('defined)
         this.reader.id().get should not be Integer160.zero
-        this.reader.buckets() should have size 0
+        this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
       }
     }
@@ -92,7 +111,7 @@ class TableTest(system: ActorSystem)
         expectMsg(Table.Id(Integer160.maxval - 1))
         this.reader.id() should be('defined)
         this.reader.id().get should be(Integer160.maxval - 1)
-        this.reader.buckets() should have size 0
+        this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
       }
     }
@@ -101,13 +120,13 @@ class TableTest(system: ActorSystem)
       "do nothing if network message kind was Error" in {
         this.table ! Table.Received(this.node, Message.Kind.Error)
         expectMsg(Table.Rejected)
-        this.reader.buckets() should have size 0
+        this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
       }
       "do nothing if network message kind was Fail" in {
         this.table ! Table.Received(this.node, Message.Kind.Fail)
         expectMsg(Table.Rejected)
-        this.reader.buckets() should have size 0
+        this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
       }
       "insert zero bucket and then insert received node" in {
@@ -117,7 +136,6 @@ class TableTest(system: ActorSystem)
         this.reader.buckets().head.start should be(Integer160.zero)
         this.reader.nodes() should have size 1
         val node = this.reader.nodes().head
-        // -- node.bucket.start should be(Integer160.zero)
         node.queried should be('defined)
         node.replied should not be 'defined
         node.failcount should be(0)
@@ -132,7 +150,6 @@ class TableTest(system: ActorSystem)
         this.reader.buckets().head.start should be(Integer160.zero)
         this.reader.nodes() should have size 1
         val node = this.reader.nodes().head
-        //node.bucket should be(Integer160.zero)
         node.queried should be('defined)
         node.replied should be('defined)
         node.failcount should be(0)
@@ -144,7 +161,6 @@ class TableTest(system: ActorSystem)
         this.reader.buckets().head.start should be(Integer160.zero)
         this.reader.nodes() should have size 1
         val node = this.reader.nodes().head
-        //node.bucket should be(Integer160.zero)
         node.queried should be('defined)
         node.replied should be('defined)
         node.failcount should be(1)
@@ -155,15 +171,15 @@ class TableTest(system: ActorSystem)
       "have like a whole lot of them in the end :)" in {
 
         // Delete previously added node from the table
-        this.writer.delete(this.node.id)
-        // -- this.writer.commit()
+        this.storage.transaction(this.storage.delete(this.node.id))
 
         // start with 1 as a node id and 0 as an initial bucket
         var start = Integer160.zero + 1
         var bucket = Integer160.zero
         var repeat = true
+        val last = new Integer160("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF7")
 
-        while (repeat) {
+        while (repeat && bucket < last) {
           // insert 8 nodes assuming they will be put into a current bucket
           for (i <- 0 to 7) {
             val node = new NodeInfo(start + i, new InetSocketAddress(0))
@@ -180,7 +196,11 @@ class TableTest(system: ActorSystem)
             case Table.Split(was, now) =>
               bucket = now
               start = bucket
-              expectMsg(Table.Rejected)
+              if (now == last) {
+                expectMsg(Table.Inserted(bucket))
+              } else {
+                expectMsg(Table.Rejected)
+              }
             case Table.Rejected =>
               repeat = false
             case _ =>
@@ -188,8 +208,8 @@ class TableTest(system: ActorSystem)
           }
         }
 
-        this.reader.buckets() should have size 157
-        this.reader.nodes() should have size 8 * 157
+        this.reader.buckets() should have size 158
+        this.reader.nodes() should have size 8 * 157 + 1
       }
     }
 

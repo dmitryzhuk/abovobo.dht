@@ -88,7 +88,7 @@ trait Reader {
    * @param id An id, which must be contained by bucket.
    * @return bucket which contains given id.
    */
-  def bucket(id: Integer160): Bucket
+  def bucket(id: Integer160): Bucket = this.buckets().find(id @: _).get
 
   /**
    * Returns traversable collection of all buckets.
@@ -181,28 +181,6 @@ trait Reader {
   }
 
   /**
-   * Sets statement parameters and executes query.
-   *
-   * Expected parameter mapping:
-   * 1 BINARY id
-   *
-   * @param statement A statement to execute.
-   * @param id An id, which must be contained by bucket.
-   * @return bucket which contains given id.
-   */
-  protected def bucket(statement: PreparedStatement, id: Integer160): Bucket = {
-    statement.setBytes(1, id.toArray)
-    using(statement.executeQuery()) { rs =>
-      val prev: (Integer160, Date) = {
-        rs.next()
-        new Integer160(rs.getBytes("id")) -> new Date(rs.getTimestamp("seen").getTime)
-      }
-      if (rs.next()) new Bucket(prev._1, new Integer160(rs.getBytes("id")) - 1, prev._2)
-      else new Bucket(prev._1, Integer160.maxval, prev._2)
-    }
-  }
-
-  /**
    * Executes given statement reading all rows into collection.
    *
    * @param statement A statement to execute.
@@ -269,7 +247,6 @@ object Reader {
   val Q_NODE_BY_ID_NAME = "NODE_BY_ID"
   val Q_ALL_NODES_NAME = "ALL_NODES"
   val Q_NODES_BY_BUCKET_NAME = "NODES_BY_BUCKET"
-  val Q_BUCKET_BY_ID_NAME = "BUCKET_BY_ID"
   val Q_ALL_BUCKETS_NAME = "ALL_BUCKETS"
   val Q_ALL_PEERS_NAME = "ALL_PEERS"
 }
