@@ -8,7 +8,7 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.controller
+package org.abovobo.dht.finder
 
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.NodeInfo
@@ -19,7 +19,7 @@ import org.abovobo.dht.NodeInfo
  *
  * @param requests A collection of requests owned by this round.
  */
-private[controller] class Round(val requests: Traversable[Request]) {
+private[finder] class Round(val requests: Traversable[Request]) {
 
   /**
    * Instantiates new Round using collection [[NodeInfo]] objects.
@@ -66,7 +66,7 @@ private[controller] class Round(val requests: Traversable[Request]) {
   }
 
   /**
-   * Returns [[Some]] [[Request]] to given [[NodeInfo]] or [[NodeInfo]] if not found.
+   * Returns [[Some]] [[Request]] to given [[NodeInfo]] or [[None]] if not found.
    *
    * @param node An instance of [[NodeInfo]] to get request for.
    * @return Request to given node or [[None]].

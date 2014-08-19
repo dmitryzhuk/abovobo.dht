@@ -8,7 +8,7 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.controller
+package org.abovobo.dht.finder
 
 import java.net.InetSocketAddress
 

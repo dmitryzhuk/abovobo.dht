@@ -8,15 +8,15 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.controller
+package org.abovobo.dht
 
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import org.abovobo.dht
-import org.abovobo.dht._
+import org.abovobo.dht.finder.Finder
 import org.abovobo.dht.message.{Message, Query, Response}
-import org.abovobo.dht.persistence.{Storage, Reader, Writer}
+import org.abovobo.dht.persistence.{Reader, Storage, Writer}
 import org.abovobo.integer.Integer160
 
 import scala.collection.mutable
@@ -25,51 +25,45 @@ import scala.concurrent.duration._
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
  *
- * @constructor     Creates new instance of controller with provided parameters.
+ * @constructor     Creates new instance of finder with provided parameters.
  *
  * @param K           System wide metric which is used to define size of the DHT table bucket.
  * @param alpha       Number of concurrent lookup threads in recursive FIND_NODE RPCs.
- * @param period      A period of rotating the token.
- * @param lifetime    A lifetime of the peer info.
  * @param routers     A collection of addresses which can be used as inital seeds when own routing table is empty.
- * @param storage     Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
+ * @param reader      Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
  * @param table       Reference to [[Table]] actor.
  *
  * @author Dmitry Zhuk
  */
-class Controller(val K: Int,
-                 val alpha: Int,
-                 val period: FiniteDuration,
-                 val lifetime: FiniteDuration,
-                 val routers: Traversable[InetSocketAddress],
-                 val storage: Storage,
-                 val table: ActorRef)
+class Requester(val K: Int,
+                val alpha: Int,
+                val routers: Traversable[InetSocketAddress],
+                val reader: Reader,
+                val table: ActorRef)
   extends Actor with ActorLogging {
 
   // XXX import this.context.dispatcher
 
-  private val reader: Reader = this.storage
-
   /** @inheritdoc */
   override def preStart() = {
-    this.log.debug("Controller#preStart")
+    this.log.debug("Requester#preStart")
     this.context.watch(this.table)
   }
 
   /** @inheritdoc */
   override def postStop() = {
-    this.log.debug("Controller#postStop")
+    this.log.debug("Requester#postStop")
     this.context.unwatch(this.table)
   }
 
   /**
    * Defines initial event loop which only handles [[Agent.Bound]] event and immediately
-   * switches to [[Controller.working()]] function.
+   * switches to [[Requester.working()]] function.
    */
   def waiting: Receive = {
     case Agent.Bound =>
       this.context.become(this.working(this.sender()))
-      this.table ! Controller.Ready
+      this.table ! Requester.Ready
   }
 
   /**
@@ -79,28 +73,25 @@ class Controller(val K: Int,
    */
   def working(agent: ActorRef): Receive = {
 
-    // To avoid "unhandled message" logging
-    case r: Table.Result =>
-
     // -- HANDLE COMMANDS
     // -- ---------------
-    case Controller.Ping(node: NodeInfo) =>
+    case Requester.Ping(node: NodeInfo) =>
       // Simply send Query.Ping to remote peer
-      val query = new Query.Ping(this.factory.next(), this.reader.id().get)
-      this.transactions.put(query.tid, new Controller.Transaction(query, node, this.sender()))
+      val query = new Query.Ping(this.factory.next(), this.id)
+      this.transactions.put(query.tid, new Requester.Transaction(query, node, this.sender()))
       agent ! Agent.Send(query, node.address)
 
-    case Controller.AnnouncePeer(node, token, infohash, port, implied) =>
+    case Requester.AnnouncePeer(node, token, infohash, port, implied) =>
       // Simply send Query.AnnouncePeer message to remote peer
       val query = new Query.AnnouncePeer(this.factory.next(), this.reader.id().get, infohash, port, token, implied)
-      this.transactions.put(query.tid, new Controller.Transaction(query, node, this.sender()))
+      this.transactions.put(query.tid, new Requester.Transaction(query, node, this.sender()))
       agent ! Agent.Send(query, node.address)
 
-    case Controller.FindNode(target: Integer160) => this.iterate(target, None, this.sender(), agent) { () =>
+    case Requester.FindNode(target: Integer160) => this.iterate(target, None, this.sender(), agent) { () =>
       new Query.FindNode(this.factory.next(), this.reader.id().get, target)
     }
 
-    case Controller.GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender(), agent) { () =>
+    case Requester.GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender(), agent) { () =>
       new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
     }
     // -- HANDLE EVENTS
@@ -141,13 +132,16 @@ class Controller(val K: Int,
           }
       }
 
+    // To avoid "unhandled message" logging
+    case r: Table.Result =>
+
     // just forward message to agent for now.
     // maybe its possible to reuse plugins query->response style traffic for DHT state update
-    // then, tid field and timeouts should be managed by this DHT Controller and Agent
+    // then, tid field and timeouts should be managed by this DHT Requester and Agent
     /// XXX To be removed
-    case Controller.SendPluginMessage(message, node) => agent ! Agent.Send(message, node.address)
-    case Controller.PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
-    case Controller.RemovePlugin(pid) =>  this.plugins.remove(pid.value)
+    case Requester.SendPluginMessage(message, node) => agent ! Agent.Send(message, node.address)
+    case Requester.PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
+    case Requester.RemovePlugin(pid) =>  this.plugins.remove(pid.value)
   }
 
   /** @inheritdoc */
@@ -174,7 +168,7 @@ class Controller(val K: Int,
    * @param transaction Transaction instance to handle fail for.
    * @param agent       A reference to [[Agent]] actor.
    */
-  private def fail(transaction: Controller.Transaction, agent: ActorRef) = {
+  private def fail(transaction: Requester.Transaction, agent: ActorRef) = {
     this.log.debug("Failing transaction {}", transaction.query)
     // don't notify table about routers activity
     if (transaction.remote.id != Integer160.zero) {
@@ -210,7 +204,7 @@ class Controller(val K: Int,
     })
     def round(n: Int) = f.take(n) foreach { node =>
       val query = q()
-      this.transactions.put(query.tid, new Controller.Transaction(query, node, sender))
+      this.transactions.put(query.tid, new Requester.Transaction(query, node, sender))
       agent ! Agent.Send(query, node.address)
     }
     this.log.debug("Finder state before #iterate: " + f.state)
@@ -219,11 +213,11 @@ class Controller(val K: Int,
       case Finder.State.Continue => round(this.alpha)
       case Finder.State.Finalize => round(this.K)
       case Finder.State.Succeeded =>
-        this.log.debug("Sending SUCCEEDED to {} after {} rounds", sender, f._completed.rounds.size)
-        sender ! Controller.Found(f.nodes, f.peers, f.tokens)
+        this.log.debug("Sending SUCCEEDED to {} after {} rounds", sender, f.completed.size)
+        sender ! Requester.Found(f.nodes, f.peers, f.tokens)
       case Finder.State.Failed =>
         this.log.debug("Sending FAILED to " + sender)
-        sender ! Controller.NotFound()
+        sender ! Requester.NotFound()
     }
     this.log.debug("Finder state after #iterate: " + f.state)
   }
@@ -235,7 +229,7 @@ class Controller(val K: Int,
    * @param transaction A transaction instance that response was received for.
    * @param agent       A reference to [[Agent]] actor.
    */
-  private def process(response: Response, transaction: Controller.Transaction, agent: ActorRef) = {
+  private def process(response: Response, transaction: Requester.Transaction, agent: ActorRef) = {
     if (response.id != transaction.remote.id) {
       this.log.warning("Response ID: {}, but requested not had ID: {}", response.id, transaction.remote.id)
     }
@@ -245,7 +239,7 @@ class Controller(val K: Int,
     response match {
 
       case ping: Response.Ping =>
-        transaction.requester ! Controller.Pinged()
+        transaction.requester ! Requester.Pinged()
 
       case fn: Response.FindNode =>
         val target = transaction.query.asInstanceOf[Query.FindNode].target
@@ -275,7 +269,7 @@ class Controller(val K: Int,
         }
 
       case ap: Response.AnnouncePeer =>
-        transaction.requester ! Controller.PeerAnnounced()
+        transaction.requester ! Requester.PeerAnnounced()
     }
   }
 
@@ -285,37 +279,33 @@ class Controller(val K: Int,
     case enough: Seq[NodeInfo] => enough
   }
 
+  /** Returns immediate value of node self id */
+  private def id = this.reader.id().get
+
   /// Instantiate transaction ID factory
   private val factory = TIDFactory.random
 
   /// Collection of pending transactions
-  private val transactions = new mutable.HashMap[TID, Controller.Transaction]
+  private val transactions = new mutable.HashMap[TID, Requester.Transaction]
 
   /// Collection of pending recursive procedures
   private val recursions = new mutable.HashMap[Integer160, Finder]
 
   /// Active plugins
-  /// XXX To be removed from Controller
+  /// XXX To be removed from Requester
   private val plugins = new mutable.HashMap[Long, ActorRef]
 }
 
 /** Accompanying object */
-object Controller {
+object Requester {
 
   /** Generates [[akka.actor.Props]] instance with supplied parameters */
-  def props(K: Int,
-            alpha: Int,
-            period: FiniteDuration,
-            lifetime: FiniteDuration,
-            routers: Traversable[InetSocketAddress],
-            reader: Reader,
-            writer: Writer,
-            table: ActorRef) =
-    Props(classOf[Controller], K, alpha, period, lifetime, routers, reader, writer, table)
+  def props(K: Int, alpha: Int, routers: Traversable[InetSocketAddress], reader: Reader, table: ActorRef) =
+    Props(classOf[Requester], K, alpha, routers, reader, table)
 
   /** Generates [[akka.actor.Props]] instance with most parameters set to their default values */
-  def props(routers: Traversable[InetSocketAddress], reader: Reader, writer: Writer, table: ActorRef): Props =
-    this.props(8, 3, 5.minutes, 30.minutes, routers, reader, writer, table)
+  def props(routers: Traversable[InetSocketAddress], reader: Reader, table: ActorRef): Props =
+    this.props(8, 3, routers, reader, table)
 
   /**
    * This class defines transaction data.
@@ -329,7 +319,7 @@ object Controller {
   /** Base trait for all events initiated by this actor */
   sealed trait Event
 
-  /* Indicates that Controller is initialized and ready to process requests */
+  /* Indicates that Requester is initialized and ready to process requests */
   case object Ready extends Event
 
   /** Indicates that node has been successfully pinged */
@@ -357,7 +347,7 @@ object Controller {
   sealed trait Command
 
   /**
-   * This command instructs controller to send `ping` message to the given address.
+   * This command instructs finder to send `ping` message to the given address.
    *
    * @param node A node to send `ping` message to.
    */
@@ -382,8 +372,8 @@ object Controller {
   case class GetPeers(infohash: Integer160) extends Command
 
   /**
-   * This command instructs [[controller.Controller]] to send [[controller.Controller.AnnouncePeer]]
-   * message to given address. Normally, this command is issued after [[controller.Controller.GetPeers]]
+   * This command instructs [[dht.Requester]] to send [[dht.Requester.AnnouncePeer]]
+   * message to given address. Normally, this command is issued after [[dht.Requester.GetPeers]]
    * command completed and produced a collection of nodes which can be used to announce itself as peer to them.
    *
    * @param node      A node to send message to.

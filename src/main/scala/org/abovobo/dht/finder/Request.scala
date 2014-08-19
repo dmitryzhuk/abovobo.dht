@@ -8,7 +8,7 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.controller
+package org.abovobo.dht.finder
 
 import org.abovobo.dht.NodeInfo
 
@@ -18,12 +18,12 @@ import org.abovobo.dht.NodeInfo
  * @param node   A node which is being requested
  * @param result A result of request
  */
-private[controller] class Request(val node: NodeInfo, var result: Request.Result = Request.Unknown())
+private[finder] class Request(val node: NodeInfo, var result: Request.Result = Request.Unknown())
 
 /**
  * Accompanying object holding request result enumeration definition
  */
-private[controller] object Request {
+private[finder] object Request {
 
   /** Basic trait for all possible result cases */
   sealed trait Result

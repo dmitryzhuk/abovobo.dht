@@ -14,8 +14,6 @@ import scala.concurrent.duration._
 import scala.collection.mutable
 
 import akka.actor.{ActorLogging, Cancellable, Props, Actor, ActorRef}
-
-import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.Message
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.persistence.Storage
@@ -124,12 +122,12 @@ class Table(val K: Int,
   }
 
   /**
-   * Defines initial event handler, which only handles [[Controller.Ready]] event.
+   * Defines initial event handler, which only handles [[Requester.Ready]] event.
    * As soon, as this event has occurred, Table switches event loop to [[Table.working()]]
    * function and initiates recursive lookup procedures as required by DHT specification.
    */
   def waiting: Receive = {
-    case Controller.Ready =>
+    case Requester.Ready =>
       // switch event loop to the one which is able to actually handle events
       this.context.become(this.working(this.sender()))
       // check if the table already has assigned ID and reset if not
@@ -157,7 +155,7 @@ class Table(val K: Int,
   /**
    * Defines general event handler.
    *
-   * @param controller A reference to [[Controller]] actor.
+   * @param controller A reference to [[Requester]] actor.
    */
   def working(controller: ActorRef): Receive = {
     case Table.Refresh(bucket)      =>          this.refresh(bucket, controller)
@@ -179,11 +177,11 @@ class Table(val K: Int,
    * message to network agent actor.
    *
    * @param bucket The bucket to refresh
-   * @param controller  Reference to [[Controller]] actor.
+   * @param controller  Reference to [[Requester]] actor.
    */
   private def refresh(bucket: Bucket, controller: ActorRef): Unit = {
-    // request refreshing `find_node` by means of `Controller`
-    controller ! Controller.FindNode(bucket.random)
+    // request refreshing `find_node` by means of `Requester`
+    controller ! Requester.FindNode(bucket.random)
     // cancel existing bucket task if exists
     this.cancellables.remove(bucket.start) foreach { _.cancel() }
     // schedule new refresh bucket task
@@ -198,7 +196,7 @@ class Table(val K: Int,
   /**
    * Generates new SHA-1 node id, drops all data and saves new id.
    *
-   * @param controller  Reference to [[Controller]] actor.
+   * @param controller  Reference to [[Requester]] actor.
    */
   private def reset(controller: ActorRef): Table.Result = this.set(Integer160.random, controller)
 
@@ -206,14 +204,14 @@ class Table(val K: Int,
    * Drops all data and saves new id in the storage.
    *
    * @param id New SHA-1 node identifier.
-   * @param controller  Reference to [[Controller]] actor.
+   * @param controller  Reference to [[Requester]] actor.
    */
   private def set(id: Integer160, controller: ActorRef): Table.Result = this.storage.transaction {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
     this.storage.drop()
     this.storage.id(id)
-    controller ! Controller.FindNode(id)
+    controller ! Requester.FindNode(id)
     Table.Id(id)
   }
 
@@ -237,7 +235,7 @@ class Table(val K: Int,
    *
    * @param node        A node to process network message from.
    * @param kind        A kind of network message received from the node.
-   * @param controller  Reference to [[Controller]] actor.
+   * @param controller  Reference to [[Requester]] actor.
    */
   private def process(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Table.Result = {
 
@@ -279,7 +277,7 @@ class Table(val K: Int,
    * @param node        An instance of [[org.abovobo.dht.NodeInfo]] to insert
    * @param bucket      An instance of bucket which is good for the given node
    * @param kind        A kind network message received from node.
-   * @param controller  Reference to [[Controller]] actor.
+   * @param controller  Reference to [[Requester]] actor.
    * @return            Result of operation, as listed in [[org.abovobo.dht.Table.Result]]
    *                    excluding `Updated` value.
    */
@@ -340,7 +338,7 @@ class Table(val K: Int,
           // get list of questionable nodes
           val questionable = nodes.filter(_.questionable)
           // request ping operation for every questionable node
-          questionable foreach { node => controller ! Controller.Ping(node) }
+          questionable foreach { node => controller ! Requester.Ping(node) }
           // send deferred message to itself
           system.scheduler.scheduleOnce(
             this.delay, self, Table.Received(node, kind))(this.context.dispatcher, this.sender())

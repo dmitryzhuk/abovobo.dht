@@ -13,7 +13,6 @@ package org.abovobo.dht
 import akka.actor.ActorSystem
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
-import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.message.Message
 import org.abovobo.dht.persistence.Reader
 import org.abovobo.dht.persistence.h2.{DynamicallyConnectedStorage, DataSource}
@@ -71,8 +70,8 @@ class TableTest(system: ActorSystem)
     // create tables specific to IPv4 protocol which will be used in test
     this.storage.execute("/tables-ipv4.sql")
 
-    // notify table that controller is ready
-    table.tell(Controller.Ready, controllerInbox.getRef())
+    // notify table that finder is ready
+    table.tell(Requester.Ready, controllerInbox.getRef())
   }
 
   override def afterAll() = {
@@ -214,10 +213,10 @@ class TableTest(system: ActorSystem)
     }
 
     "timeout expires" must {
-      "send Refresh events and cause FindNode received by Controller" in {
+      "send Refresh events and cause FindNode received by Requester" in {
         this.controllerInbox.receive(70.seconds) match {
-          case Controller.FindNode(target) => // for (i <- 0 until 156) this.controllerInbox.receive(1.second)
-          case _ => this.fail("Unexpected message to controller")
+          case Requester.FindNode(target) => // for (i <- 0 until 156) this.controllerInbox.receive(1.second)
+          case _ => this.fail("Unexpected message to finder")
         }
       }
     }

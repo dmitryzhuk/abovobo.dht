@@ -8,7 +8,7 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.controller
+package org.abovobo.dht.finder
 
 import java.net.{InetAddress, InetSocketAddress}
 
@@ -53,7 +53,7 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
 }
 
 /**
- * Unit test for [[Controller]]
+ * Unit test for [[Requester]]
  */
 class ControllerTest(system: ActorSystem)
   extends TestKit(system)
@@ -76,7 +76,7 @@ class ControllerTest(system: ActorSystem)
   val table = Inbox.create(this.system)
   val agent = Inbox.create(this.system)
 
-  val controller = this.system.actorOf(Controller.props(List(remote0), reader, writer, table.getRef()))
+  val controller = this.system.actorOf(Requester.props(List(remote0), reader, table.getRef()))
 
   implicit val timeout: akka.util.Timeout = 5.seconds
 
@@ -96,12 +96,12 @@ class ControllerTest(system: ActorSystem)
     TestKit.shutdownActorSystem(this.system)
   }
 
-  "Controller actor " when {
+  "Requester actor " when {
 
     "just created" must {
       "send Ready event to table" in {
         this.table.receive(10.seconds) match {
-          case Controller.Ready => //
+          case Requester.Ready => //
           case _ => this.fail("Invalid message type")
         }
       }
@@ -115,7 +115,7 @@ class ControllerTest(system: ActorSystem)
       val id = Integer160.random
 
       "instruct Agent to send Ping message to remote peer" in {
-        this.controller ! Controller.Ping(new NodeInfo(id, this.remote1))
+        this.controller ! Requester.Ping(new NodeInfo(id, this.remote1))
         this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
@@ -137,7 +137,7 @@ class ControllerTest(system: ActorSystem)
             kind should equal(Message.Kind.Response)
           case m: Any => this.fail("Invalid message type: " + m.getClass.getName)
         }
-        expectMsg(Controller.Pinged())
+        expectMsg(Requester.Pinged())
       }
     }
 
@@ -148,7 +148,7 @@ class ControllerTest(system: ActorSystem)
       val infohash = Integer160.random
 
       "instruct Agent to send AnnouncePeer message to remote peer" in {
-        this.controller ! Controller.AnnouncePeer(
+        this.controller ! Requester.AnnouncePeer(
           new NodeInfo(id, this.remote1), new dht.Token(2), infohash, 1, implied = true)
         this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
@@ -171,7 +171,7 @@ class ControllerTest(system: ActorSystem)
             kind should equal(Message.Kind.Response)
           case _ => this.fail("Invalid message type")
         }
-        expectMsg(Controller.PeerAnnounced())
+        expectMsg(Requester.PeerAnnounced())
       }
     }
 
@@ -200,10 +200,10 @@ class ControllerTest(system: ActorSystem)
       }
 
       "instruct Agent to send FindNode message to router(s)" in {
-        // issue a command to Controller
-        this.controller ! Controller.FindNode(target)
+        // issue a command to Requester
+        this.controller ! Requester.FindNode(target)
 
-        // receive the command that Controller has sent to network Agent
+        // receive the command that Requester has sent to network Agent
         val tid = this.agent.receive(10.second) match {
           case Agent.Send(message, remote) =>
             remote should equal(this.remote0)
@@ -220,7 +220,7 @@ class ControllerTest(system: ActorSystem)
 
         // -- at this point a finder corresponding to this recursion must have "Wait" state
 
-        // notify Controller that response message with closer nodes
+        // notify Requester that response message with closer nodes
         this.controller ! Agent.Received(new Response.FindNode(tid, zero, closer()), this.remote0)
 
         // -- at this point a finder corresponding to this recursion must have "Continue" state
@@ -307,13 +307,13 @@ class ControllerTest(system: ActorSystem)
           }
 
         // now complete all 8 new queries bringing no new nodes again which must cause
-        // Controller to complete the whole procedure and send back Found message.
+        // Requester to complete the whole procedure and send back Found message.
         q3.foreach { q =>
           this.controller ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
         expectMsgPF(20.seconds) {
-          case Controller.Found(nn, peers, tokens) =>
+          case Requester.Found(nn, peers, tokens) =>
             nn should not be empty
             peers shouldBe empty
             tokens shouldBe empty
@@ -349,10 +349,10 @@ class ControllerTest(system: ActorSystem)
       }
 
       "instruct Agent to send GetPeers message to router(s)" in {
-        // issue a command to Controller
-        this.controller ! Controller.GetPeers(target)
+        // issue a command to Requester
+        this.controller ! Requester.GetPeers(target)
 
-        // receive the command that Controller has sent to network Agent
+        // receive the command that Requester has sent to network Agent
         val tid = this.agent.receive(1.second) match {
           case Agent.Send(message, remote) =>
             remote should equal(this.remote0)
@@ -369,7 +369,7 @@ class ControllerTest(system: ActorSystem)
 
         // -- at this point a finder corresponding to this recursion must have "Wait" state
 
-        // notify Controller that response message with closer nodes
+        // notify Requester that response message with closer nodes
         this.controller ! Agent.Received(new Response.GetPeersWithNodes(tid, id, token, closer()), this.remote0)
 
         // -- at this point a finder corresponding to this recursion must have "Continue" state
@@ -461,14 +461,14 @@ class ControllerTest(system: ActorSystem)
           }
 
         // now complete all 8 new queries bringing no new nodes again which must cause
-        // Controller to complete the whole procedure and send back Found message.
+        // Requester to complete the whole procedure and send back Found message.
         q3.foreach { q =>
           this.controller ! Agent.Received(
             new Response.GetPeersWithValues(q.tid, id, token, Seq(new dht.Peer(1))), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
         expectMsgPF(20.seconds) {
-          case Controller.Found(nn, peers, tokens) =>
+          case Requester.Found(nn, peers, tokens) =>
             nn should not be empty
             peers should not be empty
             tokens should not be empty

@@ -40,9 +40,16 @@ class Responder(K: Int,
   import this.context.dispatcher
 
   /** @inheritdoc */
+  override def preStart() = {
+    this.log.debug("Responder#preStart")
+    this.context.watch(this.table)
+  }
+
+  /** @inheritdoc */
   override def postStop() = {
     this.log.debug("Responder#postStop")
     this.cancellables.foreach(_.cancel())
+    this.context.unwatch(this.table)
   }
 
   /** @inheritdoc */
@@ -57,8 +64,10 @@ class Responder(K: Int,
           // do nothing: ignore any other messages from agent
           this.log.warning("Responder only supports Query messages from Agent, received {}", message)
       }
-    case Responder.Cleanup =>this.cleanup()
-    case Responder.Rotate => this.rotate()
+    case Responder.Cleanup => this.cleanup()
+    case Responder.Rotate  => this.rotate()
+    // To avoid "unhandled message" logging
+    case r: Table.Result =>
     // To debug crashes
     case t: Throwable => throw t
   }

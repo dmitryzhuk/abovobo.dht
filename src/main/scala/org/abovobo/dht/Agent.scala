@@ -84,7 +84,7 @@ class Agent(val endpoint: InetSocketAddress,
       this.socket = Some(this.sender())
       // sign a death pact
       this.context.watch(this.sender())
-      // notify controller that Agent is ready to go
+      // notify finder that Agent is ready to go
       this.handler ! Agent.Bound
 
     case Udp.Unbound =>
@@ -175,7 +175,7 @@ object Agent {
    * @param endpoint  An adress/port to bind to to receive incoming packets
    * @param timeout   A period of time to wait for response from queried remote peer.
    * @param retry     Time interval between bind attempts.
-   * @param handler   Reference to [[org.abovobo.dht.controller.Controller]] actor.
+   * @param handler   Reference to [[Requester]] actor.
    * @return          Properly configured [[akka.actor.Props]] instance.
    */
   def props(endpoint: InetSocketAddress, timeout: FiniteDuration, retry: FiniteDuration, handler: ActorRef): Props =
@@ -185,7 +185,7 @@ object Agent {
    * Factory which creates [[Agent]] [[Props]] instance with default `timeout` and `retry` durations.
    *
    * @param endpoint  An adress/port to bind to to receive incoming packets
-   * @param handler   Reference to [[org.abovobo.dht.controller.Controller]] actor.
+   * @param handler   Reference to [[Requester]] actor.
    * @return          Properly configured [[akka.actor.Props]] instance.
    */
   def props(endpoint: InetSocketAddress, handler: ActorRef): Props =

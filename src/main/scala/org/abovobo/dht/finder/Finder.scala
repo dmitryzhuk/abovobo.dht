@@ -8,7 +8,7 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.controller
+package org.abovobo.dht.finder
 
 import org.abovobo.dht._
 import org.abovobo.integer.Integer160
@@ -68,7 +68,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
   private val _pending = new Rounds()
 
   /// Collection of completed request rounds
-  private[controller] val _completed = new Rounds()
+  private val _completed = new Rounds()
 
   /// Collection of nodes which reported successfully
   private val _succeeded = new mutable.TreeSet[NodeInfo]
@@ -236,12 +236,15 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
 
   /** Returns collection of all reported peers */
   def peers: collection.Traversable[Peer] = this._peers
+
+  /** Returns collection of completed rounds */
+  def completed = this._completed.rounds.toIndexedSeq
 }
 
 /** Accompanying object */
 object Finder {
 
-  /** Defines enumeration of possible [[controller.Finder]] states */
+  /** Defines enumeration of possible [[finder.Finder]] states */
   object State extends Enumeration {
 
     val Continue,   // The search recursion should continue:

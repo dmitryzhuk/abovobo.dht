@@ -15,11 +15,10 @@ import java.net.InetSocketAddress
 import scala.concurrent.duration._
 
 import akka.actor.{ActorSystem, Actor}
-import org.abovobo.dht.controller.Controller
 import org.abovobo.dht.persistence._
 
 /**
- * This class represents general wrapper over major components of DHT node: Table, Agent and Controller.
+ * This class represents general wrapper over major components of DHT node: Table, Agent and Requester.
  * Note, that enclosed actors only exist while Node actor exists.
  *
  * @param ds        An instance of [[DataSource]] class to be used by enclosed actors.
@@ -49,14 +48,13 @@ class Node(val ds: DataSource,
       this.storages(2).asInstanceOf[Storage]),
     "table" + this.id)
 
-  /// Reference to Controller actor
+  /// Reference to Requester actor
   val controller = system.actorOf(
-    Controller.props(
+    Requester.props(
       this.routers,
       this.storages(0).asInstanceOf[Reader],
-      this.storages(1).asInstanceOf[Writer],
       this.table),
-    "controller" + this.id)
+    "finder" + this.id)
 
   /// Reference to Agent actor
   val agent = system.actorOf(
@@ -100,7 +98,7 @@ object NodeApp extends App {
 /*
 import java.net.InetSocketAddress
 import akka.actor.actorRef2Scala
-import org.abovobo.dht.controller.Controller
+import org.abovobo.dht.Requester
 import org.abovobo.dht.persistence.PermanentlyConnectedStorage
 import org.abovobo.dht.persistence.h2.{Reader, Writer}
 import scala.concurrent.duration._
@@ -114,16 +112,16 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
   
   val dataSource = null //H2DataSource.open("~/db/dht-" + self.path.name, true)
   
-  val storageC: PermanentlyConnectedStorage = null //H2Storage(dataSource.getConnection) // controller
+  val storageC: PermanentlyConnectedStorage = null //H2Storage(dataSource.getConnection) // finder
   val storageT: PermanentlyConnectedStorage = null //H2Storage(dataSource.getConnection) // table
   val storageD: Reader = null //H2Storage(dataSource.getConnection) // node (self)
     
-  val controller = null //this.context.actorOf(Controller.props(routers, storageC, storageC, null, null), "controller")
-  val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, controller), "agent")
+  val finder = null //this.context.actorOf(Requester.props(routers, storageC, storageC, null, null), "finder")
+  val agent = this.context.actorOf(Agent.props(endpoint, 10.seconds, finder), "agent")
   
   Thread.sleep(300) // Agent needs time to bind a socket and become an agent
 
-  val table = null //this.context.actorOf(Table.props(storageT, storageT, controller), "table")
+  val table = null //this.context.actorOf(Table.props(storageT, storageT, finder), "table")
     
   override def postStop() {
     super.postStop()
@@ -139,10 +137,10 @@ class DhtNode(endpoint: InetSocketAddress, routers: List[InetSocketAddress]) ext
       if (storageD.id.isEmpty) {
         this.context.system.scheduler.scheduleOnce(250.milliseconds, self, DhtNode.Describe)(this.context.system.dispatcher, sender())
       } else {
-        sender ! DhtNode.NodeInfo(new NodeInfo(storageD.id.get, endpoint), controller, storageD.nodes)
+        sender ! DhtNode.NodeInfo(new NodeInfo(storageD.id.get, endpoint), finder, storageD.nodes)
       }
     }
-    case msg => //this.controller.forward(msg)
+    case msg => //this.finder.forward(msg)
   }
 }
 
@@ -150,7 +148,7 @@ object DhtNode {
   object Stop
   object Describe
   
-  case class NodeInfo(self: NodeInfo, controller: ActorRef, nodes: Traversable[NodeInfo])
+  case class NodeInfo(self: NodeInfo, finder: ActorRef, nodes: Traversable[NodeInfo])
   
   def props(endpoint: InetSocketAddress, routers: List[InetSocketAddress] = List()) = 
     Props(classOf[DhtNode], endpoint, routers)
