@@ -8,32 +8,61 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.controller
+package org.abovobo.dht
 
 import java.net.InetSocketAddress
 
-import org.abovobo.dht._
-import org.abovobo.dht.message.{Query, Response}
+import akka.actor.{ActorRef, Props, ActorLogging, Actor}
+import org.abovobo.dht.message.{Message, Query, Response}
 import org.abovobo.dht.persistence.Storage
 
 import scala.collection.mutable
+import scala.concurrent.duration._
 import scala.concurrent.duration.FiniteDuration
 
 /**
  * The responsibility of this class is to generate [[Response]] message
  * from particular incoming [[Query]] message.
  *
- * The instance of this class is an aggregated sub-part of [[Controller]] actor.
- *
  * @param K         Max number of entries to send back to querier.
  * @param period    A period of rotating the token.
  * @param lifetime  A lifetime of the peer info.
- * @param storage   Instance of [[org.abovobo.dht.persistence.Reader]] used to access persisted data.
+ * @param storage   Instance of [[org.abovobo.dht.persistence.Storage]] used to access persisted data.
+ * @param table     Reference to [[Table]] actor.
  */
 class Responder(K: Int,
                 period: FiniteDuration,
                 lifetime: FiniteDuration,
-                storage: Storage) {
+                storage: Storage,
+                table: ActorRef)
+  extends Actor with ActorLogging {
+
+  import this.context.dispatcher
+
+  /** @inheritdoc */
+  override def postStop() = {
+    this.log.debug("Responder#postStop")
+    this.cancellables.foreach(_.cancel())
+  }
+
+  /** @inheritdoc */
+  override def receive = {
+    case Agent.Received(message, remote) =>
+      message match {
+        case query: Query =>
+          val node = new NodeInfo(query.id, remote)
+          this.table ! Table.Received(node, Message.Kind.Query)
+          this.sender() ! this.respond(query, node)
+        case _ =>
+          // do nothing: ignore any other messages from agent
+          this.log.warning("Responder only supports Query messages from Agent, received {}", message)
+      }
+    case Responder.Cleanup =>this.cleanup()
+    case Responder.Rotate => this.rotate()
+    // To debug crashes
+    case t: Throwable => throw t
+  }
+
   /**
    * Creates an instance of [[Response]] message which is appropriate to
    * an incoming [[Query]] message and sends it to given remote peer.
@@ -42,10 +71,10 @@ class Responder(K: Int,
    * @param remote  An address of the remote peer to send response to.
    */
   def respond(query: Query, remote: NodeInfo): Agent.Send = query match {
-    case ping: Query.Ping => this.ping(ping, remote)
-    case fn: Query.FindNode => this.findNode(fn, remote)
-    case gp: Query.GetPeers => this.getPeers(gp, remote)
-    case ap: Query.AnnouncePeer => this.announcePeer(ap, remote.address)
+    case ping: Query.Ping         => this.ping(ping, remote)
+    case fn:   Query.FindNode     => this.findNode(fn, remote)
+    case gp:   Query.GetPeers     => this.getPeers(gp, remote)
+    case ap:   Query.AnnouncePeer => this.announcePeer(ap, remote.address)
   }
 
   /** Response to `ping` query */
@@ -117,14 +146,11 @@ class Responder(K: Int,
 
   }
 
-  /** Returns immediate value of node self id */
-  private def id = this.storage.id().get
-
   /**
    * This method is executed periodically to rotate tokens (generating a new one, preserving previous) and
    * cleanup `tokens` collection thus removing those token-peer association which has expired.
    */
-  def rotateTokens() = {
+  def rotate() = {
     // first rotate
     tp.rotate()
     // then cleanup
@@ -137,11 +163,57 @@ class Responder(K: Int,
   }
 
   /** This method is executed periodically to remote expired infohash-peer associations */
-  def cleanupPeers() = this.storage.cleanup(this.lifetime)
+  def cleanup() = this.storage.cleanup(this.lifetime)
+
+  /** Returns immediate value of node self id */
+  private def id = this.storage.id().get
 
   /// An instance of [[TokenProvider]]
   private val tp = new TokenProvider
 
   /// Collection of remote peers which received tokens
   private val tokens = new mutable.HashMap[InetSocketAddress, List[Token]]
+
+  /// Collection of scheduled tasks sending periodic internal commands to self
+  private val cancellables = List(
+    this.context.system.scheduler.schedule(Duration.Zero, this.period, self, Responder.Rotate),
+    this.context.system.scheduler.schedule(this.lifetime, this.lifetime, self, Responder.Cleanup))
+}
+
+/** Accompanying object */
+object Responder {
+
+  /** Base trait for all commands supported by this actor */
+  sealed trait Command
+
+  /** Instructs [[Responder]] to clean old peer info */
+  case object Cleanup extends Command
+
+  /** Instructs [[Responder]] to rotate tokens */
+  case object Rotate extends Command
+
+  /**
+   * Factory which creates RoutingTable Actor Props instance.
+   *
+   * @param K         Max number of entries per bucket.
+   * @param period    A period of rotating the token.
+   * @param lifetime  A lifetime of the peer info.
+   * @param storage   Instance of [[org.abovobo.dht.persistence.Storage]] used to access persisted data.
+   * @param table     Reference to [[Table]] actor.
+   *
+   * @return          Properly configured Actor Props instance.
+   */
+  def props(K: Int, period: FiniteDuration, lifetime: FiniteDuration, storage: Storage, table: ActorRef): Props =
+    Props(classOf[Responder], K, period, lifetime, storage, table)
+
+  /**
+   * Factory which creates RoutingTable Actor Props instance with default values:
+   * K = 8, timeout = 15 minutes, delay = 30 seconds, threshold = 3.
+   *
+   * @param storage    Instance of [[org.abovobo.dht.persistence.Storage]] used to access persisted data.
+   * @param table     Reference to [[Table]] actor.
+   *
+   * @return          Properly configured Actor Props instance.
+   */
+  def props(storage: Storage, table: ActorRef): Props = this.props(8, 5.minutes, 30.minutes, storage, table)
 }

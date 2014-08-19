@@ -46,7 +46,7 @@ class Controller(val K: Int,
                  val table: ActorRef)
   extends Actor with ActorLogging {
 
-  import this.context.dispatcher
+  // XXX import this.context.dispatcher
 
   private val reader: Reader = this.storage
 
@@ -60,7 +60,6 @@ class Controller(val K: Int,
   override def postStop() = {
     this.log.debug("Controller#postStop")
     this.context.unwatch(this.table)
-    this.timerTasks.foreach(_.cancel())
   }
 
   /**
@@ -104,13 +103,6 @@ class Controller(val K: Int,
     case Controller.GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender(), agent) { () =>
       new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
     }
-
-    // Invokes tokens rotation procedure
-    case Controller.RotateTokens => this.responder.rotateTokens()
-
-    // Invokes peer cleanup procedure
-    case Controller.CleanupPeers => this.responder.cleanupPeers()
-
     // -- HANDLE EVENTS
     // -- -------------
     // when our query has failed just remove corresponding transaction
@@ -127,7 +119,7 @@ class Controller(val K: Int,
         case query: Query =>
           val node = new NodeInfo(query.id, remote)
           this.table ! Table.Received(node, Message.Kind.Query)
-          agent ! this.responder.respond(query, node)
+          // XXX agent ! this.responder.respond(query, node)
 
         // if response has been received
         // close transaction, notify routing table and then
@@ -293,14 +285,6 @@ class Controller(val K: Int,
     case enough: Seq[NodeInfo] => enough
   }
 
-  /// An instance of Responder to handle incoming queries
-  private lazy val responder = new Responder(this.K, this.period, this.lifetime, this.storage)
-
-  /// Collection of scheduled tasks sending periodic internal commands to self
-  private val timerTasks =
-    this.context.system.scheduler.schedule(Duration.Zero, this.period, self, Controller.RotateTokens) ::
-    this.context.system.scheduler.schedule(this.lifetime, this.lifetime, self, Controller.CleanupPeers) :: Nil
-
   /// Instantiate transaction ID factory
   private val factory = TIDFactory.random
 
@@ -414,15 +398,6 @@ object Controller {
                           port: Int,
                           implied: Boolean)
     extends Command
-
-  /// Base class for private commands which Controller sends to itself
-  private trait SelfCommand extends Command
-
-  /// Command to self, which instructs TokenManager to rotate tokens
-  private case object RotateTokens extends SelfCommand
-
-  /// Command to self, which causes old peers to be deleted form the storage
-  private case object CleanupPeers extends SelfCommand
 
 
   /// XXX These plugin-related messages will be removed soon
