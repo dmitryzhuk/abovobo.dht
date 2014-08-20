@@ -36,7 +36,7 @@ class ResponderTest(system: ActorSystem)
   val storage = new DynamicallyConnectedStorage(this.ds)
   val table = Inbox.create(this.system)
   val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
-  val responder = this.system.actorOf(Responder.props(storage, table.getRef()))
+  val responder = this.system.actorOf(Responder.props(this.storage, this.table.getRef()))
 
   override def beforeAll() = {
 

@@ -8,26 +8,28 @@
  * Developed by Dmitry Zhuk for Abovobo project.
  */
 
-package org.abovobo.dht.finder
+package org.abovobo.dht
 
 import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor._
-import akka.io.{Udp, IO}
+import akka.io.{IO, Udp}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
-import org.abovobo.dht.message.{Message, Response, Query}
-import org.abovobo.dht.persistence.{Reader, Writer}
-import org.abovobo.dht.persistence.h2.DataSource
-import org.abovobo.integer.Integer160
-import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
-import org.abovobo.dht._
-import scala.concurrent.duration._
 import org.abovobo.dht
+import org.abovobo.dht.message.{Message, Query, Response}
+import org.abovobo.dht.persistence.h2.{DynamicallyConnectedStorage, DataSource}
+import org.abovobo.dht.persistence.{Reader, Writer}
+import org.abovobo.integer.Integer160
+import org.abovobo.jdbc.Closer._
+import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 
+import scala.concurrent.duration._
+
+/*
 class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLogging {
 
-  import this.context.system
+  import context.system
 
   override def preStart() = IO(Udp) ! Udp.Bind(self, this.endpoint)
 
@@ -51,11 +53,12 @@ class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLoggin
       this.log.info("Unbound")
   }
 }
+*/
 
 /**
  * Unit test for [[Requester]]
  */
-class ControllerTest(system: ActorSystem)
+class RequesterTest(system: ActorSystem)
   extends TestKit(system)
   with ImplicitSender
   with WordSpecLike
@@ -63,9 +66,16 @@ class ControllerTest(system: ActorSystem)
   with BeforeAndAfterAll {
 
 
-  def this() = this(ActorSystem("ControllerTest", ConfigFactory.parseString("akka.loglevel=debug")))
+  def this() = this(ActorSystem("RequesterTest", ConfigFactory.parseString("akka.loglevel=debug")))
 
-  private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
+  val ds = DataSource("jdbc:h2:~/db/requester-test")
+  val storage = new DynamicallyConnectedStorage(this.ds)
+  val table = Inbox.create(this.system)
+  val agent = Inbox.create(this.system)
+  val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
+  //val responder = this.system.actorOf(Responder.props(this.storage, this.table.getRef()))
+
+  //private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
   private val reader: Reader = null //new Reader(ds.connection)
   private val writer: Writer = null // new Writer(ds.connection)
 
@@ -73,25 +83,38 @@ class ControllerTest(system: ActorSystem)
   val remote1 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
   val dummy = new InetSocketAddress(0)
 
-  val table = Inbox.create(this.system)
-  val agent = Inbox.create(this.system)
+  //val table = Inbox.create(this.system)
 
-  val controller = this.system.actorOf(Requester.props(List(remote0), reader, table.getRef()))
+  val controller: ActorRef = null //this.system.actorOf(Requester.props(List(remote0), reader, table.getRef()))
 
   implicit val timeout: akka.util.Timeout = 5.seconds
 
   override def beforeAll() {
-    this.writer.drop()
 
-    println()
-    println(this.self)
+    // drop everything in the beginning and create working schema
+    using(this.ds.connection) { c =>
+      using(c.createStatement()) { s =>
+        s.execute("drop all objects")
+        s.execute("create schema ipv4")
+        c.commit()
+      }
+    }
 
-    controller.tell(Agent.Bound, agent.getRef())
+    // set working schema for the storage
+    this.storage.setSchema("ipv4")
+
+    // create common tables
+    this.storage.execute("/tables-common.sql")
+
+    // create tables specific to IPv4 protocol which will be used in test
+    this.storage.execute("/tables-ipv4.sql")
+
+    // initialize storage with random self ID
+    this.storage.transaction(this.storage.id(Integer160.random))
   }
 
   override def afterAll() {
-    //this.reader.close()
-    //this.writer.close()
+    this.storage.close()
     this.ds.close()
     TestKit.shutdownActorSystem(this.system)
   }

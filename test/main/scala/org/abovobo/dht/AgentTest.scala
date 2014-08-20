@@ -67,10 +67,13 @@ class AgentTest(system: ActorSystem)
   val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
   val local = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
 
-  val controllerInbox = Inbox.create(system)
+  val requester = Inbox.create(this.system)
+  val responder = Inbox.create(this.system)
 
   val peer = this.system.actorOf(Props(classOf[RemotePeer], remote), "peer")
-  val agent = this.system.actorOf(Agent.props(local, 10.seconds, 2.seconds, controllerInbox.getRef()), "agent")
+  val agent = this.system.actorOf(
+    Agent.props(local, 10.seconds, 2.seconds, requester.getRef(), responder.getRef()),
+    "agent")
 
   this.watch(this.agent)
 
@@ -88,7 +91,7 @@ class AgentTest(system: ActorSystem)
 
     "just created" must {
       "notify finder about this" in {
-        controllerInbox.receive(1.second) match {
+        requester.receive(1.second) match {
           case Agent.Bound => //
           case _ => this.fail("Inavlid message type")
         }
@@ -98,7 +101,7 @@ class AgentTest(system: ActorSystem)
     "exception is sent to it" must {
       "fail and then recover" in {
         agent ! new RuntimeException("Crashing Agent")
-        controllerInbox.receive(10.seconds) match {
+        requester.receive(10.seconds) match {
           case Agent.Bound => //
           case _ => this.fail("Inavlid message type")
         }
@@ -349,8 +352,7 @@ class AgentTest(system: ActorSystem)
 	      }        
       }
 
-
-    "network packet with invalid message structure sent" must {
+    "network packet with invalid message structure received" must {
       "respond with error message" in {
         val tid = factory.next()
         val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
@@ -367,5 +369,23 @@ class AgentTest(system: ActorSystem)
       }
 
     }
+
+    "network packet with Query message received" must {
+      "redirect to Responder" in {
+        val tid = factory.next()
+        val query = new Query.Ping(tid, Integer160.maxval)
+        val packet: Array[Byte] = "d1:ad2:id20:".getBytes("UTF-8") ++ Integer160.maxval.toArray ++
+          "e1:q4:ping1:t2:".getBytes("UTF-8") ++ tid.toArray ++ "1:y1:qe".getBytes("UTF-8")
+        peer ! Udp.Send(ByteString(packet), local)
+        responder.receive(10.seconds) match {
+          case Agent.Received(m, r) =>
+            m.tid should be(query.tid)
+            r should be(remote)
+          case a: Any =>
+            this.fail("Wrong message type " + a.getClass)
+        }
+      }
+    }
+
   }
 }

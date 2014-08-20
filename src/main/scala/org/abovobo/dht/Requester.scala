@@ -16,11 +16,10 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import org.abovobo.dht
 import org.abovobo.dht.finder.Finder
 import org.abovobo.dht.message.{Message, Query, Response}
-import org.abovobo.dht.persistence.{Reader, Storage, Writer}
+import org.abovobo.dht.persistence.Reader
 import org.abovobo.integer.Integer160
 
 import scala.collection.mutable
-import scala.concurrent.duration._
 
 /**
  * This Actor actually controls processing of the messages implementing recursive DHT algorithms.
@@ -64,6 +63,8 @@ class Requester(val K: Int,
     case Agent.Bound =>
       this.context.become(this.working(this.sender()))
       this.table ! Requester.Ready
+    // To debug crashes
+    case t: Throwable => throw t
   }
 
   /**
@@ -87,13 +88,16 @@ class Requester(val K: Int,
       this.transactions.put(query.tid, new Requester.Transaction(query, node, this.sender()))
       agent ! Agent.Send(query, node.address)
 
-    case Requester.FindNode(target: Integer160) => this.iterate(target, None, this.sender(), agent) { () =>
-      new Query.FindNode(this.factory.next(), this.reader.id().get, target)
-    }
+    case Requester.FindNode(target: Integer160) =>
+      this.iterate(target, None, this.sender(), agent) { () =>
+        new Query.FindNode(this.factory.next(), this.reader.id().get, target)
+      }
 
-    case Requester.GetPeers(infohash: Integer160) => this.iterate(infohash, None, this.sender(), agent) { () =>
-      new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
-    }
+    case Requester.GetPeers(infohash: Integer160) =>
+      this.iterate(infohash, None, this.sender(), agent) { () =>
+        new Query.GetPeers(this.factory.next(), this.reader.id().get, infohash)
+      }
+
     // -- HANDLE EVENTS
     // -- -------------
     // when our query has failed just remove corresponding transaction
@@ -105,13 +109,6 @@ class Requester(val K: Int,
       // received message handled differently depending on message type
       message match {
 
-        // if query has been received
-        // notify routing table and then delegate execution to `Responder`
-        case query: Query =>
-          val node = new NodeInfo(query.id, remote)
-          this.table ! Table.Received(node, Message.Kind.Query)
-          // XXX agent ! this.responder.respond(query, node)
-
         // if response has been received
         // close transaction, notify routing table and then
         // delegate execution to private `process` method
@@ -120,28 +117,12 @@ class Requester(val K: Int,
         // if error message has been received
         // close transaction and notify routing table
         case error: dht.message.Error => this.transactions.remove(error.tid).foreach(this.fail(_, agent))
-
-        /// XXX To be removed
-        case pm: dht.message.Plugin =>
-          this.plugins.get(pm.pid.value) match {
-            case Some(plugin) => plugin ! Agent.Received(pm, remote)
-            case None =>
-              this.log.error("Error, message to non-existing plugin.")
-              agent ! Agent.Send(
-                new dht.message.Error(pm.tid, dht.message.Error.ERROR_CODE_UNKNOWN, "No such plugin"), remote)
-          }
       }
 
     // To avoid "unhandled message" logging
     case r: Table.Result =>
-
-    // just forward message to agent for now.
-    // maybe its possible to reuse plugins query->response style traffic for DHT state update
-    // then, tid field and timeouts should be managed by this DHT Requester and Agent
-    /// XXX To be removed
-    case Requester.SendPluginMessage(message, node) => agent ! Agent.Send(message, node.address)
-    case Requester.PutPlugin(pid, plugin) =>  this.plugins.put(pid.value, plugin)
-    case Requester.RemovePlugin(pid) =>  this.plugins.remove(pid.value)
+    // To debug crashes
+    case t: Throwable => throw t
   }
 
   /** @inheritdoc */
@@ -290,10 +271,6 @@ class Requester(val K: Int,
 
   /// Collection of pending recursive procedures
   private val recursions = new mutable.HashMap[Integer160, Finder]
-
-  /// Active plugins
-  /// XXX To be removed from Requester
-  private val plugins = new mutable.HashMap[Long, ActorRef]
 }
 
 /** Accompanying object */
@@ -322,11 +299,14 @@ object Requester {
   /* Indicates that Requester is initialized and ready to process requests */
   case object Ready extends Event
 
+  /** Base trait for messages with results of executed commands */
+  sealed trait Result
+
   /** Indicates that node has been successfully pinged */
-  case class Pinged() extends Event
+  case class Pinged() extends Result
 
   /** Indicates that peer has been successfully announced */
-  case class PeerAnnounced() extends Event
+  case class PeerAnnounced() extends Result
 
   /**
    * Indicates that recursive `find_node` or `get_peers` operation has been successfully completed.
@@ -338,10 +318,10 @@ object Requester {
   case class Found(nodes: Traversable[NodeInfo],
                    peers: Traversable[Peer],
                    tokens: scala.collection.Map[Integer160, Token])
-    extends Event
+    extends Result
 
   /** Indicates that recursive `find_node` or `get_peers` operation has failed. */
-  case class NotFound() extends Event
+  case class NotFound() extends Result
 
   /** Base trait for all commands supported by this actor */
   sealed trait Command
@@ -388,10 +368,4 @@ object Requester {
                           port: Int,
                           implied: Boolean)
     extends Command
-
-
-  /// XXX These plugin-related messages will be removed soon
-  case class SendPluginMessage(message: org.abovobo.dht.message.Plugin, node: NodeInfo) extends Command
-  case class PutPlugin(pid: PID, plugin: ActorRef) extends Command
-  case class RemovePlugin(pid: PID) extends Command
 }

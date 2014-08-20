@@ -28,18 +28,23 @@ import scala.concurrent.duration.FiniteDuration
  * actor is requested to send [[Query]] message, it will wait for and recognize
  * corresponding [[Response]] message received from the remote peer. Note that
  * received [[Response]] message will be sent to the same actor which initiated
- * original [[Query]], while incoming [[Query]] messages receieved from remote
- * peers will be sent to registered handler actor.
+ * original [[Query]], while incoming [[Query]] messages received from remote
+ * peers will be sent to registered responder actor.
  *
  * @param endpoint  An endpoint at which this agent must listen.
  * @param timeout   A period in time during which the remote party must respond to a query.
  * @param retry     Time interval between bind attempts.
- * @param handler   Reference to actor which will receive incoming [[Query]] messages.
+ * @param requester Reference to an actor which will be initiating queries to remote peers.
+ *                  This is only necessary here to notify this actor when the [[Agent]] is
+ *                  ready to work. In the original design this will be [[Requester]] actor.
+ * @param responder Reference to actor which will receive incoming [[Query]] messages.
+ *                  In the original design this will be [[Responder]] actor.
  */
 class Agent(val endpoint: InetSocketAddress,
             val timeout: FiniteDuration,
             val retry: FiniteDuration,
-            val handler: ActorRef)
+            val requester: ActorRef,
+            val responder: ActorRef)
   extends Actor with ActorLogging {
 
   import context.{dispatcher, system}
@@ -47,7 +52,7 @@ class Agent(val endpoint: InetSocketAddress,
   /** @inheritdoc */
   override def preStart() = {
     this.log.debug("Agent#preStart (sending `Start` message)")
-    this.context.watch(this.handler)
+    this.context.watch(this.requester)
     IO(Udp) ! Udp.Bind(self, this.endpoint)
   }
 
@@ -60,7 +65,7 @@ class Agent(val endpoint: InetSocketAddress,
   /** @inheritdoc */
   override def postStop() = {
     this.log.debug("Agent#postStop (unbinding socket and cancelling queries)")
-    this.context.unwatch(this.handler)
+    this.context.unwatch(this.requester)
     this.queries foreach { _._2._2.cancel() }
     this.unbind()
   }
@@ -85,7 +90,7 @@ class Agent(val endpoint: InetSocketAddress,
       // sign a death pact
       this.context.watch(this.sender())
       // notify finder that Agent is ready to go
-      this.handler ! Agent.Bound
+      this.requester ! Agent.Bound
 
     case Udp.Unbound =>
       this.log.debug("Agent unbound")
@@ -111,7 +116,7 @@ class Agent(val endpoint: InetSocketAddress,
           }
         case q: Query =>
           // forward received message to handler
-          this.handler ! Agent.Received(message, remote)
+          this.responder ! Agent.Received(message, remote)
       }
     } catch {
       case e: Message.ParsingException =>
@@ -175,21 +180,33 @@ object Agent {
    * @param endpoint  An adress/port to bind to to receive incoming packets
    * @param timeout   A period of time to wait for response from queried remote peer.
    * @param retry     Time interval between bind attempts.
-   * @param handler   Reference to [[Requester]] actor.
+   * @param requester Reference to an actor which will be initiating queries to remote peers.
+   *                  This is only necessary here to notify this actor when the [[Agent]] is
+   *                  ready to work. In the original design this will be [[Requester]] actor.
+   * @param responder Reference to actor which will receive incoming [[Query]] messages.
+   *                  In the original design this will be [[Responder]] actor.
    * @return          Properly configured [[akka.actor.Props]] instance.
    */
-  def props(endpoint: InetSocketAddress, timeout: FiniteDuration, retry: FiniteDuration, handler: ActorRef): Props =
-    Props(classOf[Agent], endpoint, timeout, retry, handler)
+  def props(endpoint: InetSocketAddress,
+            timeout: FiniteDuration,
+            retry: FiniteDuration,
+            requester: ActorRef,
+            responder: ActorRef): Props =
+    Props(classOf[Agent], endpoint, timeout, retry, requester, responder)
 
   /**
    * Factory which creates [[Agent]] [[Props]] instance with default `timeout` and `retry` durations.
    *
    * @param endpoint  An adress/port to bind to to receive incoming packets
-   * @param handler   Reference to [[Requester]] actor.
+   * @param requester Reference to an actor which will be initiating queries to remote peers.
+   *                  This is only necessary here to notify this actor when the [[Agent]] is
+   *                  ready to work. In the original design this will be [[Requester]] actor.
+   * @param responder Reference to actor which will receive incoming [[Query]] messages.
+   *                  In the original design this will be [[Responder]] actor.
    * @return          Properly configured [[akka.actor.Props]] instance.
    */
-  def props(endpoint: InetSocketAddress, handler: ActorRef): Props =
-    this.props(endpoint, 5.seconds, 2.seconds, handler)
+  def props(endpoint: InetSocketAddress, requester: ActorRef, responder: ActorRef): Props =
+    this.props(endpoint, 5.seconds, 2.seconds, requester, responder)
 
   /**
    * Base trait for all commands natively supported by [[Agent]] actor.

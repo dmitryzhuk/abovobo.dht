@@ -159,7 +159,7 @@ class Responder(K: Int,
    * This method is executed periodically to rotate tokens (generating a new one, preserving previous) and
    * cleanup `tokens` collection thus removing those token-peer association which has expired.
    */
-  def rotate() = {
+  private def rotate() = {
     // first rotate
     tp.rotate()
     // then cleanup
@@ -172,7 +172,7 @@ class Responder(K: Int,
   }
 
   /** This method is executed periodically to remote expired infohash-peer associations */
-  def cleanup() = this.storage.cleanup(this.lifetime)
+  private def cleanup() = this.storage.cleanup(this.lifetime)
 
   /** Returns immediate value of node self id */
   private def id = this.storage.id().get

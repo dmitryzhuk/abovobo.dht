@@ -62,7 +62,7 @@ class Node(val ds: DataSource,
       this.endpoint,
       3.seconds,
       3.seconds,
-      this.controller),
+      this.controller, null),
     "agent" + this.id)
 
   override def preStart() = {
