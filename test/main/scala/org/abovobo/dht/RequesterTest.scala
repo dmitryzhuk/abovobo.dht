@@ -10,50 +10,19 @@
 
 package org.abovobo.dht
 
-import java.net.{InetAddress, InetSocketAddress}
+import java.net.InetSocketAddress
 
 import akka.actor._
-import akka.io.{IO, Udp}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht
 import org.abovobo.dht.message.{Message, Query, Response}
 import org.abovobo.dht.persistence.h2.{DynamicallyConnectedStorage, DataSource}
-import org.abovobo.dht.persistence.{Reader, Writer}
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 
 import scala.concurrent.duration._
-
-/*
-class RemotePeer(val endpoint: InetSocketAddress) extends Actor with ActorLogging {
-
-  import context.system
-
-  override def preStart() = IO(Udp) ! Udp.Bind(self, this.endpoint)
-
-  override def receive = {
-    case Udp.Bound(l) =>
-      this.log.info("Bound with local address {}", l)
-      this.context.become(this.ready(this.sender()))
-  }
-
-  def ready(socket: ActorRef): Actor.Receive = {
-    case Udp.Send(data, r, ack) =>
-      this.log.info("Sending to " + r + ": " + data.toString())
-      socket ! Udp.Send(data, r, ack)
-    case Udp.Received(data, r) =>
-      this.log.info("Received from " + r + ": " + data.toString())
-      this.context.actorSelection("../../system/testActor*") ! Udp.Received(data, r)
-    case Udp.Unbind =>
-      this.log.info("Unbinding")
-      socket ! Udp.Unbind
-    case Udp.Unbound =>
-      this.log.info("Unbound")
-  }
-}
-*/
 
 /**
  * Unit test for [[Requester]]
@@ -72,22 +41,11 @@ class RequesterTest(system: ActorSystem)
   val storage = new DynamicallyConnectedStorage(this.ds)
   val table = Inbox.create(this.system)
   val agent = Inbox.create(this.system)
-  val remote = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
-  //val responder = this.system.actorOf(Responder.props(this.storage, this.table.getRef()))
-
-  //private val ds = DataSource("jdbc:h2:~/db/dht;SCHEMA=ipv4")
-  private val reader: Reader = null //new Reader(ds.connection)
-  private val writer: Writer = null // new Writer(ds.connection)
-
-  val remote0 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30000)
-  val remote1 = new InetSocketAddress(InetAddress.getLoopbackAddress, 30001)
   val dummy = new InetSocketAddress(0)
 
-  //val table = Inbox.create(this.system)
+  val requester: ActorRef = this.system.actorOf(Requester.props(List(dummy), storage, table.getRef()))
 
-  val controller: ActorRef = null //this.system.actorOf(Requester.props(List(remote0), reader, table.getRef()))
-
-  implicit val timeout: akka.util.Timeout = 5.seconds
+  //implicit val timeout: akka.util.Timeout = 5.seconds
 
   override def beforeAll() {
 
@@ -123,6 +81,7 @@ class RequesterTest(system: ActorSystem)
 
     "just created" must {
       "send Ready event to table" in {
+        this.requester.tell(Agent.Bound, this.agent.getRef())
         this.table.receive(10.seconds) match {
           case Requester.Ready => //
           case _ => this.fail("Invalid message type")
@@ -138,25 +97,25 @@ class RequesterTest(system: ActorSystem)
       val id = Integer160.random
 
       "instruct Agent to send Ping message to remote peer" in {
-        this.controller ! Requester.Ping(new NodeInfo(id, this.remote1))
+        this.requester ! Requester.Ping(new NodeInfo(id, this.dummy))
         this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
               case ping: Query.Ping =>
-                ping.id should equal(this.reader.id().get)
+                ping.id should equal(this.storage.id().get)
                 tid = ping.tid
               case _ => this.fail("Invalid message type")
             }
-            remote should equal(this.remote1)
+            remote should equal(this.dummy)
         }
       }
 
       "and when received response from Agent, report this to Table and then respond to original requester" in {
-        this.controller ! Agent.Received(new Response.Ping(tid, id), this.remote1)
+        this.requester ! Agent.Received(new Response.Ping(tid, id), this.dummy)
         this.table.receive(10.seconds) match {
           case Table.Received(node, kind) =>
             node.id should equal(id)
-            node.address should equal(this.remote1)
+            node.address should equal(this.dummy)
             kind should equal(Message.Kind.Response)
           case m: Any => this.fail("Invalid message type: " + m.getClass.getName)
         }
@@ -171,26 +130,26 @@ class RequesterTest(system: ActorSystem)
       val infohash = Integer160.random
 
       "instruct Agent to send AnnouncePeer message to remote peer" in {
-        this.controller ! Requester.AnnouncePeer(
-          new NodeInfo(id, this.remote1), new dht.Token(2), infohash, 1, implied = true)
+        this.requester ! Requester.AnnouncePeer(
+          new NodeInfo(id, this.dummy), new dht.Token(2), infohash, 1, implied = true)
         this.agent.receive(10.seconds) match {
           case Agent.Send(message, remote) =>
             message match {
               case ap: Query.AnnouncePeer =>
-                ap.id should equal(this.reader.id().get)
+                ap.id should equal(this.storage.id().get)
                 tid = ap.tid
               case _ => this.fail("Invalid message type")
             }
-            remote should equal(this.remote1)
+            remote should equal(this.dummy)
         }
       }
 
       "and when received response from Agent, report this to Table and then respond to original requester" in {
-        this.controller ! Agent.Received(new Response.AnnouncePeer(tid, id), this.remote1)
+        this.requester ! Agent.Received(new Response.AnnouncePeer(tid, id), this.dummy)
         this.table.receive(10.seconds) match {
           case Table.Received(node, kind) =>
             node.id should equal(id)
-            node.address should equal(this.remote1)
+            node.address should equal(this.dummy)
             kind should equal(Message.Kind.Response)
           case _ => this.fail("Invalid message type")
         }
@@ -224,15 +183,15 @@ class RequesterTest(system: ActorSystem)
 
       "instruct Agent to send FindNode message to router(s)" in {
         // issue a command to Requester
-        this.controller ! Requester.FindNode(target)
+        this.requester ! Requester.FindNode(target)
 
         // receive the command that Requester has sent to network Agent
         val tid = this.agent.receive(10.second) match {
           case Agent.Send(message, remote) =>
-            remote should equal(this.remote0)
+            remote should equal(this.dummy)
             message match {
               case fn: Query.FindNode =>
-                fn.id should equal(this.reader.id().get)
+                fn.id should equal(this.storage.id().get)
                 fn.target should equal(target)
                 fn.tid
               case _ => this.fail("Invalid message type")
@@ -244,7 +203,7 @@ class RequesterTest(system: ActorSystem)
         // -- at this point a finder corresponding to this recursion must have "Wait" state
 
         // notify Requester that response message with closer nodes
-        this.controller ! Agent.Received(new Response.FindNode(tid, zero, closer()), this.remote0)
+        this.requester ! Agent.Received(new Response.FindNode(tid, zero, closer()), this.dummy)
 
         // -- at this point a finder corresponding to this recursion must have "Continue" state
         // -- and produce "alpha" requests to a network agent as a next round of requests
@@ -264,7 +223,7 @@ class RequesterTest(system: ActorSystem)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // generate response for the first query with even closer nodes
-        this.controller ! Agent.Received(new Response.FindNode(q1.head.tid, id, closer()), this.dummy)
+        this.requester ! Agent.Received(new Response.FindNode(q1.head.tid, id, closer()), this.dummy)
 
         // -- at this point a finder must have "Continue" state and again
         // -- produce "alpha" more requests to a network agent as a next round of requests
@@ -285,7 +244,7 @@ class RequesterTest(system: ActorSystem)
         // now get back to round 1:
         // complete second query with closer nodes which must cause 3 more queries
         // which we will complete with no closer nodes
-        this.controller ! Agent.Received(new Response.FindNode(q1.drop(1).head.tid, id, closer()), this.dummy)
+        this.requester ! Agent.Received(new Response.FindNode(q1.drop(1).head.tid, id, closer()), this.dummy)
         val qx: Traversable[Query.FindNode] = for (i <- 0 until 3) yield {
           this.agent.receive(10.second) match {
             case Agent.Send(message, remote) =>
@@ -300,12 +259,12 @@ class RequesterTest(system: ActorSystem)
         }
 
         // and now complete the last query from round 1 which must not produce more queries
-        this.controller ! Agent.Received(new Response.FindNode(q1.drop(2).head.tid, id, closer()), this.dummy)
+        this.requester ! Agent.Received(new Response.FindNode(q1.drop(2).head.tid, id, closer()), this.dummy)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // now complete queries produced by the completion of second item from round 1
         qx.foreach { q =>
-          this.controller ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          this.requester ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
         }
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
@@ -314,10 +273,10 @@ class RequesterTest(system: ActorSystem)
         // as corresponding Finder will be in Wait state and on the last report in the round
         // it should produce K (8) new queries to finalize lookup procedure
         q2.take(2).foreach { q =>
-          this.controller ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          this.requester ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
-        this.controller ! Agent.Received(new Response.FindNode(q2.last.tid, id, farther()), this.dummy)
+        this.requester ! Agent.Received(new Response.FindNode(q2.last.tid, id, farther()), this.dummy)
         val q3: Traversable[Query.FindNode] = for (i <- 0 until 8) yield
           this.agent.receive(10.seconds) match {
             case Agent.Send(message, remote) =>
@@ -332,7 +291,7 @@ class RequesterTest(system: ActorSystem)
         // now complete all 8 new queries bringing no new nodes again which must cause
         // Requester to complete the whole procedure and send back Found message.
         q3.foreach { q =>
-          this.controller ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
+          this.requester ! Agent.Received(new Response.FindNode(q.tid, id, farther()), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
         expectMsgPF(20.seconds) {
@@ -373,15 +332,15 @@ class RequesterTest(system: ActorSystem)
 
       "instruct Agent to send GetPeers message to router(s)" in {
         // issue a command to Requester
-        this.controller ! Requester.GetPeers(target)
+        this.requester ! Requester.GetPeers(target)
 
         // receive the command that Requester has sent to network Agent
         val tid = this.agent.receive(1.second) match {
           case Agent.Send(message, remote) =>
-            remote should equal(this.remote0)
+            remote should equal(this.dummy)
             message match {
               case gp: Query.GetPeers =>
-                gp.id should equal(this.reader.id().get)
+                gp.id should equal(this.storage.id().get)
                 gp.infohash should equal(target)
                 gp.tid
               case _ => this.fail("Invalid message type")
@@ -393,7 +352,7 @@ class RequesterTest(system: ActorSystem)
         // -- at this point a finder corresponding to this recursion must have "Wait" state
 
         // notify Requester that response message with closer nodes
-        this.controller ! Agent.Received(new Response.GetPeersWithNodes(tid, id, token, closer()), this.remote0)
+        this.requester ! Agent.Received(new Response.GetPeersWithNodes(tid, id, token, closer()), this.dummy)
 
         // -- at this point a finder corresponding to this recursion must have "Continue" state
         // -- and produce "alpha" requests to a network agent as a next round of requests
@@ -413,7 +372,7 @@ class RequesterTest(system: ActorSystem)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // generate response for the first query with even closer nodes
-        this.controller ! Agent.Received(new Response.GetPeersWithNodes(q1.head.tid, id, token, closer()), this.dummy)
+        this.requester ! Agent.Received(new Response.GetPeersWithNodes(q1.head.tid, id, token, closer()), this.dummy)
 
         // -- at this point a finder must have "Continue" state and again
         // -- produce "alpha" more requests to a network agent as a next round of requests
@@ -434,7 +393,7 @@ class RequesterTest(system: ActorSystem)
         // now get back to round 1:
         // complete second query with closer nodes which must cause 3 more queries
         // which we will complete with no closer nodes
-        this.controller ! Agent.Received(
+        this.requester ! Agent.Received(
           new Response.GetPeersWithNodes(q1.drop(1).head.tid, id, token, closer()), this.dummy)
         val qx: Traversable[Query.GetPeers] = for (i <- 0 until 3) yield {
           this.agent.receive(1.second) match {
@@ -450,13 +409,13 @@ class RequesterTest(system: ActorSystem)
         }
 
         // and now complete the last query from round 1 which must not produce more queries
-        this.controller ! Agent.Received(
+        this.requester ! Agent.Received(
           new Response.GetPeersWithNodes(q1.drop(2).head.tid, id, token, closer()), this.dummy)
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
 
         // now complete queries produced by the completion of second item from round 1
         qx.foreach { q =>
-          this.controller ! Agent.Received(
+          this.requester ! Agent.Received(
             new Response.GetPeersWithValues(q.tid, id, token, Seq(new dht.Peer(0), new dht.Peer(1))), this.dummy)
         }
         an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
@@ -466,11 +425,11 @@ class RequesterTest(system: ActorSystem)
         // as corresponding Finder will be in Wait state and on the last report in the round
         // it should produce K (8) new queries to finalize lookup procedure
         q2.take(2).foreach { q =>
-          this.controller ! Agent.Received(
+          this.requester ! Agent.Received(
             new Response.GetPeersWithNodes(q.tid, id, token, farther()), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
-        this.controller ! Agent.Received(
+        this.requester ! Agent.Received(
           new Response.GetPeersWithValues(q2.last.tid, id, token, Seq(new dht.Peer(0))), this.dummy)
         val q3: Traversable[Query.GetPeers] = for (i <- 0 until 8) yield
           this.agent.receive(10.seconds) match {
@@ -486,7 +445,7 @@ class RequesterTest(system: ActorSystem)
         // now complete all 8 new queries bringing no new nodes again which must cause
         // Requester to complete the whole procedure and send back Found message.
         q3.foreach { q =>
-          this.controller ! Agent.Received(
+          this.requester ! Agent.Received(
             new Response.GetPeersWithValues(q.tid, id, token, Seq(new dht.Peer(1))), this.dummy)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
