@@ -311,8 +311,19 @@ class Table(val K: Int,
             // split current bucket and send the message back to self queue
             // new bucket edge must split existing buckets onto 2 equals buckets
             val b = bucket.mid
+            // cancel existing scheduled refresh job
+            this.cancellables.remove(bucket.start) foreach (_.cancel())
             // insert new bucket
             this.storage.insert(b)
+            // schedule 2 new refresh jobs for buckets
+            this.cancellables.put(bucket.start, system.scheduler.scheduleOnce(
+              this.timeout,
+              self,
+              Table.Refresh(new Bucket(bucket.start, b - 1, new java.util.Date()))))
+            this.cancellables.put(b, system.scheduler.scheduleOnce(
+              this.timeout,
+              self,
+              Table.Refresh(new Bucket(b, bucket.end, new java.util.Date()))))
             // send message to itself preserving original sender
             self.!(Table.Received(node, kind))(this.sender())
             // notify caller that insertion has been deferred

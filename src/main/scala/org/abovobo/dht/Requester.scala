@@ -41,8 +41,6 @@ class Requester(val K: Int,
                 val table: ActorRef)
   extends Actor with ActorLogging {
 
-  // XXX import this.context.dispatcher
-
   /** @inheritdoc */
   override def preStart() = {
     this.log.debug("Requester#preStart")
@@ -212,7 +210,7 @@ class Requester(val K: Int,
    */
   private def process(response: Response, transaction: Requester.Transaction, agent: ActorRef) = {
     if (response.id != transaction.remote.id) {
-      this.log.warning("Response ID: {}, but requested not had ID: {}", response.id, transaction.remote.id)
+      this.log.warning("Responded node ID: {}, but requested node had ID: {}", response.id, transaction.remote.id)
     }
     if (transaction.remote.id != Integer160.zero) {
       this.table ! Table.Received(transaction.remote, Message.Kind.Response)

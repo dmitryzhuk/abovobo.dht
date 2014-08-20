@@ -21,6 +21,8 @@ import org.abovobo.integer.Integer160
  */
 class Bucket(val start: Integer160, val end: Integer160, val seen: java.util.Date) {
 
+  require(this.end - this.start > 0)
+
   /**
    * Checks if given id falls within the range of the bucket.
    *
@@ -39,7 +41,7 @@ class Bucket(val start: Integer160, val end: Integer160, val seen: java.util.Dat
    * Returns random value which lies within the range of this bucket.
    * @return random value which lies within the range of this bucket.
    */
-  def random: Integer160 = this.start + Integer160.random % (this.length + 1)
+  def random: Integer160 = this.start + Integer160.random % this.length
 
   /**
    * Returns middle point of this bucket length.

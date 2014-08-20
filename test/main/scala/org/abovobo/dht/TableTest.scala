@@ -39,12 +39,12 @@ class TableTest(system: ActorSystem)
   private val storage = new DynamicallyConnectedStorage(this.ds)
   private val reader: Reader = this.storage
 
-  val controllerInbox = Inbox.create(system)
+  val requester = Inbox.create(system)
 
   val table = this.system.actorOf(Table.props(
       K = 8,
-      timeout = 60.seconds,
-      delay = 30.seconds,
+      timeout = 20.seconds,
+      delay = 5.seconds,
       threshold = 3,
       storage = this.storage),
     "table")
@@ -71,7 +71,7 @@ class TableTest(system: ActorSystem)
     this.storage.execute("/tables-ipv4.sql")
 
     // notify table that finder is ready
-    table.tell(Requester.Ready, controllerInbox.getRef())
+    table.tell(Requester.Ready, requester.getRef())
   }
 
   override def afterAll() = {
@@ -82,6 +82,15 @@ class TableTest(system: ActorSystem)
 
   "RoutingTable Actor" when {
 
+    "just created" must {
+      "initialize its ID with random value" in {
+        this.requester.receive(1.second) match {
+          case Requester.FindNode(target) => // ok
+          case a: Any => this.fail("Invalid message type")
+        }
+      }
+    }
+
     "message Set is received" must {
       "set provided ID and purge routing table storage" in {
         this.table ! Table.Set(Integer160.zero)
@@ -90,6 +99,10 @@ class TableTest(system: ActorSystem)
         this.reader.id().get should be(Integer160.zero)
         this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
+        this.requester.receive(1.second) match {
+          case Requester.FindNode(target) => target should be(Integer160.zero)
+          case a: Any => this.fail("Invalid message type")
+        }
       }
     }
 
@@ -101,6 +114,10 @@ class TableTest(system: ActorSystem)
         this.reader.id().get should not be Integer160.zero
         this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
+        this.requester.receive(1.second) match {
+          case Requester.FindNode(target) => // ok
+          case a: Any => this.fail("Invalid message type")
+        }
       }
     }
 
@@ -112,6 +129,10 @@ class TableTest(system: ActorSystem)
         this.reader.id().get should be(Integer160.maxval - 1)
         this.reader.buckets() should have size 1
         this.reader.nodes() should have size 0
+        this.requester.receive(1.second) match {
+          case Requester.FindNode(target) => target should be(Integer160.maxval - 1)
+          case a: Any => this.fail("Invalid message type")
+        }
       }
     }
 
@@ -214,9 +235,13 @@ class TableTest(system: ActorSystem)
 
     "timeout expires" must {
       "send Refresh events and cause FindNode received by Requester" in {
-        this.controllerInbox.receive(70.seconds) match {
-          case Requester.FindNode(target) => // for (i <- 0 until 156) this.controllerInbox.receive(1.second)
-          case _ => this.fail("Unexpected message to finder")
+        this.requester.receive(30.seconds) match {
+          case Requester.FindNode(target) =>
+            for (i <- 0 until 157) this.requester.receive(1.second) match {
+              case Requester.FindNode(_) =>
+              case _ => this.fail("Unexpected message type")
+            }
+          case _ => this.fail("Unexpected message type")
         }
       }
     }
