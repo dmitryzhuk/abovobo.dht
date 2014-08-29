@@ -12,43 +12,46 @@ package org.abovobo.dht
 
 import java.net.InetSocketAddress
 
-import scala.concurrent.duration._
-
-import akka.actor.{ActorSystem, Actor}
+import akka.actor.ActorSystem
 import org.abovobo.dht.persistence._
+import org.abovobo.jdbc.Closer._
 
 /**
  * This class represents general wrapper over major components of DHT node:
  * Table, Agent Responder and Requester.
  *
- * @param ds        An instance of [[DataSource]] class to be used by enclosed actors.
+ * @param as        An instance of [[ActorSystem]].
  * @param endpoint  An endpoint to listen for network messages at.
  * @param routers   Collection of initial routers used to start building DHT.
  * @param id        Optional parameter allowing to specify some unique identifier for this node.
+ * @param sf        Storage factory function.
  */
 class Node(val as: ActorSystem,
-           val ds: DataSource,
            val endpoint: InetSocketAddress,
            val routers: Traversable[InetSocketAddress],
-           private val id: Long = 0L) {
+           private val id: Long = 0L,
+           sf: () => Storage) extends AutoCloseable {
 
-  /// Collection of storage instances
-  val storage = new h2.DynamicallyConnectedStorage(this.ds)
+  /// Collection of storage instances: 3 of them
+  val storage = Array.fill[Storage](3) { this.sf() }
 
   /// Reference to Table actor
-  val table = this.as.actorOf(Table.props(this.storage), "table" + this.id)
+  val table = this.as.actorOf(Table.props(this.storage(0)), "table" + this.id)
 
   /// Reference to Requester actor
-  val requester = this.as.actorOf(Requester.props(this.routers, this.storage, this.table), "finder" + this.id)
+  val requester = this.as.actorOf(Requester.props(this.routers, this.storage(1), this.table), "requester" + this.id)
 
   /// Reference to Responder actor
-  val responder = this.as.actorOf(Responder.props(this.storage, this.table), "responder" + this.id)
+  val responder = this.as.actorOf(Responder.props(this.storage(2), this.table), "responder" + this.id)
 
   /// Reference to Agent actor
   val agent = this.as.actorOf(Agent.props(this.endpoint, this.requester, this.responder), "agent" + this.id)
+
+  /** @inheritdoc */
+  override def close() = this.storage foreach { _.dispose() }
 }
 
 object NodeApp extends App {
 
-  val system = ActorSystem("AbovoboDhtNode")
+  val system = ActorSystem("ABOVOBO-DHT-BASIC")
 }

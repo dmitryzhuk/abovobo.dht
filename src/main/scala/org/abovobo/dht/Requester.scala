@@ -59,6 +59,7 @@ class Requester(val K: Int,
    */
   def waiting: Receive = {
     case Agent.Bound =>
+      this.log.debug("Agent `Bound` notification received")
       this.context.become(this.working(this.sender()))
       this.table ! Requester.Ready
     // To debug crashes
@@ -87,6 +88,7 @@ class Requester(val K: Int,
       agent ! Agent.Send(query, node.address)
 
     case Requester.FindNode(target: Integer160) =>
+      this.log.debug("FIND_NODE {}", target)
       this.iterate(target, None, this.sender(), agent) { () =>
         new Query.FindNode(this.factory.next(), this.reader.id().get, target)
       }

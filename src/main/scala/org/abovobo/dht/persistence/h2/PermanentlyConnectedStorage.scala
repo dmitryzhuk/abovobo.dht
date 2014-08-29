@@ -98,21 +98,6 @@ class PermanentlyConnectedStorage(connection: Connection) extends persistence.Pe
   override def cleanup(lifetime: FiniteDuration) =
     this.cleanup(this.statement(persistence.Writer.Q_CLEANUP_PEERS_NAME), lifetime)
 
-
-  /** @inheritdoc */
-  override def setSchema(name: String): Unit = {
-    using (this.connection.createStatement()) { statement =>
-      statement.execute("set schema " + name)
-    }
-  }
-
-  /** @inheritdoc */
-  override def unsetSchema(): Unit = {
-    using (this.connection.createStatement()) { statement =>
-      statement.execute("set schema PUBLIC")
-    }
-  }
-
   /** @inheritdoc */
   override def execute(script: java.io.Reader): Unit = RunScript.execute(this.connection, script)
 

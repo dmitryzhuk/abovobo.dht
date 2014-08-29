@@ -27,12 +27,12 @@ trait Storage extends AutoCloseable with Reader with Writer {
    *
    * @param name A name of schema to set.
    */
-  def setSchema(name: String): Unit
+  def setSchema(name: String): Storage
 
   /**
    * Unset default schema.
    */
-  def unsetSchema(): Unit
+  def unsetSchema(): Storage
 
   /**
    * Allows to execute block of code within transaction.

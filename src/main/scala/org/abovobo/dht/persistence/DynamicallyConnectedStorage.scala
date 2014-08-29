@@ -12,6 +12,7 @@ package org.abovobo.dht.persistence
 
 import java.sql.{Connection, PreparedStatement}
 
+import org.abovobo.dht.persistence
 import org.abovobo.jdbc.Closer._
 import org.abovobo.jdbc.Transaction
 
@@ -71,8 +72,14 @@ abstract class DynamicallyConnectedStorage(val ds: DataSource) extends Storage {
   }
 
   /** @inheritdoc */
-  override def setSchema(schema: String) = this.schema = Some(schema)
+  override def setSchema(schema: String): persistence.Storage = {
+    this.schema = Some(schema)
+    this
+  }
 
   /** @inheritdoc */
-  override def unsetSchema() = this.schema = None
+  override def unsetSchema(): persistence.Storage = {
+    this.schema = None
+    this
+  }
 }

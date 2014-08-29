@@ -128,6 +128,7 @@ class Table(val K: Int,
    */
   def waiting: Receive = {
     case Requester.Ready =>
+      this.log.debug("Requester `Ready` notification received")
       // switch event loop to the one which is able to actually handle events
       this.context.become(this.working(this.sender()))
       // check if the table already has assigned ID and reset if not
@@ -136,14 +137,13 @@ class Table(val K: Int,
       // upon start also perform refresh procedure for every idle bucket
       // and schedule refresh for other buckets
       this.storage.buckets() foreach { bucket =>
-        this.timeout.toMillis
         if (System.currentTimeMillis - bucket.seen.getTime >= this.timeout.toMillis) {
           self ! Table.Refresh(bucket)
         } else {
           this.cancellables.put(
             bucket.start,
             system.scheduler.scheduleOnce(
-              (System.currentTimeMillis - bucket.seen.getTime).milli,
+              (this.timeout.toMillis - (System.currentTimeMillis - bucket.seen.getTime)).milli,
               self,
               Table.Refresh(bucket)))
         }
@@ -155,15 +155,15 @@ class Table(val K: Int,
   /**
    * Defines general event handler.
    *
-   * @param controller A reference to [[Requester]] actor.
+   * @param requester A reference to [[Requester]] actor.
    */
-  def working(controller: ActorRef): Receive = {
-    case Table.Refresh(bucket)      =>          this.refresh(bucket, controller)
-    case Table.Reset()              => sender ! this.reset(controller)
-    case Table.Set(id)              => sender ! this.set(id, controller)
+  def working(requester: ActorRef): Receive = {
+    case Table.Refresh(bucket)      =>          this.refresh(bucket, requester)
+    case Table.Reset()              => sender ! this.reset(requester)
+    case Table.Set(id)              => sender ! this.set(id, requester)
     case Table.Purge()              => sender ! this.purge()
-    case Table.Received(node, kind) => sender ! this.process(node, kind, controller)
-    case Table.Failed(node)         => sender ! this.process(node, Message.Kind.Fail, controller)
+    case Table.Received(node, kind) => sender ! this.process(node, kind, requester)
+    case Table.Failed(node)         => sender ! this.process(node, Message.Kind.Fail, requester)
     // To debug crashes
     case t: Throwable => throw t
   }
@@ -177,11 +177,11 @@ class Table(val K: Int,
    * message to network agent actor.
    *
    * @param bucket The bucket to refresh
-   * @param controller  Reference to [[Requester]] actor.
+   * @param requester  Reference to [[Requester]] actor.
    */
-  private def refresh(bucket: Bucket, controller: ActorRef): Unit = {
+  private def refresh(bucket: Bucket, requester: ActorRef): Unit = {
     // request refreshing `find_node` by means of `Requester`
-    controller ! Requester.FindNode(bucket.random)
+    requester ! Requester.FindNode(bucket.random)
     // cancel existing bucket task if exists
     this.cancellables.remove(bucket.start) foreach { _.cancel() }
     // schedule new refresh bucket task
@@ -204,14 +204,14 @@ class Table(val K: Int,
    * Drops all data and saves new id in the storage.
    *
    * @param id New SHA-1 node identifier.
-   * @param controller  Reference to [[Requester]] actor.
+   * @param requester  Reference to [[Requester]] actor.
    */
-  private def set(id: Integer160, controller: ActorRef): Table.Result = this.storage.transaction {
+  private def set(id: Integer160, requester: ActorRef): Table.Result = this.storage.transaction {
     this.cancellables.foreach(_._2.cancel())
     this.cancellables.clear()
     this.storage.drop()
     this.storage.id(id)
-    controller ! Requester.FindNode(id)
+    requester ! Requester.FindNode(id)
     Table.Id(id)
   }
 
@@ -235,9 +235,9 @@ class Table(val K: Int,
    *
    * @param node        A node to process network message from.
    * @param kind        A kind of network message received from the node.
-   * @param controller  Reference to [[Requester]] actor.
+   * @param requester  Reference to [[Requester]] actor.
    */
-  private def process(node: NodeInfo, kind: Message.Kind.Kind, controller: ActorRef): Table.Result = {
+  private def process(node: NodeInfo, kind: Message.Kind.Kind, requester: ActorRef): Table.Result = {
 
     import Message.Kind
 
@@ -252,7 +252,7 @@ class Table(val K: Int,
       case None =>
         if (kind == Kind.Query || kind == Kind.Response) {
           // insert new node only if event does not indicate error or failure
-          val result = this.insert(node, bucket, kind, controller)
+          val result = this.insert(node, bucket, kind, requester)
           this.log.debug("Attempted insertion with result {}", result)
           result
         } else {
@@ -277,14 +277,14 @@ class Table(val K: Int,
    * @param node        An instance of [[org.abovobo.dht.NodeInfo]] to insert
    * @param bucket      An instance of bucket which is good for the given node
    * @param kind        A kind network message received from node.
-   * @param controller  Reference to [[Requester]] actor.
+   * @param requester  Reference to [[Requester]] actor.
    * @return            Result of operation, as listed in [[org.abovobo.dht.Table.Result]]
    *                    excluding `Updated` value.
    */
   private def insert(node: NodeInfo,
                      bucket: Bucket,
                      kind: Message.Kind.Kind,
-                     controller: ActorRef): Table.Result = this.storage.transaction {
+                     requester: ActorRef): Table.Result = this.storage.transaction {
 
     // get this node identifier
     val id = this.storage.id().get
@@ -349,7 +349,7 @@ class Table(val K: Int,
           // get list of questionable nodes
           val questionable = nodes.filter(_.questionable)
           // request ping operation for every questionable node
-          questionable foreach { node => controller ! Requester.Ping(node) }
+          questionable foreach { node => requester ! Requester.Ping(node) }
           // send deferred message to itself
           system.scheduler.scheduleOnce(
             this.delay, self, Table.Received(node, kind))(this.context.dispatcher, this.sender())

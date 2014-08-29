@@ -12,9 +12,6 @@ package org.abovobo.dht.finder
 
 import java.net.InetSocketAddress
 
-import akka.actor.ActorSystem
-import akka.testkit.{ImplicitSender, TestKit}
-import com.typesafe.config.ConfigFactory
 import org.abovobo.integer.Integer160
 import org.abovobo.dht.NodeInfo
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
@@ -22,14 +19,7 @@ import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 /**
  * Unit test for [[Finder]]
  */
-class FinderTest(system: ActorSystem)
-  extends TestKit(system)
-  with ImplicitSender
-  with WordSpecLike
-  with Matchers
-  with BeforeAndAfterAll {
-
-  def this() = this(ActorSystem("FinderTest", ConfigFactory.parseString("akka.loglevel=debug")))
+class FinderTest extends WordSpecLike with Matchers with BeforeAndAfterAll {
 
   val target = Integer160.random
   val seed = new NodeInfo(Integer160.zero, new InetSocketAddress(0))

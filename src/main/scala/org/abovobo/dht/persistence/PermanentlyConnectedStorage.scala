@@ -12,6 +12,8 @@ package org.abovobo.dht.persistence
 
 import java.sql.{Connection, PreparedStatement}
 
+import org.abovobo.dht.persistence
+import org.abovobo.jdbc.Closer._
 import org.abovobo.jdbc.Transaction
 
 /**
@@ -33,6 +35,22 @@ abstract class PermanentlyConnectedStorage(override protected val connection: Co
 
   /** @inheritdoc */
   override def transaction[T](f: => T): T = Transaction.transaction(this.connection)(f)
+
+  /** @inheritdoc */
+  override def setSchema(name: String): persistence.Storage = {
+    using (this.connection.createStatement()) { statement =>
+      statement.execute("set schema " + name)
+    }
+    this
+  }
+
+  /** @inheritdoc */
+  override def unsetSchema(): persistence.Storage = {
+    using (this.connection.createStatement()) { statement =>
+      statement.execute("set schema PUBLIC")
+    }
+    this
+  }
 
   /**
    * Returns [[java.sql.PreparedStatement]] for given key to work with. If no statement for the given key
