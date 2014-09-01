@@ -30,10 +30,10 @@ class Node(val as: ActorSystem,
            val endpoint: InetSocketAddress,
            val routers: Traversable[InetSocketAddress],
            private val id: Long = 0L,
-           sf: () => Storage) extends AutoCloseable {
+           sf: => Storage) extends AutoCloseable {
 
   /// Collection of storage instances: 3 of them
-  val storage = Array.fill[Storage](3) { this.sf() }
+  val storage = Array.fill[Storage](3) { this.sf }
 
   /// Reference to Table actor
   val table = this.as.actorOf(Table.props(this.storage(0)), "table" + this.id)

@@ -64,11 +64,8 @@ class RouterTest extends WordSpecLike with Matchers with BeforeAndAfterAll {
           new InetSocketAddress(0),
           Nil,
           0,
-          () => {
-            val storage = new PermanentlyConnectedStorage(this.ds.connection)
-            storage.setSchema("ipv4")
-            storage
-          })
+          new PermanentlyConnectedStorage(this.ds.connection).setSchema("ipv4")
+        )
       }
     }
   }

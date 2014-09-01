@@ -26,8 +26,6 @@ import scala.concurrent.duration.FiniteDuration
  */
 class PermanentlyConnectedStorage(connection: Connection) extends persistence.PermanentlyConnectedStorage(connection) {
 
-  import org.abovobo.jdbc.Closer._
-
   //////////////////
   /// READER METHODS
   //////////////////
