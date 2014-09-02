@@ -84,7 +84,7 @@ object NetworkEmulator extends App {
     this.id += 1
     new Node(
       this.as,
-      new InetSocketAddress(InetAddress.getLoopbackAddress, this.port + this.id),
+      new InetSocketAddress(this.port + this.id),
       this.routers,
       this.id,
       this.storage(this.id))
