@@ -144,7 +144,8 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
       }
     }
 
-    println("Improved count by current report: " + improved + "; target=" + this.target.toHexString)
+    // DZ: uncomment for debugging
+    // println("Improved count by current report: " + improved + "; target=" + this.target.toHexString)
   }
   
   /**
