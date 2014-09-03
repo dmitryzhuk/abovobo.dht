@@ -13,6 +13,7 @@ package org.abovobo.dht
 import java.net.InetSocketAddress
 
 import akka.actor.ActorSystem
+import com.typesafe.config.{ConfigFactory, Config}
 import org.abovobo.dht.persistence._
 import org.abovobo.jdbc.Closer._
 
@@ -29,8 +30,12 @@ import org.abovobo.jdbc.Closer._
 class Node(val as: ActorSystem,
            val endpoint: InetSocketAddress,
            val routers: Traversable[InetSocketAddress],
-           private val id: Long = 0L,
-           sf: => Storage) extends AutoCloseable {
+           sf: => Storage,
+           id: Long = 0L,
+           overrides: Config = null) extends AutoCloseable {
+
+  /// Set up configuration
+  val config = if (this.overrides == null) ConfigFactory.load() else ConfigFactory.load(this.overrides)
 
   /// Collection of storage instances: 3 of them
   val storage = Array.fill[Storage](3) { this.sf }

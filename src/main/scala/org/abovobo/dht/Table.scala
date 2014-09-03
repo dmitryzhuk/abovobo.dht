@@ -397,7 +397,7 @@ object Table {
    *                  This duration must normally be a bit longer when waiting node
    *                  reply timeout.
    * @param threshold Number of times a node must fail to respond before being marked as 'bad'.
-   * @param storage    Instance of [[org.abovobo.dht.persistence.Storage]] used to access persisted data.
+   * @param storage   Instance of [[org.abovobo.dht.persistence.Storage]] used to access persisted data.
    *
    * @return          Properly configured Actor Props instance.
    */
