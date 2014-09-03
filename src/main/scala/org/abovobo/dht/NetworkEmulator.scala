@@ -83,16 +83,24 @@ object NetworkEmulator extends App {
   }
 
   // Optionally defined own router instance
-  val router = if (this.config.hasPath("dht.emulator.router")) {
-    val endpoint = if (this.config.hasPath("dht.emulator.router.address")) {
-      new InetSocketAddress(
-        InetAddress.getByName(this.config.getString("dht.emulator.router.address")),
-        this.config.getInt("dht.emulator.router.port"))
-    } else {
-      new InetSocketAddress(this.config.getInt("dht.emulator.router.port"))
-    }
-    Some(new Node(this.as, endpoint, Nil, this.storage(0)))
-  } else None
+  val router =
+    if (this.config.hasPath("dht.emulator.router"))
+      Some(new Node(
+        this.as,
+        Nil,
+        this.storage(0),
+        0,
+        ConfigFactory.parseString(
+          "dht.node.agent.port:" +
+            this.config.getInt("dht.emulator.router.port") +
+            (if (this.config.hasPath("dht.emulator.router.address"))
+              ", dht.node.agent.address:\"" + this.config.getString("dht.emulator.router.address") + "\""
+            else
+              "")
+        )
+      ))
+    else
+      None
 
   // Starting Node id
   var id = 0
@@ -101,7 +109,7 @@ object NetworkEmulator extends App {
   var port = this.config.getInt("dht.node.agent.port")
 
   // Collection of router addresses (single entry)
-  val routers = (this.config.getConfigList("dht.node.routers") map { c =>
+  val routers = (this.config.getConfigList("dht.emulator.routers") map { c =>
     new InetSocketAddress(InetAddress.getByName(c.getString("address")), c.getInt("port"))
   }).toList
 
@@ -110,10 +118,10 @@ object NetworkEmulator extends App {
     this.id += 1
     new Node(
       this.as,
-      new InetSocketAddress(this.port + this.id),
       this.routers,
       this.storage(this.id),
-      this.id
+      this.id,
+      ConfigFactory.parseString("dht.node.agent.port=" + (this.port + this.id).toString)
     )
   }
 
