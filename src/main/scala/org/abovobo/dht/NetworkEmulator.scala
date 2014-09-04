@@ -12,11 +12,12 @@ package org.abovobo.dht
 
 import java.net.{InetAddress, InetSocketAddress}
 
-import scala.collection.JavaConversions._
-import akka.actor.ActorSystem
+import akka.actor.{Props, ActorSystem}
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.persistence.Storage
-import org.abovobo.dht.persistence.h2.{DynamicallyConnectedStorage, DataSource}
+import org.abovobo.dht.persistence.h2.{DataSource, DynamicallyConnectedStorage}
+
+import scala.collection.JavaConversions._
 
 /**
  * This object creates multiple nodes which are locally interconnected.
@@ -124,6 +125,14 @@ object NetworkEmulator extends App {
       ConfigFactory.parseString("dht.node.agent.port=" + (this.port + this.id).toString)
     )
   }
+
+  // UI Actor initialization
+  val ui = this.as.actorOf(
+    Props(classOf[UI],
+      new InetSocketAddress(
+        InetAddress.getByName(this.config.getString("dht.node.ui.address")),
+        this.config.getInt("dht.node.ui.port"))),
+    "ui")
 
   // Set up shutdown hook
   sys.addShutdownHook {

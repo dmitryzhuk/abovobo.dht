@@ -53,13 +53,13 @@ class Agent(val endpoint: InetSocketAddress,
   override def preStart() = {
     this.log.debug("Agent#preStart (sending `Start` message)")
     this.context.watch(this.requester)
-    IO(Udp) ! Udp.Bind(self, this.endpoint)
+    IO(Udp) ! Udp.Bind(this.self, this.endpoint)
   }
 
   /** @inheritdoc */
   override def postRestart(reason: Throwable) = {
     this.log.debug("Agent#postRestart (scheduling `Start` message)")
-    system.scheduler.scheduleOnce(this.retry, IO(Udp), Udp.Bind(self, this.endpoint))
+    system.scheduler.scheduleOnce(this.retry, IO(Udp), Udp.Bind(this.self, this.endpoint))
   }
 
   /** @inheritdoc */

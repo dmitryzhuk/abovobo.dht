@@ -13,9 +13,10 @@ package org.abovobo.dht
 import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor.ActorSystem
-import com.typesafe.config.{ConfigFactory, Config}
+import com.typesafe.config.{Config, ConfigFactory}
 import org.abovobo.dht.persistence._
 import org.abovobo.jdbc.Closer._
+
 import scala.concurrent.duration._
 
 /**
@@ -31,11 +32,11 @@ import scala.concurrent.duration._
 class Node(val as: ActorSystem,
            val routers: Traversable[InetSocketAddress],
            sf: => Storage,
-           id: Long = 0L,
+           val id: Long = 0L,
            overrides: Config = null) extends AutoCloseable {
 
   /// Set up configuration
-  val config = if (this.overrides == null) ConfigFactory.load() else ConfigFactory.load(this.overrides)
+  private val config = if (this.overrides == null) ConfigFactory.load() else ConfigFactory.load(this.overrides)
 
   /// Create endpoint address
   val endpoint =
@@ -99,9 +100,4 @@ class Node(val as: ActorSystem,
 
   /** @inheritdoc */
   override def close() = this.storage foreach { _.dispose() }
-}
-
-object NodeApp extends App {
-
-  val system = ActorSystem("ABOVOBO-DHT-BASIC")
 }

@@ -61,9 +61,7 @@ class RouterTest extends WordSpecLike with Matchers with BeforeAndAfterAll {
       "display proper log of startup sequence" in {
         val node = new Node(
           this.as,
-          new InetSocketAddress(0),
           Nil,
-          0,
           new PermanentlyConnectedStorage(this.ds.connection).setSchema("ipv4")
         )
       }
