@@ -13,11 +13,13 @@ package org.abovobo.dht
 import java.net.{InetAddress, InetSocketAddress}
 
 import akka.actor.{Props, ActorSystem}
+import akka.actor.ActorDSL._
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.persistence.Storage
 import org.abovobo.dht.persistence.h2.{DataSource, DynamicallyConnectedStorage}
 
 import scala.collection.JavaConversions._
+import scala.concurrent.Future
 
 /**
  * This object creates multiple nodes which are locally interconnected.
@@ -30,7 +32,8 @@ object NetworkEmulator extends App {
   val config = ConfigFactory.load("network-emulator.conf").withFallback(ConfigFactory.load())
 
   // Initialize ActorSystem
-  val as = ActorSystem("NetworkEmulator", ConfigFactory.parseString("akka.loglevel=debug"))
+  implicit val as = ActorSystem("NetworkEmulator", ConfigFactory.parseString("akka.loglevel=debug"))
+  import this.as.dispatcher
 
   // Initialize DataSource
   val ds = DataSource(this.config.getString("dht.emulator.storage"))
@@ -89,7 +92,7 @@ object NetworkEmulator extends App {
       Some(new Node(
         this.as,
         Nil,
-        this.storage(0),
+        () => this.storage(0),
         0,
         ConfigFactory.parseString(
           "dht.node.agent.port:" +
@@ -120,26 +123,34 @@ object NetworkEmulator extends App {
     new Node(
       this.as,
       this.routers,
-      this.storage(this.id),
+      () => this.storage(this.id),
       this.id,
       ConfigFactory.parseString("dht.node.agent.port=" + (this.port + this.id).toString)
     )
   }
+
+  /** Actor handling [[org.abovobo.dht.UI.Shutdown]] event */
+  val stopper = actor(new Act { become { case UI.Shutdown => Future { NetworkEmulator.this.shutdown() } } })
 
   // UI Actor initialization
   val ui = this.as.actorOf(
     Props(classOf[UI],
       new InetSocketAddress(
         InetAddress.getByName(this.config.getString("dht.node.ui.address")),
-        this.config.getInt("dht.node.ui.port"))),
+        this.config.getInt("dht.node.ui.port")),
+      (this.router ++ this.nodes).toIndexedSeq,
+      this.stopper),
     "ui")
 
-  // Set up shutdown hook
-  sys.addShutdownHook {
+  /** Shuts down application */
+  def shutdown() = {
     println("Shutting down")
     this.nodes foreach { _.close() }
     this.router foreach { _.close() }
     this.as.shutdown()
     this.as.awaitTermination()
   }
+
+  // Set up shutdown hook
+  sys.addShutdownHook { this.shutdown() }
 }

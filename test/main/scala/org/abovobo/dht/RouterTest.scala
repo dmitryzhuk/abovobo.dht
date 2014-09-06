@@ -10,8 +10,6 @@
 
 package org.abovobo.dht
 
-import java.net.InetSocketAddress
-
 import akka.actor.ActorSystem
 import com.typesafe.config.ConfigFactory
 import org.abovobo.dht.persistence.h2.{DataSource, PermanentlyConnectedStorage}
@@ -59,10 +57,10 @@ class RouterTest extends WordSpecLike with Matchers with BeforeAndAfterAll {
   "Router" when {
     "created" must {
       "display proper log of startup sequence" in {
-        val node = new Node(
+        new Node(
           this.as,
           Nil,
-          new PermanentlyConnectedStorage(this.ds.connection).setSchema("ipv4")
+          () => new PermanentlyConnectedStorage(this.ds.connection).setSchema("ipv4")
         )
       }
     }
