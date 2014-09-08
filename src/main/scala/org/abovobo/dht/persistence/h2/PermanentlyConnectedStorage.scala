@@ -52,7 +52,11 @@ class PermanentlyConnectedStorage(connection: Connection) extends persistence.Pe
 
   /** @inheritdoc */
   override def peers(infohash: Integer160) =
-    this.peers(this.statement(persistence.Reader.Q_ALL_PEERS_NAME), infohash)
+    this.peers(this.statement(persistence.Reader.Q_PEERS_NAME), infohash)
+
+  /** @inheritdoc */
+  override def peers() =
+    this.peers(this.statement(persistence.Reader.Q_ALL_PEERS_NAME))
 
   //////////////////
   /// WRITER METHODS
@@ -108,6 +112,7 @@ class PermanentlyConnectedStorage(connection: Connection) extends persistence.Pe
       persistence.Reader.Q_ALL_NODES_NAME -> this.connection.prepareStatement(Reader.Q_ALL_NODES_STMT),
       persistence.Reader.Q_NODES_BY_BUCKET_NAME -> this.connection.prepareStatement(Reader.Q_NODES_BY_BUCKET_STMT),
       persistence.Reader.Q_ALL_BUCKETS_NAME -> this.connection.prepareStatement(Reader.Q_ALL_BUCKETS_STMT),
+      persistence.Reader.Q_PEERS_NAME -> this.connection.prepareStatement(Reader.Q_PEERS_STMT),
       persistence.Reader.Q_ALL_PEERS_NAME -> this.connection.prepareStatement(Reader.Q_ALL_PEERS_STMT),
       /// WRITER QUERIES
       persistence.Writer.Q_SET_SELF_ID_NAME -> this.connection.prepareStatement(Writer.Q_SET_SELF_ID_STMT),

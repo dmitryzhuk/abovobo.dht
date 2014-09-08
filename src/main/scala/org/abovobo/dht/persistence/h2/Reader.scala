@@ -19,5 +19,6 @@ object Reader {
   val Q_ALL_NODES_STMT = "select * from node"
   val Q_NODES_BY_BUCKET_STMT = "select * from node where id>=? and id<=?"
   val Q_ALL_BUCKETS_STMT = "select * from bucket order by id"
-  val Q_ALL_PEERS_STMT = "select * from peer where infohash=?"
+  val Q_PEERS_STMT = "select * from peer where infohash=?"
+  val Q_ALL_PEERS_STMT = "select * from peer"
 }

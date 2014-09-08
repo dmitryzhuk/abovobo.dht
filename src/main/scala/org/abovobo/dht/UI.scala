@@ -12,20 +12,20 @@ package org.abovobo.dht
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, Actor, ActorContext, ActorLogging}
+import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef}
 import akka.io.{IO, Tcp}
 import akka.pattern.ask
 import akka.util.Timeout
+import org.abovobo.dht.json.NodesJsonProtocol._
 import spray.can.Http
 import spray.http.MediaTypes._
-import spray.http.{Timedout, HttpRequest, StatusCodes}
-import spray.routing._
+import spray.http.{HttpRequest, StatusCodes, Timedout}
 import spray.json._
+import spray.routing._
 import spray.util.LoggingContext
+
 import scala.concurrent.Future
 import scala.concurrent.duration._
-import org.abovobo.jdbc.Closer._
-
 import scala.util.control.NonFatal
 
 /**
@@ -40,45 +40,8 @@ class UI(val endpoint: InetSocketAddress,
          val stopper: ActorRef)
   extends HttpServiceActor with ActorLogging {
 
-  object NodesJsonProtocol extends DefaultJsonProtocol {
-    implicit object NodesJsonFormat extends RootJsonFormat[IndexedSeq[Node]] {
-      override def write(nodes: IndexedSeq[Node]) = {
-        JsArray(
-          nodes.map { node =>
-            using(node.sf()) { storage =>
-              val buckets = storage.buckets()
-              val nodes = buckets.map { bucket => storage.nodes(bucket) }
-              JsObject(
-                new JsField("address", JsString(node.endpoint.getAddress.toString)),
-                new JsField("port", JsNumber(node.endpoint.getPort)),
-                new JsField("buckets", JsNumber(storage.buckets().size)),
-                new JsField("nodes", JsNumber(storage.nodes().size))
-              )
-            }
-          }.toList
-        )
-      }
-      override def read(value: JsValue) = null
-    }
-  }
-  /*
-  object NodeJsonProtocol extends DefaultJsonProtocol {
-    implicit object NodeJsonFormat extends RootJsonFormat[Node] {
-      override def write(node: Node) = {
-        using(node.sf()) { storage =>
-          val buckets = storage.buckets()
-          val nodes = buckets.map { bucket => storage.nodes(bucket) }
-          JsObject(
-            new JsField("address", JsString(node.endpoint.getAddress.toString)),
-            new JsField("port", JsNumber(node.endpoint.getPort)),
-            new JsField("buckets", new JsArray(buckets.toList)))
-        }
-      }
-      override def read(value: JsValue) = null
-    }
-  }
-  */
-  import NodesJsonProtocol._
+  /** Extract router nodes from normal nodes */
+  val partitions = this.nodes.partition(_.routers.isEmpty)
 
   /** Defines HTTP handling */
   val route: Route = {
@@ -112,8 +75,10 @@ class UI(val endpoint: InetSocketAddress,
       // Lists all nodes available at this location
       path("list" / IntNumber / IntNumber) { (offset, count) =>
         complete {
-          this.nodes.toJson.compactPrint
-          //"requesting nodes from " + offset + " to " + (offset + count)
+          JsObject(
+            ("routers", this.partitions._1.toJson),
+            ("nodes", this.partitions._2.toJson)
+          ).compactPrint
         }
       }
     }
@@ -128,13 +93,16 @@ class UI(val endpoint: InetSocketAddress,
     implicit val timeout: Timeout = 1.second
 
     IO(Http).ask(Http.Bind(this.self, this.endpoint, 100, Nil, None)).flatMap {
+
       case b: Http.Bound =>
         this.log.info("UI is bound")
         Future.successful(b)
+
       case Tcp.CommandFailed(b: Http.Bind) =>
         this.log.error("Failed to bind UI")
         Future.failed(throw new RuntimeException(
           "Binding failed. Set DEBUG-level logging for `akka.io.TcpListener` to log the cause."))
+
     }
   }
 

@@ -47,7 +47,9 @@ class DynamicallyConnectedStorage(ds: persistence.DataSource) extends persistenc
   /** @inheritdoc */
   override def buckets() = this.invoke(Reader.Q_ALL_BUCKETS_STMT, this.buckets)
   /** @inheritdoc */
-  override def peers(infohash: Integer160) = this.invoke(Reader.Q_ALL_PEERS_STMT, this.peers(_, infohash))
+  override def peers() = this.invoke(Reader.Q_ALL_PEERS_STMT, this.peers)
+  /** @inheritdoc */
+  override def peers(infohash: Integer160) = this.invoke(Reader.Q_PEERS_STMT, this.peers(_, infohash))
 
   //////////////////
   /// WRITER METHODS

@@ -98,6 +98,12 @@ trait Reader {
   def buckets(): Traversable[Bucket]
 
   /**
+   * Returns traversable collection of all stored peers.
+   *
+   * @return traversable collection of all stored peers.
+   */
+  def peers(): Traversable[Peer]
+  /**
    * Returns traversable collection of peers associated with given infohash.
    *
    * @param infohash An infohash to get associated peers with.
@@ -204,6 +210,22 @@ trait Reader {
   /**
    * Executes given statement reading all rows into a collection.
    *
+   * @param statement A statement to execute.
+   * @return          Collection of peers.
+   */
+  protected def peers(statement: PreparedStatement): Traversable[Peer] = {
+    var peers = List.empty[Peer]
+    using(statement.executeQuery()) { rs =>
+      while (rs.next()) {
+        peers ::= rs.getBytes("address")
+      }
+    }
+    peers.reverse
+  }
+
+  /**
+   * Executes given statement reading all rows into a collection.
+   *
    * Expected parameter mapping:
    * 1 BINARY infohash
    *
@@ -248,5 +270,6 @@ object Reader {
   val Q_ALL_NODES_NAME = "ALL_NODES"
   val Q_NODES_BY_BUCKET_NAME = "NODES_BY_BUCKET"
   val Q_ALL_BUCKETS_NAME = "ALL_BUCKETS"
+  val Q_PEERS_NAME ="PEERS_BY_INFOHASH"
   val Q_ALL_PEERS_NAME = "ALL_PEERS"
 }
