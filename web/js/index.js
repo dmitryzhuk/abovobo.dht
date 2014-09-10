@@ -10,7 +10,7 @@
 
     if (typeof define === 'function' && define.amd) {
         // Register as an anonymous AMD module:
-        define(['jquery', 'nodes'], factory);
+        define(['jquery', 'jquery.wait', 'nodes'], factory);
     }
 
 }(function ($) {

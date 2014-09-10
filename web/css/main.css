@@ -1,8 +1,19 @@
 body {
-  font-family: Tahoma;
-  background-color: #eee; }
+  font-family: "Helvetica Neue", Helvetica, Arial, san-serif;
+  background-color: white; }
 
 .content {
   margin: 0 auto;
-  width: 800px;
-  border: 1px solid #aaa; }
+  width: 800px; }
+  .content table {
+    width: 100%;
+    margin-bottom: 20px;
+    font-size: 0.65em;
+    border: 1px solid #ccc; }
+    .content table caption div {
+      float: left;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-bottom-color: white;
+      position: relative;
+      top: 1px; }

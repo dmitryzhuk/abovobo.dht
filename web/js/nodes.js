@@ -17,14 +17,18 @@
 
     'use strict';
 
-    /** Default options for Plugin */
+    /** Plugin name */
     var name = 'nodes';
+
+    /** Default options for Plugin */
+    var defaults = {};
 
     /** Defines Plugin constructor */
     function Nodes() {}
 
     /** Plugin prototype definition*/
     Nodes.prototype = {
+
         /**
          * Initializes plugin instance. Normally, this method is invoked only once
          * per life cycle of the plugin instance.
@@ -35,11 +39,32 @@
          *          Initialization options
          */
         init: function (element, options) {
-            $.getJSON('/list/0/100', function (data) {
-
-            });
-            $('#routers', element);
             window.console.log('Initialized Nodes Plugin');
+
+            this.element = element;
+            this.options = $.extend({}, options, defaults);
+
+            this.display(0, 100);
+        },
+
+        /**
+         * This function renders collection of nodes starting from given offset.
+         *
+         * @param offset a point in the node collection to start at.
+         * @param count a number of nodes to render.
+         */
+        display: function (offset, count) {
+            var self = this;
+            $(self.element).wait({'action': 'show', 'message': 'Loading nodes'});
+            $.getJSON('/list/' + offset + '/' + count, function (data) {
+                $.each(data.routers, function (index, node) {
+                    self._row($('#routers tbody', self.element).empty(), node);
+                });
+                $.each(data.nodes, function (index, node) {
+                    self._row($('#nodes tbody', self.element).empty(), node);
+                });
+                $(self.element).wait({'action': 'hide'});
+            });
         },
 
         /**
@@ -50,6 +75,20 @@
          */
         command: function (options) {
             //
+        },
+
+        _row: function (table, node) {
+            return table.append(
+                '<tr>' +
+                    '<td>' + node.lid + '</td>' +
+                    '<td>' + node.uid + '</td>' +
+                    '<td>' + node.address + '</td>' +
+                    '<td>' + node.port + '</td>' +
+                    '<td>' + node.buckets + '</td>' +
+                    '<td>' + node.nodes + '</td>' +
+                    '<td>' + node.peers + '</td>' +
+                '</tr>'
+            );
         }
 
     };

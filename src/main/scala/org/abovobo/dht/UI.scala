@@ -18,6 +18,8 @@ import akka.pattern.ask
 import akka.util.Timeout
 import org.abovobo.dht.json.NodesJsonProtocol._
 import spray.can.Http
+import spray.http.HttpHeaders._
+import spray.http.CacheDirectives._
 import spray.http.MediaTypes._
 import spray.http.{HttpRequest, StatusCodes, Timedout}
 import spray.json._
@@ -68,7 +70,9 @@ class UI(val endpoint: InetSocketAddress,
             case "js" => `application/javascript`
             case _ => `text/plain`
           }
-          getFromResource(path.reduceLeft(_ + "/" + _), ct)
+          respondWithHeader(`Cache-Control`(`no-cache`, `no-store`)) {
+            getFromResource(path.reduceLeft(_ + "/" + _), ct)
+          }
         }
       } ~
       //
