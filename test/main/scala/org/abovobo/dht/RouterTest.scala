@@ -60,7 +60,7 @@ class RouterTest extends WordSpecLike with Matchers with BeforeAndAfterAll {
         new Node(
           this.as,
           Nil,
-          () => new PermanentlyConnectedStorage(this.ds.connection).setSchema("ipv4")
+          id => new PermanentlyConnectedStorage(this.ds.connection).setSchema("ipv4")
         )
       }
     }

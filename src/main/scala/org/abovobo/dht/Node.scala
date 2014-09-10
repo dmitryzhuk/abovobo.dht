@@ -31,7 +31,7 @@ import scala.concurrent.duration._
  */
 class Node(val as: ActorSystem,
            val routers: Traversable[InetSocketAddress],
-           val sf: () => Storage,
+           val sf: Long => Storage,
            val id: Long = 0L,
            overrides: Config = null) extends AutoCloseable {
 
@@ -48,7 +48,7 @@ class Node(val as: ActorSystem,
       new InetSocketAddress(this.config.getInt("dht.node.agent.port"))
 
   /// Collection of storage instances: 3 of them
-  val storage = Array.fill[Storage](3) { this.sf() }
+  val storage = Array.fill[Storage](3) { this.sf(this.id) }
 
   /// Reference to Table actor
   val table = this.as.actorOf(

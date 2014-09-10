@@ -92,7 +92,7 @@ object NetworkEmulator extends App {
       Some(new Node(
         this.as,
         Nil,
-        () => this.storage(0),
+        id => this.storage(id),
         0,
         ConfigFactory.parseString(
           "dht.node.agent.port:" +
@@ -123,7 +123,7 @@ object NetworkEmulator extends App {
     new Node(
       this.as,
       this.routers,
-      () => this.storage(this.id),
+      id => this.storage(id),
       this.id,
       ConfigFactory.parseString("dht.node.agent.port=" + (this.port + this.id).toString)
     )

@@ -21,7 +21,10 @@
     var name = 'nodes';
 
     /** Default options for Plugin */
-    var defaults = {};
+    var defaults = {
+        start: 0,
+        page: 50
+    };
 
     /** Defines Plugin constructor */
     function Nodes() {}
@@ -44,7 +47,7 @@
             this.element = element;
             this.options = $.extend({}, options, defaults);
 
-            this.display(0, 100);
+            this.display(this.options.start, this.options.page);
         },
 
         /**
@@ -56,12 +59,14 @@
         display: function (offset, count) {
             var self = this;
             $(self.element).wait({'action': 'show', 'message': 'Loading nodes'});
-            $.getJSON('/list/' + offset + '/' + count, function (data) {
+            $.getJSON('/nodes/list/' + offset + '/' + count, function (data) {
+                $('#routers tbody', self.element).empty();
                 $.each(data.routers, function (index, node) {
-                    self._row($('#routers tbody', self.element).empty(), node);
+                    self._row($('#routers tbody', self.element), node);
                 });
+                $('#nodes tbody', self.element).empty();
                 $.each(data.nodes, function (index, node) {
-                    self._row($('#nodes tbody', self.element).empty(), node);
+                    self._row($('#nodes tbody', self.element), node);
                 });
                 $(self.element).wait({'action': 'hide'});
             });

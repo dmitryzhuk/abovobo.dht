@@ -25,7 +25,7 @@ object NodesJsonProtocol extends DefaultJsonProtocol {
     override def write(nodes: IndexedSeq[Node]) = {
       JsArray(
         nodes.map { node =>
-          using(node.sf()) { storage =>
+          using(node.sf(node.id)) { storage =>
             JsObject(
               new JsField("uid", JsString(storage.id().getOrElse(Integer160.maxval).toString)),
               new JsField("lid", JsNumber(node.id)),

@@ -76,13 +76,21 @@ class UI(val endpoint: InetSocketAddress,
         }
       } ~
       //
-      // Lists all nodes available at this location
-      path("list" / IntNumber / IntNumber) { (offset, count) =>
-        complete {
-          JsObject(
-            ("routers", this.partitions._1.toJson),
-            ("nodes", this.partitions._2.toJson)
-          ).compactPrint
+      // Groups calls to nodes collection
+      pathPrefix("nodes") {
+        // Lists all nodes available at this location
+        path("list" / IntNumber / IntNumber) { (offset, count) =>
+          complete {
+            val routers = this.partitions._1.drop(offset).take(count)
+            val nodes = this.partitions._2
+              .drop(if (offset > routers.size) offset - routers.size else 0)
+              .take(if (count > routers.size) count - routers.size else 0)
+            JsObject(("routers", routers.toJson), ("nodes", nodes.toJson)).compactPrint
+          }
+        } ~
+        // number of available nodes
+        path("count") {
+          complete(JsNumber(this.nodes.size).compactPrint)
         }
       }
     }

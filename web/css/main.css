@@ -16,4 +16,11 @@ body {
       border: 1px solid #ccc;
       border-bottom-color: white;
       position: relative;
-      top: 1px; }
+      top: 1px;
+      width: 80px; }
+    .content table tbody td {
+      text-align: right; }
+      .content table tbody td:nth-child(2) {
+        text-align: left;
+        font-family: monospace;
+        font-size: 1.4em; }
