@@ -19,6 +19,13 @@
 
     $('#data').nodes({});
 
+    $('h3 button').click(function () {
+        $.get('/stop', function (data) {
+            window.alert(1);
+            $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});
+        });
+    });
+
     /*
     $.fn[name] = function (options) {
         return this.each(function () {

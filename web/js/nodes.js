@@ -23,7 +23,7 @@
     /** Default options for Plugin */
     var defaults = {
         start: 0,
-        page: 50
+        page: 25
     };
 
     /** Defines Plugin constructor */
@@ -47,7 +47,11 @@
             this.element = element;
             this.options = $.extend({}, options, defaults);
 
-            this.display(this.options.start, this.options.page);
+            var self = this;
+            $.getJSON('/nodes/count', function (value) {
+                self.count = value;
+                self.display(self.options.start, self.options.page);
+            });
         },
 
         /**
@@ -60,14 +64,34 @@
             var self = this;
             $(self.element).wait({'action': 'show', 'message': 'Loading nodes'});
             $.getJSON('/nodes/list/' + offset + '/' + count, function (data) {
+
                 $('#routers tbody', self.element).empty();
-                $.each(data.routers, function (index, node) {
-                    self._row($('#routers tbody', self.element), node);
-                });
+                if (data.routers.length === 0) {
+                    $('#routers').hide();
+                } else {
+                    $('#routers').show();
+                    $.each(data.routers, function (index, node) {
+                        self._row($('#routers tbody', self.element), node);
+                    });
+                }
+
                 $('#nodes tbody', self.element).empty();
-                $.each(data.nodes, function (index, node) {
-                    self._row($('#nodes tbody', self.element), node);
-                });
+                if (data.nodes.length === 0) {
+                    $('#nodes').hide();
+                } else {
+                    $('#nodes').show();
+                    $.each(data.nodes, function (index, node) {
+                        self._row($('#nodes tbody', self.element), node);
+                    });
+                }
+
+                $('.pager', self.element).empty().append(
+                    (offset === 0 ? '' : '<a class="prev" href="#">&lt;&lt;</a>') +
+                    ((offset + count) < self.count ? '<a class="next" href="#">&gt;&gt;</a>' : '')
+                );
+                $('a.prev', self.element).click(function () { self.display(offset - count, count); return false; });
+                $('a.next', self.element).click(function () { self.display(offset + count, count); return false; });
+
                 $(self.element).wait({'action': 'hide'});
             });
         },

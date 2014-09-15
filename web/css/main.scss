@@ -11,6 +11,17 @@ body {
   margin: 0 auto;
   width: 800px;
 
+  h3 {
+    background-color: #fcefa1;
+    button {
+      float: right;
+      line-height: 18px;
+      &:after {
+        clear: both;
+      }
+    }
+  }
+
   table {
     width: 100%;
     margin-bottom: 20px;

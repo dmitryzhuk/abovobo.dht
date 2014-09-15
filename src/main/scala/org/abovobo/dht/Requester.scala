@@ -153,7 +153,7 @@ class Requester(val K: Int,
     this.log.debug("Failing transaction {}", transaction.query)
     // don't notify table about routers activity
     if (transaction.remote.id != Integer160.zero) {
-      this.table ! Table.Received(transaction.remote, Message.Kind.Error)
+      this.table ! Table.Received(transaction.remote, Message.Kind.Fail)
     }
     // if we are dealing with recursion, get target id and
     // fail it in finder and finally trigger next iteration

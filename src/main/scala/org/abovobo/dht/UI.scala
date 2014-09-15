@@ -45,6 +45,8 @@ class UI(val endpoint: InetSocketAddress,
   /** Extract router nodes from normal nodes */
   val partitions = this.nodes.partition(_.routers.isEmpty)
 
+  import this.context.dispatcher
+
   /** Defines HTTP handling */
   val route: Route = {
     get {
@@ -55,8 +57,8 @@ class UI(val endpoint: InetSocketAddress,
       } ~
       path("stop") {
         complete {
-          this.stopper ! UI.Shutdown
-          "Server shut down"
+          this.context.system.scheduler.scheduleOnce(1.second, this.stopper, UI.Shutdown)
+          ""
         }
       } ~
       //
@@ -83,7 +85,7 @@ class UI(val endpoint: InetSocketAddress,
           complete {
             val routers = this.partitions._1.drop(offset).take(count)
             val nodes = this.partitions._2
-              .drop(if (offset > routers.size) offset - routers.size else 0)
+              .drop(if (offset > this.partitions._1.size) offset - this.partitions._1.size else 0)
               .take(if (count > routers.size) count - routers.size else 0)
             JsObject(("routers", routers.toJson), ("nodes", nodes.toJson)).compactPrint
           }

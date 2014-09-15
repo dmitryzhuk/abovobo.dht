@@ -5,6 +5,13 @@ body {
 .content {
   margin: 0 auto;
   width: 800px; }
+  .content h3 {
+    background-color: #fcefa1; }
+    .content h3 button {
+      float: right;
+      line-height: 18px; }
+      .content h3 button:after {
+        clear: both; }
   .content table {
     width: 100%;
     margin-bottom: 20px;
