@@ -21,24 +21,8 @@
 
     $('h3 button').click(function () {
         $.get('/stop', function (data) {
-            window.alert(1);
             $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});
         });
     });
-
-    /*
-    $.fn[name] = function (options) {
-        return this.each(function () {
-            var key = 'plugin_' + name,
-                plugin = $.data(this, key);
-            if (plugin === undefined) {
-                plugin = new Uploader();
-                plugin.init(this, options);
-                $(this).data(key, plugin);
-            }
-            plugin.command(options);
-        });
-    };
-    */
 
 }));
