@@ -20,7 +20,7 @@
     $('#data').nodes({});
 
     $('h3 button').click(function () {
-        $.get('/stop', function (data) {
+        $.get('/stop', function () {
             $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});
         });
     });
