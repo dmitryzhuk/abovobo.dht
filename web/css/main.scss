@@ -76,6 +76,62 @@ body {
     table#nodes {
       margin-bottom: 10px;
     }
+    table#nodes, table#routers, table#general {
+      tbody {
+        tr {
+          td {
+            text-align: right;
+            &:nth-child(2), &:nth-child(3) {
+              text-align: left;
+              font-family: monospace;
+              font-size: 1.4em;
+              vertical-align: text-top;
+            } // 2nd & 3rd columns
+          }
+        }
+      }
+    }
+    table#general {
+      tbody {
+        tr {
+          &:hover {
+            background-color: inherit;
+          }
+        }
+      }
+    }
+    table#nodes, table#routers {
+      tbody {
+        tr {
+          td {
+            cursor: pointer;
+          }
+        }
+      }
+    }
+    table#table {
+      tbody {
+        tr {
+          td {
+            i {
+              color: $common-grey;
+            }
+            &:nth-child(1), &:nth-child(2) {
+              font-family: monospace;
+              font-size: 1.4em;
+              vertical-align: text-top;
+            } // 1st & 2nd columns
+            &[colspan] {
+              font-family: inherit;
+              font-size: inherit;
+              font-weight: bold;
+              text-align: center;
+              background-color: #fcefa1;
+            }
+          }
+        }
+      }
+    }
     table {
       width: 100%;
       font-size: 0.65em;
@@ -92,22 +148,22 @@ body {
         top: 1px;
         width: 80px;
       }
+      thead {
+        tr {
+          th {
+            padding: 0 5px 0 5px;
+          }
+        }
+      }
       tbody {
         tr {
           &:hover {
             background-color: $common-grey;
           }
           td {
+            text-align: right;
             line-height: 19px;
             padding: 0 5px 0 5px;
-            cursor: pointer;
-            text-align: right;
-            &:nth-child(2), &:nth-child(3) {
-              text-align: left;
-              font-family: monospace;
-              font-size: 1.4em;
-              vertical-align: text-top;
-            } // 2nd & 3rd columns
           } // <td>
         } // <tr>
       } // <tbody>

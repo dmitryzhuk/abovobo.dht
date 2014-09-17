@@ -47,6 +47,29 @@ body {
         clear: both; }
   .content .data table#nodes {
     margin-bottom: 10px; }
+  .content .data table#nodes tbody tr td, .content .data table#routers tbody tr td, .content .data table#general tbody tr td {
+    text-align: right; }
+    .content .data table#nodes tbody tr td:nth-child(2), .content .data table#nodes tbody tr td:nth-child(3), .content .data table#routers tbody tr td:nth-child(2), .content .data table#routers tbody tr td:nth-child(3), .content .data table#general tbody tr td:nth-child(2), .content .data table#general tbody tr td:nth-child(3) {
+      text-align: left;
+      font-family: monospace;
+      font-size: 1.4em;
+      vertical-align: text-top; }
+  .content .data table#general tbody tr:hover {
+    background-color: inherit; }
+  .content .data table#nodes tbody tr td, .content .data table#routers tbody tr td {
+    cursor: pointer; }
+  .content .data table#table tbody tr td i {
+    color: #cccccc; }
+  .content .data table#table tbody tr td:nth-child(1), .content .data table#table tbody tr td:nth-child(2) {
+    font-family: monospace;
+    font-size: 1.4em;
+    vertical-align: text-top; }
+  .content .data table#table tbody tr td[colspan] {
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: bold;
+    text-align: center;
+    background-color: #fcefa1; }
   .content .data table {
     width: 100%;
     font-size: 0.65em;
@@ -62,15 +85,11 @@ body {
       position: relative;
       top: 1px;
       width: 80px; }
+    .content .data table thead tr th {
+      padding: 0 5px 0 5px; }
     .content .data table tbody tr:hover {
       background-color: #cccccc; }
     .content .data table tbody tr td {
+      text-align: right;
       line-height: 19px;
-      padding: 0 5px 0 5px;
-      cursor: pointer;
-      text-align: right; }
-      .content .data table tbody tr td:nth-child(2), .content .data table tbody tr td:nth-child(3) {
-        text-align: left;
-        font-family: monospace;
-        font-size: 1.4em;
-        vertical-align: text-top; }
+      padding: 0 5px 0 5px; }

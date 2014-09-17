@@ -59,6 +59,9 @@
             var self = this;
             $(self.element).wait({'action': 'show', 'message': 'Loading details'});
             $.getJSON('/node/' + id, function (node) {
+
+                $(self.element).wait({'action': 'hide'});
+
                 self.node = node;
 
                 $('#general tbody', this.element).append(
@@ -79,7 +82,32 @@
                     '</tr>'
                 );
 
-                $(self.element).wait({'action': 'hide'});
+                var table = $('#table tbody', this.element);
+                $.each(node.table, function (index, item) {
+                    table.append(
+                        '<tr>' +
+                            '<td colspan="6">' +
+                                'Bucket @' + item.start + ' (last seen at ' + new Date(item.seen).toISOString() + ')' +
+                            '</td>' +
+                        '</tr>'
+                    );
+                    $.each(item.nodes, function (index, item) {
+                        table.append(
+                            '<tr>' +
+                                '<td>' + item.uid + '</td>' +
+                                '<td>' + item.address + '</td>' +
+                                '<td>' + item.port + '</td>' +
+                                '<td>' + item.failcount + '</td>' +
+                                '<td>' +
+                                    (item.queried === null ? '<i>never</i>' : new Date(item.queried).toISOString()) +
+                                '</td>' +
+                                '<td>' +
+                                    (item.replied === null ? '<i>never</i>' : new Date(item.replied).toISOString()) +
+                                '</td>' +
+                            '</tr>'
+                        );
+                    });
+                });
             });
         },
 
