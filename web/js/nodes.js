@@ -23,7 +23,7 @@
     /** Default options for Plugin */
     var defaults = {
         start: 0,
-        page: 25
+        page: 20
     };
 
     /** Defines Plugin constructor */
@@ -86,8 +86,8 @@
                 }
 
                 $('.pager', self.element).empty().append(
-                    (offset === 0 ? '' : '<a class="prev" href="#">&lt;&lt;</a>') +
-                    ((offset + count) < self.count ? '<a class="next" href="#">&gt;&gt;</a>' : '')
+                    (offset === 0 ? '' : '<a class="prev" href="#">&#10140;</a>') +
+                    ((offset + count) < self.count ? '<a class="next" href="#">&#10140;</a>' : '')
                 );
                 $('a.prev', self.element).click(function () { self.display(offset - count, count); return false; });
                 $('a.next', self.element).click(function () { self.display(offset + count, count); return false; });

@@ -1,5 +1,16 @@
 
 $general-background: #fff;
+$general-text: #000;
+$common-grey: #ccc;
+
+// generic transform
+@mixin transform($transforms) {
+  -moz-transform: $transforms;
+  -o-transform: $transforms;
+  -ms-transform: $transforms;
+  -webkit-transform: $transforms;
+  transform: $transforms;
+}
 
 body {
   font-family: "Helvetica Neue", Helvetica, Arial, san-serif;
@@ -16,36 +27,95 @@ body {
     button {
       float: right;
       line-height: 18px;
+      //border-width: 1px 7px 3px 7px;
+      //padding: 0;
+      //border: 0;
+      margin: 0;
       &:after {
         clear: both;
       }
     }
   }
 
-  table {
-    width: 100%;
-    margin-bottom: 20px;
-    font-size: 0.65em;
-    border: 1px solid #ccc;
-    caption div {
-      float: left;
-      padding: 10px;
-      border: 1px solid #ccc;
-      border-bottom-color: $general-background;
-      position: relative;
-      top: 1px;
-      width: 80px;
-    }
-    tbody {
-      td {
-        text-align: right;
-        &:nth-child(2) {
-          text-align: left;
-          font-family: monospace;
-          font-size: 1.4em;
+  .data {
+
+    .pager {
+      height: 22px;
+      line-height: 20px;
+      //font-size: 0.8em;
+      font-weight: bold;
+      background-color: $common-grey;
+      a {
+        margin-top: 1px;
+        width: 20px;
+        height: 20px;
+        background-color: $general-background;
+        text-decoration: none;
+        text-align: center;
+        color: $general-text;
+        &:hover{
+          color: $general-text;
+        }
+        &:visited {
+          color: $general-text;
+        }
+      }
+      .next {
+        margin-right: 1px;
+        float: right;
+        &:after {
+          clear: both;
+        }
+      }
+      .prev {
+        margin-left: 1px;
+        float: left;
+        @include transform(scale(-1, 1));
+        &:after {
+          clear: both;
         }
       }
     }
-  }
+
+    table#nodes {
+      margin-bottom: 10px;
+    }
+    table {
+      width: 100%;
+      font-size: 0.65em;
+      border: 1px solid $common-grey;
+      border-spacing: 0;
+      border-collapse: collapse;
+      margin-top: 10px;
+      caption div {
+        float: left;
+        padding: 10px;
+        border: 1px solid $common-grey;
+        border-bottom-color: $general-background;
+        position: relative;
+        top: 1px;
+        width: 80px;
+      }
+      tbody {
+        tr {
+          &:hover {
+            background-color: $common-grey;
+          }
+          td {
+            line-height: 19px;
+            padding: 0 5px 0 5px;
+            cursor: pointer;
+            text-align: right;
+            &:nth-child(2), &:nth-child(3) {
+              text-align: left;
+              font-family: monospace;
+              font-size: 1.4em;
+              vertical-align: text-top;
+            } // 2nd & 3rd columns
+          } // <td>
+        } // <tr>
+      } // <tbody>
+    } // <table>
+  } // .data
 
 }
