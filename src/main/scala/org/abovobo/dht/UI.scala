@@ -17,6 +17,7 @@ import akka.io.{IO, Tcp}
 import akka.pattern.ask
 import akka.util.Timeout
 import org.abovobo.dht.json.NodesJsonProtocol._
+import org.abovobo.dht.json.NodeJsonProtocol._
 import spray.can.Http
 import spray.http.HttpHeaders._
 import spray.http.CacheDirectives._
@@ -94,6 +95,16 @@ class UI(val endpoint: InetSocketAddress,
         path("count") {
           complete(JsNumber(this.nodes.size).compactPrint)
         }
+      } ~
+      //
+      // Produces complete node description
+      pathPrefix("node" / LongNumber) { lid =>
+        complete {
+          this.nodes
+            .find(_.id == lid)
+            .map(_.toJson.compactPrint)
+            .getOrElse[String](JsNull.compactPrint)
+        }
       }
     }
   }
@@ -124,7 +135,7 @@ class UI(val endpoint: InetSocketAddress,
   override def runRoute(route: Route)(implicit eh: ExceptionHandler, rh: RejectionHandler, ac: ActorContext,
                              rs: RoutingSettings, log: LoggingContext): Actor.Receive = {
     val sealedExceptionHandler = eh orElse ExceptionHandler.default
-    val sealedRoute = sealRoute(route)(sealedExceptionHandler, rh)
+    val sealedRoute = this.sealRoute(route)(sealedExceptionHandler, rh)
     def runSealedRoute(ctx: RequestContext): Unit =
       try sealedRoute(ctx)
       catch {
@@ -134,22 +145,20 @@ class UI(val endpoint: InetSocketAddress,
       }
 
     {
-      case request: HttpRequest ⇒
+      case request: HttpRequest =>
         val ctx = RequestContext(request, ac.sender(), request.uri.path).withDefaultSender(ac.self)
         runSealedRoute(ctx)
 
-      case ctx: RequestContext ⇒ runSealedRoute(ctx)
+      case ctx: RequestContext => runSealedRoute(ctx)
 
-      case Tcp.Connected(_, _) ⇒
-        // by default we register ourselves as the handler for a new connection
-        ac.sender() ! Tcp.Register(ac.self)
+      // by default we register ourselves as the handler for a new connection
+      case Tcp.Connected(_, _) => ac.sender() ! Tcp.Register(ac.self)
 
-      case x: Tcp.ConnectionClosed        ⇒ onConnectionClosed(x)
+      case x: Tcp.ConnectionClosed => this.onConnectionClosed(x)
 
-      case Timedout(request: HttpRequest) ⇒ runRoute(timeoutRoute)(eh, rh, ac, rs, log)(request)
+      case Timedout(request: HttpRequest) => this.runRoute(timeoutRoute)(eh, rh, ac, rs, log)(request)
 
-      case Requester.PeerAnnounced =>
-        this.log.debug("Peer announced!")
+      case Requester.PeerAnnounced => this.log.debug("Peer announced!")
     }
   }
 

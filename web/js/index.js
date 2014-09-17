@@ -1,7 +1,12 @@
 /**
- * Created by dmitryzhuk on 9/8/14.
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
  */
-
 
 /*global define */
 (function (factory) {
@@ -17,11 +22,13 @@
 
     'use strict';
 
-    $('#data').nodes({});
+    $(document).ready(function () {
+        $('#data').nodes({});
 
-    $('h3 button').click(function () {
-        $.get('/stop', function () {
-            $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});
+        $('h3 button').click(function () {
+            $.get('/stop', function () {
+                $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});
+            });
         });
     });
 

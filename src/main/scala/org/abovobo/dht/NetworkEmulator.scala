@@ -147,6 +147,7 @@ object NetworkEmulator extends App {
     println("Shutting down")
     this.nodes foreach { _.close() }
     this.router foreach { _.close() }
+    this.ds.close()
     this.as.shutdown()
     this.as.awaitTermination()
   }

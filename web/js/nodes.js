@@ -1,6 +1,13 @@
 /**
- * Created by dmitryzhuk on 9/8/14.
+ * Abovobo DHT Implementation
+ *
+ * This file is provided under terms and conditions of
+ * Eclipse Public License v. 1.0
+ * http://www.opensource.org/licenses/eclipse-1.0
+ *
+ * Developed by Dmitry Zhuk for Abovobo project.
  */
+
 
 
 /*global define */
@@ -107,17 +114,19 @@
         },
 
         _row: function (table, node) {
-            return table.append(
-                '<tr>' +
-                    '<td>' + node.lid + '</td>' +
-                    '<td>' + node.uid + '</td>' +
-                    '<td>' + node.address + '</td>' +
-                    '<td>' + node.port + '</td>' +
-                    '<td>' + node.buckets + '</td>' +
-                    '<td>' + node.nodes + '</td>' +
-                    '<td>' + node.peers + '</td>' +
-                '</tr>'
-            );
+            return $(
+                    '<tr>' +
+                        '<td>' + node.lid + '</td>' +
+                        '<td>' + node.uid + '</td>' +
+                        '<td>' + node.address + '</td>' +
+                        '<td>' + node.port + '</td>' +
+                        '<td>' + node.buckets + '</td>' +
+                        '<td>' + node.nodes + '</td>' +
+                        '<td>' + node.peers + '</td>' +
+                    '</tr>'
+                ).appendTo(table).click(function () {
+                    window.location = 'node.html?id=' + node.lid;
+                });
         }
 
     };

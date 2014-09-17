@@ -102,7 +102,7 @@ trait Reader {
    *
    * @return traversable collection of all stored peers.
    */
-  def peers(): Traversable[Peer]
+  def peers(): Traversable[(Integer160, Peer)]
   /**
    * Returns traversable collection of peers associated with given infohash.
    *
@@ -213,11 +213,11 @@ trait Reader {
    * @param statement A statement to execute.
    * @return          Collection of peers.
    */
-  protected def peers(statement: PreparedStatement): Traversable[Peer] = {
-    var peers = List.empty[Peer]
+  protected def peers(statement: PreparedStatement): Traversable[(Integer160, Peer)] = {
+    var peers = List.empty[(Integer160, Peer)]
     using(statement.executeQuery()) { rs =>
       while (rs.next()) {
-        peers ::= rs.getBytes("address")
+        peers ::= new Integer160(rs.getBytes("infohash")) -> rs.getBytes("address")
       }
     }
     peers.reverse
