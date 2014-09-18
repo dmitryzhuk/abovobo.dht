@@ -138,6 +138,11 @@
 
     $(document).ready(function () {
         $('.content').node();
+        $('h3 button').click(function () {
+            $.get('/stop', function () {
+                $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});
+            });
+        });
     });
 
 }));

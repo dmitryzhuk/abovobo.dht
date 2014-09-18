@@ -93,3 +93,9 @@ body {
       text-align: right;
       line-height: 19px;
       padding: 0 5px 0 5px; }
+
+.tool {
+  position: absolute;
+  max-width: 300px;
+  top: 0;
+  left: 0; }
