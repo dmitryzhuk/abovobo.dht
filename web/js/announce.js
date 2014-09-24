@@ -55,7 +55,7 @@
 
             $('button', this.element).attr('disabled','disabled').click(function () {
                 $.get('/node/announce/' + $('pre', self.element).text() + '/' + id, function () {
-                    window.alert('Sequence Initiated');
+                    // -- window.alert('Sequence Initiated');
                 });
             });
 

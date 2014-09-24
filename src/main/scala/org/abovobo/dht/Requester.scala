@@ -155,15 +155,21 @@ class Requester(val K: Int,
     if (transaction.remote.id != Integer160.zero) {
       this.table ! Table.Received(transaction.remote, Message.Kind.Fail)
     }
-    // if we are dealing with recursion, get target id and
-    // fail it in finder and finally trigger next iteration
-    this.target(transaction.query).foreach { target =>
-      this.recursions.get(target._1) foreach { finder =>
-        finder.fail(transaction.remote)
-        this.iterate(target._1, Some(finder), transaction.requester, agent) { () =>
-          target._2(this.factory.next(), this.reader.id().get, target._1)
+    //
+    this.target(transaction.query) match {
+      // if we are dealing with recursion, get target id and
+      // fail it in finder and finally trigger next iteration
+      case Some(target: (Integer160, (TID, Integer160, Integer160) => Query)) =>
+        this.recursions.get(target._1) foreach { finder =>
+          finder.fail(transaction.remote)
+          this.iterate(target._1, Some(finder), transaction.requester, agent) { () =>
+            target._2(this.factory.next(), this.reader.id().get, target._1)
+          }
         }
-      }
+      // if we are dealing with non-recursive request, just notify initiator about failure
+      case None => transaction.requester ! Requester.Failed(transaction.query)
+    }
+    this.target(transaction.query).foreach { target =>
     }
   }
 
@@ -250,7 +256,9 @@ class Requester(val K: Int,
         }
 
       case ap: Response.AnnouncePeer =>
-        transaction.requester ! Requester.PeerAnnounced()
+        transaction.requester ! Requester.PeerAnnounced(
+          transaction.query.asInstanceOf[Query.AnnouncePeer].infohash,
+          transaction.remote)
     }
   }
 
@@ -306,7 +314,7 @@ object Requester {
   case class Pinged() extends Result
 
   /** Indicates that peer has been successfully announced */
-  case class PeerAnnounced() extends Result
+  case class PeerAnnounced(target: Integer160, remote: NodeInfo) extends Result
 
   /**
    * Indicates that recursive `find_node` or `get_peers` operation has been successfully completed.
@@ -324,6 +332,9 @@ object Requester {
 
   /** Indicates that recursive `find_node` or `get_peers` operation has failed. */
   case class NotFound() extends Result
+
+  /** Indicates that non-recursive requeste has failed. */
+  case class Failed(q: Query) extends Result
 
   /** Base trait for all commands supported by this actor */
   sealed trait Command

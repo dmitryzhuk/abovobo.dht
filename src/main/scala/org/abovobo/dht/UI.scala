@@ -29,7 +29,8 @@ import spray.routing._
 import spray.util.LoggingContext
 import akka.actor.ActorDSL._
 
-import scala.concurrent.Future
+import scala.collection.mutable.ListBuffer
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.control.NonFatal
 
@@ -110,13 +111,21 @@ class UI(val endpoint: InetSocketAddress,
           }
         } ~
         path("announce" / Segment / LongNumber) { (hash, lid) =>
+          implicit val timeout: akka.util.Timeout = 30.seconds
           complete {
-            this.nodes.find(_.id == lid).foreach { node =>
+            import spray.json.DefaultJsonProtocol._
+            this.nodes.find(_.id == lid).map { node =>
               actor(new Act {
-                node.requester ! Requester.GetPeers(new Integer160(hash))
+                var initiator: ActorRef = null
+                var total: Int = 0
+                var results = new ListBuffer[Requester.Result]()
                 become {
+                  case msg @ Requester.GetPeers(infohash) =>
+                    node.requester ! msg
+                    this.initiator = this.sender()
                   case Requester.Found(target, infos, peers, tokens) =>
                     UI.this.log.debug("Found {} nodes for {}", infos.size, target)
+                    this.total = infos.size
                     infos.foreach { info =>
                       node.requester ! Requester.AnnouncePeer(
                         info,
@@ -125,14 +134,33 @@ class UI(val endpoint: InetSocketAddress,
                         node.endpoint.getPort,
                         implied = false)
                     }
-                  case Requester.NotFound =>
+                  case msg @ Requester.NotFound =>
                     UI.this.log.error("Not found for {}", hash)
-                  case Requester.PeerAnnounced =>
+                    this.initiator ! msg
+                  case msg @ Requester.PeerAnnounced(target, info) =>
                     UI.this.log.debug("Peer announced for {}", hash)
+                    this.results += msg
+                    if (this.results.size == this.total) {
+                      this.initiator ! this.results.toArray
+                    }
+                  case msg @ Requester.Failed(query) =>
+                    this.results += msg
+                    if (this.results.size == this.total) {
+                      this.initiator ! this.results.toArray
+                    }
                 }
-              })
-            }
-            ""
+              }) ? Requester.GetPeers(new Integer160(hash))
+            }.map(Await.result(_, 30.seconds)).map {
+                case results: Array[Requester.Result] => results
+                case _ => Array.empty[Requester.Result]
+            }.getOrElse(Array.empty[Requester.Result]).map {
+              case Requester.Failed(query) =>
+                JsObject("status" -> "failed".toJson)
+              case Requester.PeerAnnounced(target, remote) =>
+                JsObject("status" -> "announced".toJson, "remote" -> remote.id.toString.toJson)
+              case _ =>
+                JsObject("status" -> "unknown".toJson)
+            }.toJson.compactPrint
           }
         }
       }
