@@ -15,7 +15,7 @@
 
     if (typeof define === 'function' && define.amd) {
         // Register as an anonymous AMD module:
-        define(['jquery', 'jquery.wait'], factory);
+        define(['jquery', 'jquery.wait', 'announce'], factory);
     }
 
 }(function ($) {
@@ -51,7 +51,7 @@
          *          Initialization options
          */
         init: function (element, options) {
-            window.console.log('Initialized Nodes Plugin');
+            window.console.log('Initialized Node Plugin');
 
             this.element = element;
             this.options = $.extend({}, options, defaults);
@@ -138,6 +138,7 @@
 
     $(document).ready(function () {
         $('.content').node();
+        $('#announce').announce();
         $('h3 button').click(function () {
             $.get('/stop', function () {
                 $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});

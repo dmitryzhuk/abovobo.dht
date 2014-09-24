@@ -10,15 +10,29 @@
 </head>
 <body>
 
-<div class="content">
+<div class="container">
 
-    <div id="data" class="data">
+    <div class="nothing"></div>
 
-        <h3>Node Details<button>Stop</button></h3>
+    <div class="tools">
+        <div class="tool" id="announce">
+            <div><strong>Announce</strong></div>
+            <label for="value">Enter some text</label>
+            <input type="text" id="value" />
+            <pre></pre>
+            <button>Announce</button>
+        </div>
+    </div>
 
-        <table id="general">
-            <caption><div>General Info</div></caption>
-            <thead>
+    <div class="content">
+
+        <div id="data" class="data">
+
+            <h3>Node Details<button>Stop</button></h3>
+
+            <table id="general">
+                <caption><div>General Info</div></caption>
+                <thead>
                 <tr>
                     <th>Local ID</th>
                     <th>Network ID</th>
@@ -28,14 +42,14 @@
                     <th>Number of Known Nodes</th>
                     <th>Number of Stored Peers</th>
                 </tr>
-            </thead>
-            <tbody>
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
 
-        <table id="table">
-            <caption><div>Routing Table</div></caption>
-            <thead>
+            <table id="table">
+                <caption><div>Routing Table</div></caption>
+                <thead>
                 <tr>
                     <th>Network ID</th>
                     <th>Listener Address</th>
@@ -44,35 +58,32 @@
                     <th>Last Queried</th>
                     <th>Last Replied</th>
                 </tr>
-            </thead>
-            <tbody>
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
 
-        <table id="peers">
-            <caption><div>Stored Peers</div></caption>
-            <thead>
+            <table id="peers">
+                <caption><div>Stored Peers</div></caption>
+                <thead>
                 <tr>
                     <th>Infohash</th>
                     <th>Listener Address</th>
                     <th>Listener Port</th>
                 </tr>
-            </thead>
-            <tbody>
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                </tbody>
+            </table>
+
+        </div>
 
     </div>
-
 </div>
 
-<div class="tool" id="announce">
-    <div><strong>Announce Data</strong></div>
-    <label for="value">Enter some text</label>
-    <input type="text" id="value" />
-</div>
-
+<!-- Load SHA-1 library -->
 <script src="http://crypto-js.googlecode.com/svn/tags/3.1.2/build/rollups/sha1.js"></script>
+
 <!-- Load AMD scripts -->
 <script data-main="js/node" src="http://requirejs.org/docs/release/2.1.15/comments/require.js"></script>
 

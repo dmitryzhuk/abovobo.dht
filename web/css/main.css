@@ -2,23 +2,81 @@ body {
   font-family: "Helvetica Neue", Helvetica, Arial, san-serif;
   background-color: white; }
 
-.content {
-  margin: 0 auto;
-  width: 800px; }
-  .content h3 {
+.container .nothing {
+  -moz-box-sizing: border-box;
+  -o-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  float: left;
+  width: 200px;
+  min-height: 200px; }
+.container .tools {
+  -moz-box-sizing: border-box;
+  -o-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  float: right;
+  width: 300px;
+  min-height: 300px; }
+  .container .tools .tool {
+    margin: 0 10px 10px 10px;
+    padding: 5px;
+    border: 2px solid #fcefa1;
+    border-radius: 4px; }
+    .container .tools .tool div:first-child {
+      text-align: center;
+      background-color: #fcefa1; }
+    .container .tools .tool label {
+      font-size: 0.7em; }
+    .container .tools .tool#announce input {
+      width: 100%;
+      -moz-box-sizing: border-box;
+      -o-box-sizing: border-box;
+      -ms-box-sizing: border-box;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box; }
+    .container .tools .tool#announce pre {
+      width: 100%;
+      height: 21px;
+      margin: 5px 0 0 0;
+      background-color: #ccc;
+      line-height: 21px;
+      font-size: 0.8em;
+      text-align: center; }
+    .container .tools .tool#announce button {
+      height: 21px;
+      line-height: 18px;
+      border: 1px solid #cccccc;
+      margin-top: 5px;
+      width: 100%;
+      -moz-box-sizing: border-box;
+      -o-box-sizing: border-box;
+      -ms-box-sizing: border-box;
+      -webkit-box-sizing: border-box;
+      box-sizing: border-box; }
+.container .content {
+  -moz-box-sizing: border-box;
+  -o-box-sizing: border-box;
+  -ms-box-sizing: border-box;
+  -webkit-box-sizing: border-box;
+  box-sizing: border-box;
+  margin: 0 300px 0 200px; }
+  .container .content h3 {
     background-color: #fcefa1; }
-    .content h3 button {
+    .container .content h3 button {
       float: right;
       line-height: 18px;
       margin: 0; }
-      .content h3 button:after {
+      .container .content h3 button:after {
         clear: both; }
-  .content .data .pager {
+  .container .content .data .pager {
     height: 22px;
     line-height: 20px;
     font-weight: bold;
     background-color: #cccccc; }
-    .content .data .pager a {
+    .container .content .data .pager a {
       margin-top: 1px;
       width: 20px;
       height: 20px;
@@ -26,16 +84,16 @@ body {
       text-decoration: none;
       text-align: center;
       color: black; }
-      .content .data .pager a:hover {
+      .container .content .data .pager a:hover {
         color: black; }
-      .content .data .pager a:visited {
+      .container .content .data .pager a:visited {
         color: black; }
-    .content .data .pager .next {
+    .container .content .data .pager .next {
       margin-right: 1px;
       float: right; }
-      .content .data .pager .next:after {
+      .container .content .data .pager .next:after {
         clear: both; }
-    .content .data .pager .prev {
+    .container .content .data .pager .prev {
       margin-left: 1px;
       float: left;
       -moz-transform: scale(-1, 1);
@@ -43,41 +101,41 @@ body {
       -ms-transform: scale(-1, 1);
       -webkit-transform: scale(-1, 1);
       transform: scale(-1, 1); }
-      .content .data .pager .prev:after {
+      .container .content .data .pager .prev:after {
         clear: both; }
-  .content .data table#nodes {
+  .container .content .data table#nodes {
     margin-bottom: 10px; }
-  .content .data table#nodes tbody tr td, .content .data table#routers tbody tr td, .content .data table#general tbody tr td {
+  .container .content .data table#nodes tbody tr td, .container .content .data table#routers tbody tr td, .container .content .data table#general tbody tr td {
     text-align: right; }
-    .content .data table#nodes tbody tr td:nth-child(2), .content .data table#nodes tbody tr td:nth-child(3), .content .data table#routers tbody tr td:nth-child(2), .content .data table#routers tbody tr td:nth-child(3), .content .data table#general tbody tr td:nth-child(2), .content .data table#general tbody tr td:nth-child(3) {
+    .container .content .data table#nodes tbody tr td:nth-child(2), .container .content .data table#nodes tbody tr td:nth-child(3), .container .content .data table#routers tbody tr td:nth-child(2), .container .content .data table#routers tbody tr td:nth-child(3), .container .content .data table#general tbody tr td:nth-child(2), .container .content .data table#general tbody tr td:nth-child(3) {
       text-align: left;
       font-family: monospace;
       font-size: 1.4em;
       vertical-align: text-top; }
-  .content .data table#general tbody tr:hover {
+  .container .content .data table#general tbody tr:hover {
     background-color: inherit; }
-  .content .data table#nodes tbody tr td, .content .data table#routers tbody tr td {
+  .container .content .data table#nodes tbody tr td, .container .content .data table#routers tbody tr td {
     cursor: pointer; }
-  .content .data table#table tbody tr td i {
+  .container .content .data table#table tbody tr td i {
     color: #cccccc; }
-  .content .data table#table tbody tr td:nth-child(1), .content .data table#table tbody tr td:nth-child(2) {
+  .container .content .data table#table tbody tr td:nth-child(1), .container .content .data table#table tbody tr td:nth-child(2) {
     font-family: monospace;
     font-size: 1.4em;
     vertical-align: text-top; }
-  .content .data table#table tbody tr td[colspan] {
+  .container .content .data table#table tbody tr td[colspan] {
     font-family: inherit;
     font-size: inherit;
     font-weight: bold;
     text-align: center;
     background-color: #fcefa1; }
-  .content .data table {
+  .container .content .data table {
     width: 100%;
     font-size: 0.65em;
     border: 1px solid #cccccc;
     border-spacing: 0;
     border-collapse: collapse;
     margin-top: 10px; }
-    .content .data table caption div {
+    .container .content .data table caption div {
       float: left;
       padding: 10px;
       border: 1px solid #cccccc;
@@ -85,17 +143,11 @@ body {
       position: relative;
       top: 1px;
       width: 80px; }
-    .content .data table thead tr th {
+    .container .content .data table thead tr th {
       padding: 0 5px 0 5px; }
-    .content .data table tbody tr:hover {
+    .container .content .data table tbody tr:hover {
       background-color: #cccccc; }
-    .content .data table tbody tr td {
+    .container .content .data table tbody tr td {
       text-align: right;
       line-height: 19px;
       padding: 0 5px 0 5px; }
-
-.tool {
-  position: absolute;
-  max-width: 300px;
-  top: 0;
-  left: 0; }

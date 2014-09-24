@@ -3,6 +3,9 @@ $general-background: #fff;
 $general-text: #000;
 $common-grey: #ccc;
 
+$left-pane-width: 200px;
+$right-pane-width: 300px;
+
 // generic transform
 @mixin transform($transforms) {
   -moz-transform: $transforms;
@@ -12,169 +15,228 @@ $common-grey: #ccc;
   transform: $transforms;
 }
 
+// generic box-sizing
+@mixin box-sizing($value) {
+  -moz-box-sizing: $value;
+  -o-box-sizing: $value;
+  -ms-box-sizing: $value;
+  -webkit-box-sizing: $value;
+  box-sizing: $value;
+}
+
 body {
   font-family: "Helvetica Neue", Helvetica, Arial, san-serif;
   background-color: $general-background;
 }
 
-.content {
+.container {
 
-  margin: 0 auto;
-  width: 800px;
+  .nothing {
+    @include box-sizing(border-box);
+    float: left;
+    width: $left-pane-width;
+    min-height: $left-pane-width;
+  }
 
-  h3 {
-    background-color: #fcefa1;
-    button {
-      float: right;
-      line-height: 18px;
-      margin: 0;
-      &:after {
-        clear: both;
+  .tools {
+    @include box-sizing(border-box);
+    float: right;
+    width: $right-pane-width;
+    min-height: $right-pane-width;
+
+    .tool {
+      margin: 0 10px 10px 10px;
+      padding: 5px;
+      border: 2px solid #fcefa1;
+      border-radius: 4px;
+
+      div:first-child {
+        text-align: center;
+        background-color: #fcefa1;
+      }
+
+      label {
+        font-size: 0.7em;
+      }
+
+      &#announce {
+        input {
+          width: 100%;
+          @include box-sizing(border-box);
+        }
+        pre {
+          width: 100%;
+          height: 21px;
+          margin: 5px 0 0 0;
+          background-color: #ccc;
+          line-height: 21px;
+          font-size: 0.8em;
+          text-align: center;
+        }
+        button {
+          height: 21px;
+          line-height: 18px;
+          border: 1px solid $common-grey;
+          margin-top: 5px;
+          width: 100%;
+          @include box-sizing(border-box);
+        }
       }
     }
   }
 
-  .data {
+  .content {
 
-    .pager {
-      height: 22px;
-      line-height: 20px;
-      font-weight: bold;
-      background-color: $common-grey;
-      a {
-        margin-top: 1px;
-        width: 20px;
-        height: 20px;
-        background-color: $general-background;
-        text-decoration: none;
-        text-align: center;
-        color: $general-text;
-        &:hover{
-          color: $general-text;
-        }
-        &:visited {
-          color: $general-text;
-        }
-      }
-      .next {
-        margin-right: 1px;
+    @include box-sizing(border-box);
+    margin: 0 $right-pane-width 0 $left-pane-width;
+
+    h3 {
+      background-color: #fcefa1;
+      button {
         float: right;
-        &:after {
-          clear: both;
-        }
-      }
-      .prev {
-        margin-left: 1px;
-        float: left;
-        @include transform(scale(-1, 1));
+        line-height: 18px;
+        margin: 0;
         &:after {
           clear: both;
         }
       }
     }
 
-    table#nodes {
-      margin-bottom: 10px;
-    }
-    table#nodes, table#routers, table#general {
-      tbody {
-        tr {
-          td {
-            text-align: right;
-            &:nth-child(2), &:nth-child(3) {
-              text-align: left;
-              font-family: monospace;
-              font-size: 1.4em;
-              vertical-align: text-top;
-            } // 2nd & 3rd columns
+    .data {
+
+      .pager {
+        height: 22px;
+        line-height: 20px;
+        font-weight: bold;
+        background-color: $common-grey;
+        a {
+          margin-top: 1px;
+          width: 20px;
+          height: 20px;
+          background-color: $general-background;
+          text-decoration: none;
+          text-align: center;
+          color: $general-text;
+          &:hover{
+            color: $general-text;
+          }
+          &:visited {
+            color: $general-text;
+          }
+        }
+        .next {
+          margin-right: 1px;
+          float: right;
+          &:after {
+            clear: both;
+          }
+        }
+        .prev {
+          margin-left: 1px;
+          float: left;
+          @include transform(scale(-1, 1));
+          &:after {
+            clear: both;
           }
         }
       }
-    }
-    table#general {
-      tbody {
-        tr {
-          &:hover {
-            background-color: inherit;
-          }
-        }
+
+      table#nodes {
+        margin-bottom: 10px;
       }
-    }
-    table#nodes, table#routers {
-      tbody {
-        tr {
-          td {
-            cursor: pointer;
-          }
-        }
-      }
-    }
-    table#table {
-      tbody {
-        tr {
-          td {
-            i {
-              color: $common-grey;
+      table#nodes, table#routers, table#general {
+        tbody {
+          tr {
+            td {
+              text-align: right;
+              &:nth-child(2), &:nth-child(3) {
+                text-align: left;
+                font-family: monospace;
+                font-size: 1.4em;
+                vertical-align: text-top;
+              } // 2nd & 3rd columns
             }
-            &:nth-child(1), &:nth-child(2) {
-              font-family: monospace;
-              font-size: 1.4em;
-              vertical-align: text-top;
-            } // 1st & 2nd columns
-            &[colspan] {
-              font-family: inherit;
-              font-size: inherit;
-              font-weight: bold;
-              text-align: center;
-              background-color: #fcefa1;
+          }
+        }
+      }
+      table#general {
+        tbody {
+          tr {
+            &:hover {
+              background-color: inherit;
             }
           }
         }
       }
-    }
-    table {
-      width: 100%;
-      font-size: 0.65em;
-      border: 1px solid $common-grey;
-      border-spacing: 0;
-      border-collapse: collapse;
-      margin-top: 10px;
-      caption div {
-        float: left;
-        padding: 10px;
+      table#nodes, table#routers {
+        tbody {
+          tr {
+            td {
+              cursor: pointer;
+            }
+          }
+        }
+      }
+      table#table {
+        tbody {
+          tr {
+            td {
+              i {
+                color: $common-grey;
+              }
+              &:nth-child(1), &:nth-child(2) {
+                font-family: monospace;
+                font-size: 1.4em;
+                vertical-align: text-top;
+              } // 1st & 2nd columns
+              &[colspan] {
+                font-family: inherit;
+                font-size: inherit;
+                font-weight: bold;
+                text-align: center;
+                background-color: #fcefa1;
+              }
+            }
+          }
+        }
+      }
+      table {
+        width: 100%;
+        font-size: 0.65em;
         border: 1px solid $common-grey;
-        border-bottom-color: $general-background;
-        position: relative;
-        top: 1px;
-        width: 80px;
-      }
-      thead {
-        tr {
-          th {
-            padding: 0 5px 0 5px;
+        border-spacing: 0;
+        border-collapse: collapse;
+        margin-top: 10px;
+        caption div {
+          float: left;
+          padding: 10px;
+          border: 1px solid $common-grey;
+          border-bottom-color: $general-background;
+          position: relative;
+          top: 1px;
+          width: 80px;
+        }
+        thead {
+          tr {
+            th {
+              padding: 0 5px 0 5px;
+            }
           }
         }
-      }
-      tbody {
-        tr {
-          &:hover {
-            background-color: $common-grey;
-          }
-          td {
-            text-align: right;
-            line-height: 19px;
-            padding: 0 5px 0 5px;
-          } // <td>
-        } // <tr>
-      } // <tbody>
-    } // <table>
-  } // .data
+        tbody {
+          tr {
+            &:hover {
+              background-color: $common-grey;
+            }
+            td {
+              text-align: right;
+              line-height: 19px;
+              padding: 0 5px 0 5px;
+            } // <td>
+          } // <tr>
+        } // <tbody>
+      } // <table>
+    } // .data
 
-} // .content
-
-.tool {
-  position: absolute;
-  max-width: 300px;
-  top: 0;
-  left: 0;
+  } // .content
 }
