@@ -22,6 +22,9 @@
 
     'use strict';
 
+    var params = new RegExp('[\\?&]id=([^&#]*)').exec(window.location.search),
+        id = params === null ? '' : decodeURIComponent(params[1]);
+
     /** Plugin name */
     var name = 'announce';
 
@@ -48,8 +51,12 @@
             this.element = element;
             this.options = $.extend({}, options, defaults);
 
+            var self = this;
+
             $('button', this.element).attr('disabled','disabled').click(function () {
-                window.alert('Announcing');
+                $.get('/node/announce/' + $('pre', self.element).text() + '/' + id, function () {
+                    window.alert('Sequence Initiated');
+                });
             });
 
             $('input[type="text"]', this.element).keyup(function () {

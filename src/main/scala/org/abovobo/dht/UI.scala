@@ -18,6 +18,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import org.abovobo.dht.json.NodesJsonProtocol._
 import org.abovobo.dht.json.NodeJsonProtocol._
+import org.abovobo.integer.Integer160
 import spray.can.Http
 import spray.http.HttpHeaders._
 import spray.http.CacheDirectives._
@@ -26,6 +27,7 @@ import spray.http.{HttpRequest, StatusCodes, Timedout}
 import spray.json._
 import spray.routing._
 import spray.util.LoggingContext
+import akka.actor.ActorDSL._
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -98,12 +100,40 @@ class UI(val endpoint: InetSocketAddress,
       } ~
       //
       // Produces complete node description
-      pathPrefix("node" / LongNumber) { lid =>
-        complete {
-          this.nodes
-            .find(_.id == lid)
-            .map(_.toJson.compactPrint)
-            .getOrElse[String](JsNull.compactPrint)
+      pathPrefix("node") {
+        path(LongNumber) { lid =>
+          complete {
+            this.nodes
+              .find(_.id == lid)
+              .map(_.toJson.compactPrint)
+              .getOrElse[String](JsNull.compactPrint)
+          }
+        } ~
+        path("announce" / Segment / LongNumber) { (hash, lid) =>
+          complete {
+            this.nodes.find(_.id == lid).foreach { node =>
+              actor(new Act {
+                node.requester ! Requester.GetPeers(new Integer160(hash))
+                become {
+                  case Requester.Found(target, infos, peers, tokens) =>
+                    UI.this.log.debug("Found {} nodes for {}", infos.size, target)
+                    infos.foreach { info =>
+                      node.requester ! Requester.AnnouncePeer(
+                        info,
+                        tokens(info.id),
+                        new Integer160(hash),
+                        node.endpoint.getPort,
+                        implied = false)
+                    }
+                  case Requester.NotFound =>
+                    UI.this.log.error("Not found for {}", hash)
+                  case Requester.PeerAnnounced =>
+                    UI.this.log.debug("Peer announced for {}", hash)
+                }
+              })
+            }
+            ""
+          }
         }
       }
     }
@@ -158,7 +188,11 @@ class UI(val endpoint: InetSocketAddress,
 
       case Timedout(request: HttpRequest) => this.runRoute(timeoutRoute)(eh, rh, ac, rs, log)(request)
 
-      case Requester.PeerAnnounced => this.log.debug("Peer announced!")
+      case Requester.PeerAnnounced =>
+        this.log.debug("Peer announced!")
+
+      case Requester.Found(target, infos, peers, tokens) =>
+        this.log.debug("====")
     }
   }
 

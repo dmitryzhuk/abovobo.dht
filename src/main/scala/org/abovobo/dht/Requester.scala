@@ -195,7 +195,7 @@ class Requester(val K: Int,
       case Finder.State.Finalize => round(this.K)
       case Finder.State.Succeeded =>
         this.log.debug("Sending SUCCEEDED to {} after {} rounds", sender, f.completed.size)
-        sender ! Requester.Found(f.nodes, f.peers, f.tokens)
+        sender ! Requester.Found(f.target, f.nodes, f.peers, f.tokens)
       case Finder.State.Failed =>
         this.log.debug("Sending FAILED to " + sender)
         sender ! Requester.NotFound()
@@ -311,11 +311,13 @@ object Requester {
   /**
    * Indicates that recursive `find_node` or `get_peers` operation has been successfully completed.
    *
+   * @param target  An original infohash which was a subject of FindNode request.
    * @param nodes   Collected nodes (only closest maximum K nodes provided).
    * @param peers   Collected peers (only for `get_peers` operation).
    * @param tokens  Collection of node id -> token associations (only for `get_peers` operation).
    */
-  case class Found(nodes: Traversable[NodeInfo],
+  case class Found(target: Integer160,
+                   nodes: Traversable[NodeInfo],
                    peers: Traversable[Peer],
                    tokens: scala.collection.Map[Integer160, Token])
     extends Result
