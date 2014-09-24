@@ -14,7 +14,7 @@ import java.sql.{PreparedStatement, ResultSet}
 import java.util.Date
 
 import org.abovobo.dht.Endpoint._
-import org.abovobo.dht.{Bucket, KnownNodeInfo, Peer}
+import org.abovobo.dht.{KnownPeerInfo, Bucket, KnownNodeInfo}
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
 
@@ -102,14 +102,14 @@ trait Reader {
    *
    * @return traversable collection of all stored peers.
    */
-  def peers(): Traversable[(Integer160, Peer)]
+  def peers(): Traversable[KnownPeerInfo]
   /**
    * Returns traversable collection of peers associated with given infohash.
    *
    * @param infohash An infohash to get associated peers with.
    * @return traversable collection of peers associated with given infohash.
    */
-  def peers(infohash: Integer160): Traversable[Peer]
+  def peers(infohash: Integer160): Traversable[KnownPeerInfo]
 
 
   //////////////////////////////////////////////////////////////
@@ -213,11 +213,14 @@ trait Reader {
    * @param statement A statement to execute.
    * @return          Collection of peers.
    */
-  protected def peers(statement: PreparedStatement): Traversable[(Integer160, Peer)] = {
-    var peers = List.empty[(Integer160, Peer)]
+  protected def peers(statement: PreparedStatement): Traversable[KnownPeerInfo] = {
+    var peers = List.empty[KnownPeerInfo]
     using(statement.executeQuery()) { rs =>
       while (rs.next()) {
-        peers ::= new Integer160(rs.getBytes("infohash")) -> rs.getBytes("address")
+        peers ::= new KnownPeerInfo(
+          new Integer160(rs.getBytes("infohash")),
+          rs.getBytes("address"),
+          new Date(rs.getTimestamp("announced").getTime))
       }
     }
     peers.reverse
@@ -233,12 +236,16 @@ trait Reader {
    * @param infohash  A parameter to set into a statement.
    * @return          Collection of peers.
    */
-  protected def peers(statement: PreparedStatement, infohash: Integer160): Traversable[Peer] = {
-    var peers = List.empty[Peer]
+  protected def peers(statement: PreparedStatement, infohash: Integer160): Traversable[KnownPeerInfo] = {
+    var peers = List.empty[KnownPeerInfo]
     statement.setBytes(1, infohash.toArray)
     using(statement.executeQuery()) { rs =>
       while (rs.next()) {
-        peers ::= rs.getBytes("address")
+        peers ::= new KnownPeerInfo(
+          new Integer160(rs.getBytes("infohash")),
+          rs.getBytes("address"),
+          new Date(rs.getTimestamp("announced").getTime))
+
       }
     }
     peers.reverse

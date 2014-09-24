@@ -67,9 +67,10 @@ object NodeJsonProtocol extends DefaultJsonProtocol {
     private def peers(storage: Storage, node: Node) = {
       storage.peers().map { peer =>
         JsObject(
-          "address" -> peer._2.getAddress.toString.toJson,
-          "port" -> peer._2.getPort.toJson,
-          "infohash" -> peer._1.toString.toJson
+          "address" -> peer.address.getAddress.toString.toJson,
+          "port" -> peer.address.getPort.toJson,
+          "infohash" -> peer.infohash.toString.toJson,
+          "announced" -> peer.announced.getTime.toJson
         )
       }.toList.toJson
     }

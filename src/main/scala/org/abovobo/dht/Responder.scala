@@ -110,7 +110,7 @@ class Responder(K: Int,
       case l => this.tokens.put(remote.address, token :: l)
     }
     // look for peers for the given infohash in the storage
-    val peers = this.storage.peers(q.infohash)
+    val peers = this.storage.peers(q.infohash).map(_.address)
     if (peers.nonEmpty) {
       // if there are peers found send them with response
       Agent.Send(new Response.GetPeersWithValues(q.tid, id, token, peers.toSeq), remote.address)
@@ -172,7 +172,7 @@ class Responder(K: Int,
   }
 
   /** This method is executed periodically to remote expired infohash-peer associations */
-  private def cleanup() = this.storage.cleanup(this.lifetime)
+  private def cleanup() = this.storage.transaction(this.storage.cleanup(this.lifetime))
 
   /** Returns immediate value of node self id */
   private def id = this.storage.id().get
@@ -186,7 +186,7 @@ class Responder(K: Int,
   /// Collection of scheduled tasks sending periodic internal commands to self
   private val cancellables = List(
     this.context.system.scheduler.schedule(Duration.Zero, this.period, self, Responder.Rotate),
-    this.context.system.scheduler.schedule(this.lifetime, this.lifetime, self, Responder.Cleanup))
+    this.context.system.scheduler.schedule(Duration.Zero, this.lifetime / 5, self, Responder.Cleanup))
 }
 
 /** Accompanying object */

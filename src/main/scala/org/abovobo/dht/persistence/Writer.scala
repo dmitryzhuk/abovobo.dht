@@ -191,7 +191,7 @@ trait Writer {
       case Response | Error =>
         statement.setTimestamp(2, new Timestamp(System.currentTimeMillis))
         statement.setTimestamp(3, known.queried.map(d => new Timestamp(d.getTime)).orNull)
-        statement.setInt(4, known.failcount)
+        statement.setInt(4, 0)
       case Query =>
         statement.setTimestamp(2, known.replied.map(d => new Timestamp(d.getTime)).orNull)
         statement.setTimestamp(3, new Timestamp(System.currentTimeMillis))

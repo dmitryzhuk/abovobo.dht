@@ -64,7 +64,7 @@
 
                 self.node = node;
 
-                $('#general tbody', this.element).append(
+                $('#general tbody', self.element).append(
                     '<tr>' +
                     '<td>' + node.lid + '</td>' +
                     '<td>' + node.uid + '</td>' +
@@ -82,7 +82,7 @@
                     '</tr>'
                 );
 
-                var table = $('#table tbody', this.element);
+                var table = $('#table tbody', self.element);
                 $.each(node.table, function (index, item) {
                     table.append(
                         '<tr>' +
@@ -107,6 +107,18 @@
                             '</tr>'
                         );
                     });
+                });
+
+                var peers = $('#peers tbody', self.element);
+                $.each(node.peers, function (index, item) {
+                    peers.append(
+                        '<tr>' +
+                            '<td>' + item.infohash + '</td>' +
+                            '<td>' + item.address + '</td>' +
+                            '<td>' + item.port + '</td>' +
+                            '<td>' + new Date(item.announced).toISOString() + '</td>' +
+                        '</tr>'
+                    );
                 });
             });
         },
