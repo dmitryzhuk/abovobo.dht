@@ -167,7 +167,7 @@ class Requester(val K: Int,
           }
         }
       // if we are dealing with non-recursive request, just notify initiator about failure
-      case None => transaction.requester ! Requester.Failed(transaction.query)
+      case None => transaction.requester ! Requester.Failed(transaction.query, transaction.remote)
     }
     this.target(transaction.query).foreach { target =>
     }
@@ -200,11 +200,9 @@ class Requester(val K: Int,
       case Finder.State.Continue => round(this.alpha)
       case Finder.State.Finalize => round(this.K)
       case Finder.State.Succeeded =>
-        this.log.debug("Sending SUCCEEDED to {} after {} rounds", sender, f.completed.size)
-        sender ! Requester.Found(f.target, f.nodes, f.peers, f.tokens)
+        sender ! Requester.Found(f.target, f.nodes, f.peers, f.tokens, f.completed.size)
       case Finder.State.Failed =>
-        this.log.debug("Sending FAILED to " + sender)
-        sender ! Requester.NotFound()
+        sender ! Requester.NotFound(f.target, f.completed.size)
     }
     this.log.debug("Finder state after #iterate: " + f.state)
   }
@@ -226,7 +224,7 @@ class Requester(val K: Int,
     response match {
 
       case ping: Response.Ping =>
-        transaction.requester ! Requester.Pinged()
+        transaction.requester ! Requester.Pinged(transaction.query.asInstanceOf[Query.Ping], transaction.remote)
 
       case fn: Response.FindNode =>
         val target = transaction.query.asInstanceOf[Query.FindNode].target
@@ -257,7 +255,7 @@ class Requester(val K: Int,
 
       case ap: Response.AnnouncePeer =>
         transaction.requester ! Requester.PeerAnnounced(
-          transaction.query.asInstanceOf[Query.AnnouncePeer].infohash,
+          transaction.query.asInstanceOf[Query.AnnouncePeer],
           transaction.remote)
     }
   }
@@ -311,10 +309,10 @@ object Requester {
   sealed trait Result
 
   /** Indicates that node has been successfully pinged */
-  case class Pinged() extends Result
+  case class Pinged(q: Query.Ping, remote: NodeInfo) extends Result
 
   /** Indicates that peer has been successfully announced */
-  case class PeerAnnounced(target: Integer160, remote: NodeInfo) extends Result
+  case class PeerAnnounced(q: Query.AnnouncePeer, remote: NodeInfo) extends Result
 
   /**
    * Indicates that recursive `find_node` or `get_peers` operation has been successfully completed.
@@ -323,18 +321,20 @@ object Requester {
    * @param nodes   Collected nodes (only closest maximum K nodes provided).
    * @param peers   Collected peers (only for `get_peers` operation).
    * @param tokens  Collection of node id -> token associations (only for `get_peers` operation).
+   * @param rounds  Number of completed query rounds.
    */
   case class Found(target: Integer160,
                    nodes: Traversable[NodeInfo],
                    peers: Traversable[Peer],
-                   tokens: scala.collection.Map[Integer160, Token])
+                   tokens: scala.collection.Map[Integer160, Token],
+                   rounds: Int)
     extends Result
 
   /** Indicates that recursive `find_node` or `get_peers` operation has failed. */
-  case class NotFound() extends Result
+  case class NotFound(target: Integer160, rounds: Int) extends Result
 
-  /** Indicates that non-recursive requeste has failed. */
-  case class Failed(q: Query) extends Result
+  /** Indicates that non-recursive request has failed. */
+  case class Failed(q: Query, remote: NodeInfo) extends Result
 
   /** Base trait for all commands supported by this actor */
   sealed trait Command

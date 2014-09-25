@@ -119,7 +119,7 @@ class RequesterTest(system: ActorSystem)
             kind should equal(Message.Kind.Response)
           case m: Any => this.fail("Invalid message type: " + m.getClass.getName)
         }
-        expectMsg(Requester.Pinged())
+        expectMsgType[Requester.Pinged]
       }
     }
 
@@ -295,7 +295,7 @@ class RequesterTest(system: ActorSystem)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
         expectMsgPF(20.seconds) {
-          case Requester.Found(target, nn, peers, tokens) =>
+          case Requester.Found(t, nn, peers, tokens, rounds) =>
             nn should not be empty
             peers shouldBe empty
             tokens shouldBe empty
@@ -450,7 +450,7 @@ class RequesterTest(system: ActorSystem)
           an [java.util.concurrent.TimeoutException] should be thrownBy this.agent.receive(1.second)
         }
         expectMsgPF(20.seconds) {
-          case Requester.Found(target, nn, peers, tokens) =>
+          case Requester.Found(t, nn, peers, tokens, rounds) =>
             nn should not be empty
             peers should not be empty
             tokens should not be empty

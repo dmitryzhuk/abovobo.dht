@@ -194,7 +194,7 @@ class Finder(val target: Integer160, val K: Int, val alpha: Int, val seeds: Trav
       Finder.State.Succeeded
 
     // case #4: Last round did not bring any nodes which are closer than already seen ones,
-    //          means that initator should consider to send requests to K closest known nodes,
+    //          means that initiator should consider to send requests to K closest known nodes,
     //          which were not yet queried.
     else if (this._completed.nonEmpty && this._completed.last.improved == 0 && this._pending.isEmpty)
       Finder.State.Finalize

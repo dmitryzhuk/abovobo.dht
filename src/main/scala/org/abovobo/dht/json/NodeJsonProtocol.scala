@@ -15,7 +15,7 @@ import org.abovobo.dht.persistence.Storage
 import org.abovobo.integer.Integer160
 import org.abovobo.jdbc.Closer._
 import spray.json._
-import org.abovobo.dht.json.KnownNodeInfoProtocol._
+import org.abovobo.dht.json.NodeInfoJsonProtocol._
 
 /** Defines JSON protocol for the collection of nodes */
 object NodeJsonProtocol extends DefaultJsonProtocol {

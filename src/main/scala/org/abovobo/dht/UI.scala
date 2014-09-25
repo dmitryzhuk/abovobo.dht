@@ -16,8 +16,10 @@ import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef}
 import akka.io.{IO, Tcp}
 import akka.pattern.ask
 import akka.util.Timeout
+import spray.json.DefaultJsonProtocol._
 import org.abovobo.dht.json.NodesJsonProtocol._
 import org.abovobo.dht.json.NodeJsonProtocol._
+import org.abovobo.dht.json.RequesterResultJsonProtocol._
 import org.abovobo.integer.Integer160
 import spray.can.Http
 import spray.http.HttpHeaders._
@@ -50,6 +52,7 @@ class UI(val endpoint: InetSocketAddress,
   val partitions = this.nodes.partition(_.routers.isEmpty)
 
   import this.context.dispatcher
+  implicit val timeout: Timeout = 30.seconds
 
   /** Defines HTTP handling */
   val route: Route = {
@@ -59,6 +62,8 @@ class UI(val endpoint: InetSocketAddress,
       pathSingleSlash {
         redirect("static/index.html", StatusCodes.MovedPermanently)
       } ~
+      //
+      // Gracefully stops this application
       path("stop") {
         complete {
           this.context.system.scheduler.scheduleOnce(1.second, this.stopper, UI.Shutdown)
@@ -100,8 +105,9 @@ class UI(val endpoint: InetSocketAddress,
         }
       } ~
       //
-      // Produces complete node description
+      // Operations performed on the particular node
       pathPrefix("node") {
+        // Returns complete description of number with given local ID
         path(LongNumber) { lid =>
           complete {
             this.nodes
@@ -110,57 +116,15 @@ class UI(val endpoint: InetSocketAddress,
               .getOrElse[String](JsNull.compactPrint)
           }
         } ~
+        // Announces given hashinfo into DHT
         path("announce" / Segment / LongNumber) { (hash, lid) =>
-          implicit val timeout: akka.util.Timeout = 30.seconds
           complete {
-            import spray.json.DefaultJsonProtocol._
-            this.nodes.find(_.id == lid).map { node =>
-              actor(new Act {
-                var initiator: ActorRef = null
-                var total: Int = 0
-                var results = new ListBuffer[Requester.Result]()
-                become {
-                  case msg @ Requester.GetPeers(infohash) =>
-                    node.requester ! msg
-                    this.initiator = this.sender()
-                  case Requester.Found(target, infos, peers, tokens) =>
-                    UI.this.log.debug("Found {} nodes for {}", infos.size, target)
-                    this.total = infos.size
-                    infos.foreach { info =>
-                      node.requester ! Requester.AnnouncePeer(
-                        info,
-                        tokens(info.id),
-                        new Integer160(hash),
-                        node.endpoint.getPort,
-                        implied = false)
-                    }
-                  case msg @ Requester.NotFound =>
-                    UI.this.log.error("Not found for {}", hash)
-                    this.initiator ! msg
-                  case msg @ Requester.PeerAnnounced(target, info) =>
-                    UI.this.log.debug("Peer announced for {}", hash)
-                    this.results += msg
-                    if (this.results.size == this.total) {
-                      this.initiator ! this.results.toArray
-                    }
-                  case msg @ Requester.Failed(query) =>
-                    this.results += msg
-                    if (this.results.size == this.total) {
-                      this.initiator ! this.results.toArray
-                    }
-                }
-              }) ? Requester.GetPeers(new Integer160(hash))
-            }.map(Await.result(_, 30.seconds)).map {
-                case results: Array[Requester.Result] => results
-                case _ => Array.empty[Requester.Result]
-            }.getOrElse(Array.empty[Requester.Result]).map {
-              case Requester.Failed(query) =>
-                JsObject("status" -> "failed".toJson)
-              case Requester.PeerAnnounced(target, remote) =>
-                JsObject("status" -> "announced".toJson, "remote" -> remote.id.toString.toJson)
-              case _ =>
-                JsObject("status" -> "unknown".toJson)
-            }.toJson.compactPrint
+            this.announce(new Integer160(hash), this.node(lid)).toJson.prettyPrint
+          }
+        } ~
+        path("find" / Segment / IntNumber) { (hash, lid) =>
+          complete {
+            ""
           }
         }
       }
@@ -172,8 +136,6 @@ class UI(val endpoint: InetSocketAddress,
     this.log.debug("UI#preStart")
 
     import context.{dispatcher, system}
-
-    implicit val timeout: Timeout = 1.second
 
     IO(Http).ask(Http.Bind(this.self, this.endpoint, 100, Nil, None)).flatMap {
 
@@ -215,18 +177,66 @@ class UI(val endpoint: InetSocketAddress,
       case x: Tcp.ConnectionClosed => this.onConnectionClosed(x)
 
       case Timedout(request: HttpRequest) => this.runRoute(timeoutRoute)(eh, rh, ac, rs, log)(request)
-
-      case Requester.PeerAnnounced =>
-        this.log.debug("Peer announced!")
-
-      case Requester.Found(target, infos, peers, tokens) =>
-        this.log.debug("====")
     }
   }
 
   /** @inheritdoc */
   override def receive = this.runRoute(this.route)
 
+  /**
+   * Returns particular node with given local ID. Fails with exception if not found.
+   *
+   * @param lid Local ID of the node to return.
+   * @return A node with given local ID.
+   */
+  private def node(lid: Long) = this.nodes.find(_.id == lid).get
+
+  /**
+   * Performs recursive node lookup procedure.
+   *
+   * @param target   An infohash value which is target for lookup procedure.
+   * @param node     A node from which the lookup must be performed.
+   * @return         A result of this request.
+   */
+  private def find(target: Integer160, node: Node): Requester.Found =
+    Await.result(node.requester.ask(Requester.GetPeers(target)), this.timeout.duration).asInstanceOf[Requester.Found]
+
+  /**
+   * Announces given infohash from given node to DHT.
+   *
+   * @param infohash An infohash to announce.
+   * @param node     A node from which announce must be performed.
+   * @return         An array of announce results.
+   */
+  private def announce(infohash: Integer160, node: Node): Array[Requester.Result] =
+    Await.result(actor(new Act {
+      var total: Int = 0
+      var results = new ListBuffer[Requester.Result]()
+      var initiator = ActorRef.noSender
+      become {
+        case msg@Requester.GetPeers(_) =>
+          node.requester ! msg
+          this.initiator = this.sender()
+        case Requester.Found(target, infos, peers, tokens, rounds) =>
+          this.total = infos.size
+          infos.foreach { info =>
+            node.requester ! Requester.AnnouncePeer(
+              info, tokens(info.id), infohash, node.endpoint.getPort, implied = false)
+          }
+        case msg@Requester.NotFound =>
+          this.initiator ! Array(msg)
+        case msg@Requester.PeerAnnounced(target, info) =>
+          this.results += msg
+          if (this.results.size == this.total) {
+            this.initiator ! this.results.toArray
+          }
+        case msg@Requester.Failed(query, remote) =>
+          this.results += msg
+          if (this.results.size == this.total) {
+            this.initiator ! this.results.toArray
+          }
+      }
+    }).ask(Requester.GetPeers(infohash)), this.timeout.duration).asInstanceOf[Array[Requester.Result]]
 }
 
 /** Accompanying object */
