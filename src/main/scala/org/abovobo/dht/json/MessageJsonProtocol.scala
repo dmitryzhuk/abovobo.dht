@@ -44,4 +44,17 @@ object MessageJsonProtocol extends DefaultJsonProtocol {
 
   }
 
+  implicit object PingJsonFormat extends RootJsonFormat[Query.Ping] {
+
+    /** @inheritdoc */
+    override def write(query: Query.Ping) = {
+      //
+      JsObject()
+    }
+
+    /** We will never deserialize collections of Node objects from JSON */
+    override def read(value: JsValue) = throw new NotImplementedError()
+
+  }
+
 }

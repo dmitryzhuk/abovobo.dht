@@ -10,10 +10,7 @@
 
 package org.abovobo.dht.json
 
-import org.abovobo.dht.{NodeInfo, KnownNodeInfo, Node}
-import org.abovobo.dht.persistence.Storage
-import org.abovobo.integer.Integer160
-import org.abovobo.jdbc.Closer._
+import org.abovobo.dht.{NodeInfo, KnownNodeInfo}
 import spray.json._
 
 /** Defines JSON protocol for the collection of nodes */
@@ -29,6 +26,15 @@ object NodeInfoJsonProtocol extends DefaultJsonProtocol {
         "address" -> node.address.getAddress.toString.toJson,
         "port" -> node.address.getPort.toJson
       )
+
+    /** We will never deserialize collections of Node objects from JSON */
+    override def read(value: JsValue) = throw new NotImplementedError()
+  }
+
+  implicit object NodeInfosJsonFormat extends RootJsonFormat[Traversable[NodeInfo]] {
+
+    /** @inheritdoc */
+    override def write(nodes: Traversable[NodeInfo]) = JsArray(nodes.map(_.toJson).toList)
 
     /** We will never deserialize collections of Node objects from JSON */
     override def read(value: JsValue) = throw new NotImplementedError()

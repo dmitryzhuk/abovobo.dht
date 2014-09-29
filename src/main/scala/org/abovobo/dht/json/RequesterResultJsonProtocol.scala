@@ -26,9 +26,21 @@ object RequesterResultJsonProtocol extends DefaultJsonProtocol {
     /** @inheritdoc */
     override def write(result: Requester.Result) = result match {
       case Requester.Failed(q, remote) =>
-        JsObject("result" -> "fail".toJson, "query" -> q.toJson, "peer" -> remote.toJson)
+        JsObject("result" -> "fail".toJson, "query" -> q.toJson, "remote" -> remote.toJson)
+      case Requester.NotFound(target, rounds) =>
+        JsObject("result" -> "fail".toJson, "target" -> target.toString.toJson, "rounds" -> rounds.toJson)
+      case Requester.Found(target, nodes, peers, tokens, rounds) =>
+        JsObject(
+          "result" -> "success".toJson,
+          "target" -> target.toString.toJson,
+          "nodes" -> nodes.toJson,
+          "peers" -> JsArray(peers.map(_.toString.toJson).toList),
+          "rounds" -> rounds.toJson
+        )
+      case Requester.Pinged(q, remote) =>
+        JsObject("result" -> "success".toJson, "query" -> q.toJson, "remote" -> remote.toJson)
       case Requester.PeerAnnounced(q, remote) =>
-        JsObject("result" -> "success".toJson, "query" -> q.toJson, "peer" -> remote.toJson)
+        JsObject("result" -> "success".toJson, "query" -> q.toJson, "remote" -> remote.toJson)
     }
 
     /** We will never deserialize collections of Node objects from JSON */
