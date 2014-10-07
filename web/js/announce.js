@@ -54,8 +54,11 @@
             var self = this;
 
             $('button', this.element).attr('disabled','disabled').click(function () {
-                $.get('/node/announce/' + $('pre', self.element).text() + '/' + id, function () {
-                    // -- window.alert('Sequence Initiated');
+                self._announce($(self.element).children('pre').text(), function (infohash) {
+                    $('.items', self.element).show().append('<pre>' + infohash + '</pre>');
+                    $('input[type="text"]', self.element).val('');
+                    $(self.element).children('pre').text('');
+                    $('button', self.element).attr('disabled','disabled');
                 });
             });
 
@@ -69,6 +72,7 @@
                     $(this).next().next().removeAttr('disabled');
                 }
             });
+
         },
 
         /**
@@ -79,6 +83,18 @@
          */
         command: function (options) {
             //
+        },
+
+        _announce: function (infohash, success) {
+            var self = this;
+            $.get('/node/announce/' + infohash + '/' + id, function () {
+                if (!!success) {
+                    success(infohash);
+                }
+                window.setTimeout(function () {
+                    self._announce(infohash);
+                }, 900000);
+            });
         }
 
     };
