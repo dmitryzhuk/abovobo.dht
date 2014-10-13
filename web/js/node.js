@@ -15,7 +15,7 @@
 
     if (typeof define === 'function' && define.amd) {
         // Register as an anonymous AMD module:
-        define(['jquery', 'jquery.wait', 'announce'], factory);
+        define(['jquery', 'jquery.wait', 'announce', 'find'], factory);
     }
 
 }(function ($) {
@@ -151,6 +151,7 @@
     $(document).ready(function () {
         $('.content').node();
         $('#announce').announce();
+        $('#search').lookup();
         $('h3 button').click(function () {
             $.get('/stop', function () {
                 $('.content').wait({'delay': 0, 'action': 'show', 'message': 'Server has stopped'});

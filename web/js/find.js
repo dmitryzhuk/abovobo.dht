@@ -26,16 +26,16 @@
         id = params === null ? '' : decodeURIComponent(params[1]);
 
     /** Plugin name */
-    var name = 'announce';
+    var name = 'lookup';
 
     /** Default options for Plugin */
     var defaults = {};
 
     /** Defines Plugin constructor */
-    function Announce() {}
+    function Lookup() {}
 
     /** Plugin prototype definition*/
-    Announce.prototype = {
+    Lookup.prototype = {
 
         /**
          * Initializes plugin instance. Normally, this method is invoked only once
@@ -47,18 +47,20 @@
          *          Initialization options
          */
         init: function (element, options) {
-            window.console.log('Initialized Announce Plugin');
+            window.console.log('Initialized Find Plugin');
             this.element = element;
             this.options = $.extend({}, options, defaults);
 
             var self = this;
 
             $('button', this.element).attr('disabled','disabled').click(function () {
-                self._announce($(self.element).children('pre').text(), function (infohash) {
+                self._find($(self.element).children('pre').text(), function (infohash) {
+                    /*
                     $('.items', self.element).show().append('<pre>' + infohash + '</pre>');
                     $('input[type="text"]', self.element).val('');
                     $(self.element).children('pre').text('');
                     $('button', self.element).attr('disabled','disabled');
+                    */
                 });
             });
 
@@ -86,23 +88,19 @@
         },
 
         /**
-         * Actually invokes announce on backend sending infohash and current node id.
+         * Actually invokes find on backend sending infohash and current node id.
          *
          * @param infohash
-         *          An infohash to be announced
+         *          An infohash to be found
          * @param success
          *          An optional callback inovoked when announce has succeeded
          * @private
          */
-        _announce: function (infohash, success) {
-            var self = this;
-            $.get('/node/announce/' + infohash + '/' + id, function () {
+        _find: function (infohash, success) {
+            $.get('/node/find/' + infohash + '/' + id, function () {
                 if (!!success) {
                     success(infohash);
                 }
-                window.setTimeout(function () {
-                    self._announce(infohash);
-                }, 900000);
             });
         }
 
@@ -113,7 +111,7 @@
             var key = 'plugin_' + name,
                 plugin = $.data(this, key);
             if (plugin === undefined) {
-                plugin = new Announce();
+                plugin = new Lookup();
                 plugin.init(this, options);
                 $(this).data(key, plugin);
             }

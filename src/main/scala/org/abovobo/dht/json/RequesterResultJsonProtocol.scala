@@ -47,6 +47,11 @@ object RequesterResultJsonProtocol extends DefaultJsonProtocol {
     override def read(value: JsValue) = throw new NotImplementedError()
   }
 
+  implicit object RequesterResultFoundJsonFormat extends RootJsonFormat[Requester.Found] {
+    override def write(result: Requester.Found) = RequesterResultJsonFormat.write(result)
+    override def read(value: JsValue) = RequesterResultJsonFormat.read(value)
+  }
+
   implicit object RequesterResultsJsonFormat extends RootJsonFormat[Array[Requester.Result]] {
 
     /** @inheritdoc */

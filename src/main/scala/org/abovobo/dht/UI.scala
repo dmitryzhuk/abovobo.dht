@@ -16,7 +16,6 @@ import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef}
 import akka.io.{IO, Tcp}
 import akka.pattern.ask
 import akka.util.Timeout
-import spray.json.DefaultJsonProtocol._
 import org.abovobo.dht.json.NodesJsonProtocol._
 import org.abovobo.dht.json.NodeJsonProtocol._
 import org.abovobo.dht.json.RequesterResultJsonProtocol._
@@ -122,9 +121,9 @@ class UI(val endpoint: InetSocketAddress,
             this.announce(new Integer160(hash), this.node(lid)).toJson.prettyPrint
           }
         } ~
-        path("find" / Segment / IntNumber) { (hash, lid) =>
+        path("find" / Segment / LongNumber) { (hash, lid) =>
           complete {
-            ""
+            this.find(new Integer160(hash), this.node(lid)).toJson.prettyPrint
           }
         }
       }
